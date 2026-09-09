@@ -1,0 +1,9 @@
+{
+  "color": "22AAAAAA",
+  "visible": true,
+  "priority": 0,
+  "blocks": {
+    "blocked": 1
+  },
+  "noBeds": true
+}

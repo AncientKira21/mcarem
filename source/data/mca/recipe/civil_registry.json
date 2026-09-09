@@ -1,0 +1,16 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "pattern":  [
+                    "EWR",
+                    "   ",
+                    "   "
+                ],
+    "key":  {
+                "W":  "minecraft:writable_book",
+                "E":  "minecraft:emerald",
+                "R":  "mca:rose_gold_ingot"
+            },
+    "result":  {
+                   "id":  "mca:civil_registry"
+               }
+}

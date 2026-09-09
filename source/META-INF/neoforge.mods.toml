@@ -1,0 +1,32 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "GPL-3.0"
+issueTrackerURL = "https://github.com/Luke100000/minecraft-comes-alive/issues"
+
+[[mixins]]
+config = "mca.mixins.json"
+
+[[mods]]
+modId = "mca"
+version = "8.1.11+26.1.2"
+displayName = "Minecraft Comes Alive Remastered"
+displayURL = "https://conczin.net/"
+updateJSONURL = "https://api.modrinth.com/updates/minecraft-comes-alive-reborn/forge_updates.json?neoforge=only"
+logoFile = "icon.png"
+credits = ""
+authors = "Luke100000, S0llace, CDAGaming, ffrannny, jahx_senpoopie, WildBamaBoy, SheWolfDeadly, AncientKira"
+description = '''No more squidward-villagers! Interact with male and female human villagers and online library.'''
+
+[[dependencies.mca]]
+modId = "neoforge"
+type = "required"
+versionRange = "[1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mca]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.1,)"
+ordering = "NONE"
+side = "BOTH"
