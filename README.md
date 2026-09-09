@@ -2,7 +2,7 @@ Minecraft Comes Alive Remastered
 =====================
 
 Minecraft Comes Alive Remastered (MCAREM) is a Minecraft mod that replaces Minecraft's villagers with normal player-like NPCs. It
-works in single player, LAN, and SMP. (Note: only built for 26.1.2 with NeoForge as of now, but *fret not* (a reference to some messages in MCA), it will be released to most modern versions and mod loaders soon! 
+works in single player, LAN, and SMP. Note: only built for 26.1.2 with NeoForge as of now, but *fret not* (a reference to some messages in MCA), it will be released to most modern versions and mod loaders soon! 
 
 Villagers can be interacted with - you can talk to them, ask them to follow you, set their home, give them gifts, etc.
 Interacting with people builds relationships. Get your relationship high enough, and you will be able to marry someone.
