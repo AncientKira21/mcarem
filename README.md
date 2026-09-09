@@ -32,6 +32,7 @@ Following mods have the required resource packs included and are therefore fully
 
 ## Credits
 - [Cleora](https://www.planetminecraft.com/member/cleora/)
+- AncientKira
 - Luke100000
 - WildBamaBoy
 - SheWolfDeadly
@@ -41,4 +42,6 @@ Following mods have the required resource packs included and are therefore fully
 - Innectic
 - Sollace
 - CDAGaming
-- And [many more](resources/assets/mca/api/supporters/contributors.json)!
+- And many more!
+
+Licensed under GPL 3.0.
