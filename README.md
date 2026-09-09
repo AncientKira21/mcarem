@@ -44,4 +44,4 @@ Following mods have the required resource packs included and are therefore fully
 - CDAGaming
 - And many more!
 
-Licensed under GPL 3.0.
+Licensed under the [GNU General Public License v3.0](LICENSE).
