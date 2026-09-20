@@ -1,7 +1,7 @@
 modLoader = "javafml"
 loaderVersion = "[1,)"
 license = "GPL-3.0"
-issueTrackerURL = "https://github.com/Luke100000/minecraft-comes-alive/issues"
+issueTrackerURL = "https://github.com/AncientKira21/mcarem/issues"
 
 [[mixins]]
 config = "mca.mixins.json"
