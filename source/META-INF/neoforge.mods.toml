@@ -8,7 +8,7 @@ config = "mca.mixins.json"
 
 [[mods]]
 modId = "mca"
-version = "8.1.12+26.1.2"
+version = "8.1.13+26.1.x-canary-1"
 displayName = "Minecraft Comes Alive Remastered"
 displayURL = ""
 updateJSONURL = ""
