@@ -2,9 +2,9 @@ Manifest-Version: 1.0
 Specification-Title: Minecraft Comes Alive Remastered
 Specification-Vendor: Luke100000, S0llace, CDAGaming, ffrannny, jahx_sen
  poopie, WildBamaBoy, SheWolfDeadly, AncientKira
-Specification-Version: 8.1.13+26.1.x-canary-1
+Specification-Version: 8.1.12+26.1.2
 Implementation-Title: neoforge
-Implementation-Version: 8.1.13+26.1.x-canary-1
+Implementation-Version: 8.1.12+26.1.2
 Implementation-Vendor: Luke100000, S0llace, CDAGaming, ffrannny, jahx_se
  npoopie, WildBamaBoy, SheWolfDeadly, AncientKira
 Built-On-Minecraft: 26.1.2

@@ -1,14 +1,14 @@
 modLoader = "javafml"
 loaderVersion = "[1,)"
 license = "GPL-3.0"
-issueTrackerURL = "https://github.com/AncientKira21/mcarem/issues"
+issueTrackerURL = "https://github.com/Luke100000/minecraft-comes-alive/issues"
 
 [[mixins]]
 config = "mca.mixins.json"
 
 [[mods]]
 modId = "mca"
-version = "8.1.13+26.1.x-canary-1"
+version = "8.1.12+26.1.2"
 displayName = "Minecraft Comes Alive Remastered"
 displayURL = ""
 updateJSONURL = ""

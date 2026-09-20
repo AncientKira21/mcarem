@@ -74,11 +74,11 @@
 
   "mca.letter.condolence": "%s,\n\nIt is with great regret that we have to inform you of %s's death.\n\nYours sincerely,\nthe mayor of %s\nNote: they can be revived. ;)",
 
-  "mca.books.supporters.author": "The Community",
-  "mca.books.supporters.patrons": "Patrons",
-  "mca.books.supporters.contributors": "Contributors",
-  "mca.books.supporters.translators": "Translators",
-  "mca.books.supporters.wiki": "Wiki",
-  "mca.books.supporters.old": "Before MCA 7.0.0",
-  "mca.books.supporters.thanks": "Thank you!"
+  "mca.books.supporters.author": "Book of Names",
+  "mca.books.supporters.patrons": "Book of Names 2",
+  "mca.books.supporters.contributors": "Book of Names 3",
+  "mca.books.supporters.translators": "Book of Names 4",
+  "mca.books.supporters.wiki": "Book of Names 5",
+  "mca.books.supporters.old": "Book of Names 6",
+  "mca.books.supporters.thanks": "The Amazing Book of Names"
 }
