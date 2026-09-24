@@ -1,0 +1,57 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+    id 'net.neoforged.moddev' version "${moddev_version}" apply false
+}
+
+def nativeAccessJvmArgs = ['--enable-native-access=ALL-UNNAMED', '--illegal-native-access=allow']
+
+allprojects {
+    gradle.projectsEvaluated {
+        tasks.withType(JavaCompile).tap {
+            configureEach {
+                options.deprecation = true
+                options.compilerArgs << "-Xmaxerrs" << "1000" << "-Xlint:deprecation" << "-Xlint:unchecked"
+            }
+        }
+
+        tasks.configureEach { task ->
+            if (task instanceof JavaForkOptions) {
+                if (task.maxHeapSize == null) {
+                    task.maxHeapSize = '4G'
+                }
+                nativeAccessJvmArgs.each { nativeAccessJvmArg ->
+                    if (!task.jvmArgs.contains(nativeAccessJvmArg)) {
+                        task.jvmArgs(nativeAccessJvmArg)
+                    }
+                }
+            }
+        }
+    }
+}
+
+def mod_version = "8.1.13-canary-1"
+
+def getAppVersion = { ->
+    try {
+        def result = providers.exec {
+            commandLine 'git', 'tag', '--points-at', 'HEAD'
+        }.standardOutput.asText.get().trim()
+        if (!result.isEmpty()) {
+            return result
+        }
+        return "${mod_version}+${rootProject.minecraft_version}"
+    } catch (Exception e) {
+        return "${mod_version}+${rootProject.minecraft_version}"
+    }
+} as Object
+
+allprojects {
+    version = getAppVersion()
+}
+
+subprojects {
+    apply plugin: 'base'
+    base {
+        archivesName = "mcarem"
+    }
+}

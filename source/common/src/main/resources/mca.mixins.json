@@ -1,0 +1,48 @@
+{
+  "required": true,
+  "minVersion": "0.7",
+  "package": "net.conczin.mca.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "MixinAbstractArrow",
+    "MixinAbstractFurnaceBlockEntity",
+    "MixinAdvancementRewards",
+    "MixinCrossbowAttack",
+    "MixinEntity",
+    "MixinItemStack",
+    "MixinGoat",
+    "MixinInventory",
+    "MixinIronGolem",
+    "MixinLivingEntity",
+    "MixinMilkBucketItem",
+    "MixinMoveToTargetSink",
+    "MixinProtoChunk",
+    "MixinScreenHandler",
+    "MixinServerGamePacketListenerImpl",
+    "MixinServerPlayer",
+    "MixinSleepInBed",
+    "MixinServerWorld",
+    "MixinTranslatableContents",
+    "MixinTypedInstance",
+    "MixinVillager",
+    "MixinZombie",
+    "MixinZombieVillager"
+  ],
+  "client": [
+    "client.MixinClientLanguage",
+    "client.MixinDeltaTrackerTimer",
+    "client.MixinEntity",
+    "client.MixinGameRenderer",
+    "client.MixinGuiEntityRenderer",
+    "client.MixinHumanoidArmorLayer",
+    "client.MixinItemInHandLayer",
+    "client.MixinLivingEntityRenderer",
+    "client.MixinLivingEntityRenderState",
+    "client.MixinModel",
+    "client.MixinPlayerRenderer",
+    "client.MixinSoundBufferLibrary"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

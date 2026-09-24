@@ -1,0 +1,32 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "GPL-3.0"
+issueTrackerURL = "https://github.com/AncientKira21/mcarem/issues"
+
+[[mixins]]
+config = "mca.mixins.json"
+
+[[mods]]
+modId = "mca"
+version = "8.1.13+26.1.x-canary-1"
+displayName = "Minecraft Comes Alive Remastered"
+displayURL = ""
+updateJSONURL = ""
+logoFile = "icon.png"
+credits = ""
+authors = "Luke100000, S0llace, CDAGaming, ffrannny, jahx_senpoopie, WildBamaBoy, SheWolfDeadly, AncientKira"
+description = '''No more squidward-villagers! Interact with male and female human villagers and online library.'''
+
+[[dependencies.mca]]
+modId = "neoforge"
+type = "required"
+versionRange = "[1,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.mca]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.1,)"
+ordering = "NONE"
+side = "BOTH"

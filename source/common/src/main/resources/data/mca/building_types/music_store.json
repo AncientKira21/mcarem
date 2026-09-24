@@ -1,0 +1,12 @@
+{
+  "color": "ffcc66ff",
+  "visible": true,
+  "priority": 5,
+  "blocks": {
+    "minecraft:jukebox": 1,
+    "minecraft:note_block": 2,
+    "#mca:chests": 1
+  },
+  "iconU": 1,
+  "iconV": 1
+}

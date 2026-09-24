@@ -1,0 +1,118 @@
+import net.neoforged.minecraftdependencies.MinecraftDistribution
+import net.neoforged.minecraftdependencies.OperatingSystem as NeoForgeOperatingSystem
+
+plugins {
+    id 'multiloader-loader'
+    id 'net.neoforged.moddev'
+}
+
+dependencies {
+    implementation(jarJar(
+            "io.github.llamalad7:mixinextras-neoforge:${mixin_extras_version}"
+    )) {
+        version {
+            strictly '[0.5.3,0.6)'
+            prefer mixin_extras_version
+        }
+    }
+    runtimeOnly "maven.modrinth:sodium:${sodium_neoforge_version}"
+    runtimeOnly "maven.modrinth:jei:${jei_neoforge_version}"
+    //runtimeOnly "maven.modrinth:iris:${iris_neoforge_version}"
+    runtimeOnly "maven.modrinth:ferrite-core:${ferritecore_neoforge_version}"
+    runtimeOnly "maven.modrinth:immediatelyfast:${immediatelyfast_neoforge_version}"
+    runtimeOnly "maven.modrinth:packet-fixer:${packetfixer_neoforge_version}"
+}
+
+neoForge {
+    version = neoforge_version
+
+    accessTransformers.from(project(':common').tasks.named('generateAccessTransformer'))
+
+    runs {
+        configureEach {
+            systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+            ideName = "NeoForge ${it.name.capitalize()} (${project.path})" // Unify the run config names with fabric
+        }
+        client {
+            client()
+            jvmArgument '--illegal-native-access=allow'
+        }
+        data {
+            clientData()
+            programArguments.addAll '--mod', project.mod_id, '--all', '--output', rootProject.project(':common').file('src/generated/resources/').getAbsolutePath(), '--existing', rootProject.file('common/src/main/resources/').getAbsolutePath()
+        }
+        server {
+            server()
+        }
+    }
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+// Implement mcgradleconventions loader attribute.
+def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+['apiElements', 'runtimeElements', 'sourcesElements', 'javadocElements'].each { variant ->
+    configurations.named("$variant") {
+        attributes {
+            attribute(loaderAttribute, 'neoforge')
+        }
+    }
+}
+sourceSets.configureEach {
+    [it.compileClasspathConfigurationName, it.runtimeClasspathConfigurationName, it.getTaskName(null, 'jarJar')].each { variant ->
+        configurations.named("$variant") {
+            attributes {
+                attribute(loaderAttribute, 'neoforge')
+            }
+        }
+    }
+}
+
+def neoForgeOperatingSystem = {
+    def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    if (osName.contains('win')) {
+        return NeoForgeOperatingSystem.WINDOWS
+    }
+    if (osName.contains('mac') || osName.contains('darwin')) {
+        return NeoForgeOperatingSystem.MACOSX
+    }
+    return NeoForgeOperatingSystem.LINUX
+}()
+
+configurations.matching { it.name == 'neoFormRuntimeDependenciesRuntimeClasspath' }.configureEach {
+    attributes {
+        attribute(NeoForgeOperatingSystem.ATTRIBUTE, objects.named(NeoForgeOperatingSystem, neoForgeOperatingSystem))
+    }
+}
+
+sourceSets.configureEach {
+    configurations.named(it.compileClasspathConfigurationName) {
+        attributes {
+            attribute(MinecraftDistribution.ATTRIBUTE, objects.named(MinecraftDistribution, MinecraftDistribution.CLIENT))
+        }
+    }
+    configurations.named(it.runtimeClasspathConfigurationName) {
+        attributes {
+            attribute(MinecraftDistribution.ATTRIBUTE, objects.named(MinecraftDistribution, MinecraftDistribution.CLIENT))
+            attribute(NeoForgeOperatingSystem.ATTRIBUTE, objects.named(NeoForgeOperatingSystem, neoForgeOperatingSystem))
+        }
+    }
+}
+
+// ModDev applies the generated transformer in development, but a distributed
+// NeoForge jar must also contain it at the loader's conventional resource path.
+tasks.named('processResources', ProcessResources) {
+    dependsOn(project(':common').tasks.named('generateAccessTransformer'))
+    from(project(':common').layout.buildDirectory.file('generated/accesstransformer.cfg')) {
+        into 'META-INF'
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+base {
+    archivesName = "mcarem"
+}

@@ -1,0 +1,33 @@
+classTweaker v1 official
+
+# Widen vanilla registry value constructors used by common registrations.
+accessible method net/minecraft/core/particles/SimpleParticleType <init> (Z)V
+accessible method net/minecraft/world/entity/ai/memory/MemoryModuleType <init> (Ljava/util/Optional;)V
+accessible method net/minecraft/world/entity/ai/sensing/SensorType <init> (Ljava/util/function/Supplier;)V
+accessible method net/minecraft/world/entity/schedule/Activity <init> (Ljava/lang/String;)V
+
+# Keep MCA's custom villager baby-state override working on 26.2.
+extendable method net/minecraft/world/entity/AgeableMob setBaby (Z)V
+
+# Widen private Villager interaction helpers so MCA can call vanilla behavior directly.
+accessible method net/minecraft/world/entity/npc/villager/Villager startTrading (Lnet/minecraft/world/entity/player/Player;)V
+accessible method net/minecraft/world/entity/npc/villager/Villager setUnhappy ()V
+
+# Reuse AgeableMob's complete Golden Dandelion lifecycle from MCA's gift interaction.
+accessible field net/minecraft/world/entity/AgeableMob ageLockParticleTimer I
+accessible method net/minecraft/world/entity/AgeableMob setAgeLockedData ()V
+
+# Widen AdvancementRewards.loot to allow temporary modification without an accessor mixin.
+accessible field net/minecraft/advancements/AdvancementRewards loot Ljava/util/List;
+mutable field net/minecraft/advancements/AdvancementRewards loot Ljava/util/List;
+
+# Widen MoveControl.rotlerp for task usage
+accessible method net/minecraft/world/entity/ai/control/MoveControl rotlerp (FFF)F
+
+# Widen GroundPathNavigation.getSurfaceY so MCA can make water-tag-aware navigation.
+extendable method net/minecraft/world/entity/ai/navigation/GroundPathNavigation getSurfaceY ()I
+
+# Reuse CrossbowAttack's vanilla state machine while replacing its exact-item hand selection.
+extendable method net/minecraft/world/entity/ai/behavior/CrossbowAttack crossbowAttack (Lnet/minecraft/world/entity/Mob;Lnet/minecraft/world/entity/LivingEntity;)V
+accessible field net/minecraft/world/entity/ai/behavior/CrossbowAttack crossbowState Lnet/minecraft/world/entity/ai/behavior/CrossbowAttack$CrossbowState;
+accessible class net/minecraft/world/entity/ai/behavior/CrossbowAttack$CrossbowState

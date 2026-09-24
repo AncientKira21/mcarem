@@ -1,0 +1,131 @@
+plugins {
+    id 'multiloader-common'
+    id 'net.neoforged.moddev'
+}
+
+tasks.register('generateAccessTransformer') {
+    def awFile = file("src/main/resources/${mod_id}.classtweaker")
+    def outputFile = layout.buildDirectory.file("generated/accesstransformer.cfg")
+
+    inputs.file(awFile)
+    outputs.file(outputFile)
+
+    doLast {
+        if (!awFile.exists()) return
+        
+        def lines = awFile.readLines("UTF-8")
+        def atLines = []
+
+        for (line in lines) {
+            line = line.trim()
+            if (line.isEmpty() || line.startsWith("#")) {
+                atLines << line
+                continue
+            }
+
+            def lower = line.toLowerCase(Locale.ROOT)
+            if (lower.startsWith("classtweaker") || lower.startsWith("accesswidener")) {
+                atLines << "# " + line
+                continue
+            }
+
+            def parts = line.split("\\s+")
+            if (parts.length < 3) continue
+
+            def access = parts[0]
+            def type = parts[1]
+            def className = parts[2].replace('/', '.')
+
+            def atAccess = "public"
+            if (access == "extendable" || access == "mutable") {
+                atAccess = "public-f"
+            }
+
+            if (type == "class") {
+                atLines << "${atAccess} ${className}"
+            } else if (type == "field") {
+                def fieldName = parts[3]
+                atLines << "${atAccess} ${className} ${fieldName}"
+            } else if (type == "method") {
+                def methodName = parts[3]
+                def methodDesc = parts[4..-1].join("")
+                atLines << "${atAccess} ${className} ${methodName}${methodDesc}"
+            }
+        }
+
+        def file = outputFile.get().asFile
+        file.parentFile.mkdirs()
+        file.write(atLines.join("\n"), "UTF-8")
+    }
+}
+
+neoForge {
+    neoFormVersion = neo_form_version
+    accessTransformers.from(tasks.named('generateAccessTransformer'))
+}
+
+dependencies {
+    compileOnly 'org.spongepowered:mixin:0.8.5'
+    // Loader modules provide the runtime; common only needs the API and processor.
+    compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:${mixin_extras_version}"))
+}
+
+configurations {
+    commonJava {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+    commonResources {
+        canBeResolved = false
+        canBeConsumed = true
+    }
+}
+
+sourceSets.main.resources {
+    srcDir 'src/generated/resources'
+}
+
+def commonResourcesOutput = layout.buildDirectory.dir('commonResources')
+
+tasks.register('prepareCommonResources', Sync) {
+    from(sourceSets.main.resources)
+    into(commonResourcesOutput)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+artifacts {
+    commonJava sourceSets.main.java.sourceDirectories.singleFile
+    commonResources(commonResourcesOutput) {
+        builtBy tasks.named('prepareCommonResources')
+    }
+}
+
+def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+['apiElements', 'runtimeElements', 'sourcesElements', 'javadocElements'].each { variant ->
+    configurations.named("$variant") {
+        attributes {
+            attribute(loaderAttribute, 'common')
+        }
+    }
+}
+sourceSets.configureEach {
+    [it.compileClasspathConfigurationName, it.runtimeClasspathConfigurationName].each { variant ->
+        configurations.named("$variant") {
+            attributes {
+                attribute(loaderAttribute, 'common')
+            }
+        }
+    }
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+tasks.named('sourcesJar') {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+tasks.named('prepareCommonResources') {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}

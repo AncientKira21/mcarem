@@ -1,0 +1,11 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "ingredients":  [
+                        "minecraft:book",
+                        "minecraft:rotten_flesh"
+                    ],
+    "result":  {
+                   "id":  "mca:book_infection",
+                   "count":  1
+               }
+}
