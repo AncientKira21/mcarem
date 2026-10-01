@@ -15,6 +15,9 @@ repeat indefinitely!
 
 MCA Remastered is a small edit of MCA for Minecraft 26.1.2 for NeoForge only, which adds new greeting audio for females, and remade some messages. Soon, I plan to remove the annoying feature of villagers mourning over graves unless you're not in Creative Mode.
 
+## Donation Warning
+If you try using the old method where you support MCAR's devs just to get a premium tier for AI or get your name mentioned by villagers, it WILL NOT WORK due to unfair rules. Just delete the mod and use MCAR instead if you love those devs too much. MCArem and MCAR are like Apple and Samsung, they share displays, but they're rivals, but instead of displays, they share the AI and library. If you still want to support us, try donating. It keeps things fair while you get me a boba (I'm not a fan of coffee!)
+
 ## Compatibilities
 MCA is usually compatible with every mod, except when it comes to recognizing items (e.g. gifting).
 
