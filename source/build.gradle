@@ -29,7 +29,7 @@ allprojects {
     }
 }
 
-def mod_version = "8.1.13-canary-1"
+def mod_version = "8.1.13.1"
 
 def getAppVersion = { ->
     try {

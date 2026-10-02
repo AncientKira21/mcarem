@@ -17,10 +17,10 @@
   "environment": "*",
   "entrypoints": {
     "main": [
-      "net.conczin.mca.fabric.MCAFabric"
+      "net.ancientkira.mca.fabric.MCAFabric"
     ],
     "client": [
-      "net.conczin.mca.fabric.MCAFabricClient"
+      "net.ancientkira.mca.fabric.MCAFabricClient"
     ]
   },
   "mixins": [

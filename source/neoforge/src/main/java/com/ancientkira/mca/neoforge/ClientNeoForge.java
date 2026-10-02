@@ -75,7 +75,7 @@ public final class ClientNeoForge extends ClientProxyAbstractImpl {
 
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {
-        net.conczin.mca.KeyBindings.list.forEach(event::register);
+        com.ancientkira.mca.KeyBindings.list.forEach(event::register);
     }
 
     @SubscribeEvent
