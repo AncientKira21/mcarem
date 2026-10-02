@@ -1,0 +1,26 @@
+package com.ancientkira.mca.entity.ai;
+
+import com.ancientkira.mca.MCA;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.schedule.Activity;
+
+import java.util.HashMap;
+import java.util.Map;
+
+public interface ActivitiesMCA {
+    Map<Identifier, Activity> ACTIVITIES = new HashMap<>();
+
+    Activity CHORE = activity("chore");
+    Activity GRIEVE = activity("grieve");
+
+    static Activity activity(String name) {
+        Identifier id = MCA.locate(name);
+        Activity init = new Activity(id.toString());
+        ACTIVITIES.put(id, init);
+        return init;
+    }
+
+    static void registerActivities(MCA.RegisterHelper<Activity> helper) {
+        ACTIVITIES.forEach(helper::register);
+    }
+}

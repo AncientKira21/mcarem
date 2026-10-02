@@ -1,7 +1,7 @@
-package net.conczin.mca.fabric.datagen;
+package com.ancientkira.mca.fabric.datagen;
 
-import net.conczin.mca.entity.CribWoodType;
-import net.conczin.mca.registry.ItemsMCA;
+import com.ancientkira.mca.entity.CribWoodType;
+import com.ancientkira.mca.registry.ItemsMCA;
 import net.fabricmc.fabric.api.datagen.v1.FabricPackOutput;
 import net.fabricmc.fabric.api.datagen.v1.provider.FabricLanguageProvider;
 import net.minecraft.core.HolderLookup;

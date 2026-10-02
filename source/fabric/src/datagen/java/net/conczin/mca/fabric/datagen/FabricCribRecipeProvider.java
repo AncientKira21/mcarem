@@ -1,7 +1,7 @@
-package net.conczin.mca.fabric.datagen;
+package com.ancientkira.mca.fabric.datagen;
 
-import net.conczin.mca.MCA;
-import net.conczin.mca.util.recipes.CribRecipeProvider;
+import com.ancientkira.mca.MCA;
+import com.ancientkira.mca.util.recipes.CribRecipeProvider;
 import net.fabricmc.fabric.api.datagen.v1.FabricPackOutput;
 import net.fabricmc.fabric.api.datagen.v1.provider.FabricRecipeProvider;
 import net.minecraft.core.HolderLookup;

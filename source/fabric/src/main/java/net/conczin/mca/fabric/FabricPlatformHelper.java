@@ -1,6 +1,6 @@
-package net.conczin.mca.fabric;
+package com.ancientkira.mca.fabric;
 
-import net.conczin.mca.PlatformHelper;
+import com.ancientkira.mca.PlatformHelper;
 import net.fabricmc.loader.api.FabricLoader;
 
 public class FabricPlatformHelper extends PlatformHelper {

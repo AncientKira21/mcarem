@@ -1,6 +1,6 @@
-package net.conczin.mca.neoforge;
+package com.ancientkira.mca.neoforge;
 
-import net.conczin.mca.PlatformHelper;
+import com.ancientkira.mca.PlatformHelper;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLEnvironment;
 

@@ -1,4 +1,4 @@
-package net.conczin.mca.fabric.datagen;
+package com.ancientkira.mca.fabric.datagen;
 
 import net.fabricmc.fabric.api.datagen.v1.DataGeneratorEntrypoint;
 import net.fabricmc.fabric.api.datagen.v1.FabricDataGenerator;

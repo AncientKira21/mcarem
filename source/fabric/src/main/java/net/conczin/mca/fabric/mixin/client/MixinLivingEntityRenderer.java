@@ -1,6 +1,6 @@
-package net.conczin.mca.fabric.mixin.client;
+package com.ancientkira.mca.fabric.mixin.client;
 
-import net.conczin.mca.client.render.VillagerRenderStateHooks;
+import com.ancientkira.mca.client.render.VillagerRenderStateHooks;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.world.entity.LivingEntity;

@@ -1,0 +1,13 @@
+package com.ancientkira.mca.entity.ai.chatAI;
+
+import com.ancientkira.mca.entity.VillagerEntityMCA;
+import net.minecraft.server.level.ServerPlayer;
+
+import java.util.Optional;
+
+/**
+ * Interface for AI Strategies
+ */
+public interface ChatAIStrategy {
+    Optional<String> answer(ServerPlayer player, VillagerEntityMCA villager, String msg);
+}
