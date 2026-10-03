@@ -45,12 +45,21 @@ Modifying the assets and logic requires you to go to these following paths:
 * Logic: `/common/src/main/java/com/ancientkira/mca/`
 ### Details
 Once you have finished modifying the contents, head over to gradle.properties and change the mod details to a new name for your fork and new details, but it is mandatory to keep the credits and add your name in there. (e.g. Minecraft Comes Alive Remake).
-### Building
+### Baking
 Once you have finished modifying, go to the `source` folder and type:
 ```zsh
 ./gradlew clean build
 ```
-And the build will start. Enjoy your build!
+And the build will start. 
+### Output
+The outputs are in the following directory:
+* NeoForge: `/neoforge/builds/libs/`
+* Fabric: `/fabric/builds/libs/`
+* Common: `/commomn/builds/libs/`
+
+Pick the base file to distribute. The `sources` (source code) and `javadoc` (documentation) files are optional.
+
+**Enjoy your build!**
 
 ## Compatibilities
 MCA is usually compatible with every mod, except when it comes to recognizing items (e.g. gifting).
