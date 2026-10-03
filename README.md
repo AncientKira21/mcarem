@@ -1,4 +1,4 @@
-## Overview
+# Minecraft Comes Alive Remastered
 ![Interaction](https://media.forgecdn.net/attachments/1945/262/minecraft-logo-2013-1-3-png.png)
 Bring life to those boring villages but with some tweaks!
 *   Build your way to kingship by helping to improve the village!
