@@ -1,5 +1,6 @@
 package com.ancientkira.mca.client.gui;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.client.gui.widget.LegacyImageButton;
 import com.ancientkira.mca.client.gui.widget.TooltipButtonWidget;
@@ -18,18 +19,16 @@ import com.ancientkira.mca.server.world.data.Village;
 import com.ancientkira.mca.util.compat.ButtonWidget;
 import com.ancientkira.mca.util.localization.FlowingText;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.resources.Identifier;
-import org.joml.Matrix3x2fStack;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -39,7 +38,7 @@ public class BlueprintScreen extends ExtendedScreen {
     private static final int POSITION_TAXES = -60;
     private static final int POSITION_BIRTH = -10;
     private static final int POSITION_MARRIAGE = 40;
-    private static final Identifier ICON_TEXTURES = MCA.locate("textures/buildings.png");
+    private static final ResourceLocation ICON_TEXTURES = MCA.locate("textures/buildings.png");
     // 1.19.3: This needs to be the MC type, DO NOT TOUCH !!!
     private final List<net.minecraft.client.gui.components.Button> catalogButtons = new LinkedList<>();
     private Village village;
@@ -102,7 +101,7 @@ public class BlueprintScreen extends ExtendedScreen {
         return buttons;
     }
 
-    protected void drawBuildingIcon(GuiGraphicsExtractor context, Identifier texture, int x, int y, int u, int v) {
+    protected void drawBuildingIcon(GuiGraphics context, ResourceLocation texture, int x, int y, int u, int v) {
         WidgetUtils.drawBuildingIcon(context, texture, x, y, u, v);
     }
 
@@ -161,7 +160,7 @@ public class BlueprintScreen extends ExtendedScreen {
                 Network.sendToServer(new GetVillageRequest());
                 assert minecraft != null;
                 assert minecraft.player != null;
-                minecraft.player.sendSystemMessage(Component.translatable("blueprint.refreshed"));
+                minecraft.player.displayClientMessage(Component.translatable("blueprint.refreshed"), true);
                 setPage("map");
                 break;
             case "advanced":
@@ -318,8 +317,8 @@ public class BlueprintScreen extends ExtendedScreen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor context, int sizeX, int sizeY, float offset) {
-        super.extractRenderState(context, sizeX, sizeY, offset);
+    public void render(GuiGraphics context, int sizeX, int sizeY, float offset) {
+        super.render(context, sizeX, sizeY, offset);
 
         assert minecraft != null;
         this.mouseX = (int) (minecraft.mouseHandler.xpos() * width / minecraft.getWindow().getWidth());
@@ -327,9 +326,9 @@ public class BlueprintScreen extends ExtendedScreen {
 
         switch (page) {
             case "waiting" ->
-                    context.centeredText(font, Component.translatable("gui.blueprint.waiting"), width / 2, height / 2, 0xffaaaaaa);
+                    context.drawCenteredString(font, Component.translatable("gui.blueprint.waiting"), width / 2, height / 2, 0xffaaaaaa);
             case "empty" ->
-                    context.centeredText(font, Component.translatable("gui.blueprint.empty"), width / 2, height / 2 - 20, 0xffaaaaaa);
+                    context.drawCenteredString(font, Component.translatable("gui.blueprint.empty"), width / 2, height / 2 - 20, 0xffaaaaaa);
             case "map" -> {
                 renderStats(context);
                 renderName(context);
@@ -349,20 +348,20 @@ public class BlueprintScreen extends ExtendedScreen {
         }
     }
 
-    private void renderName(GuiGraphicsExtractor context) {
-        final Matrix3x2fStack matrices = context.pose();
+    private void renderName(GuiGraphics context) {
+        final PoseStack matrices = context.pose();
         //name
-        matrices.pushMatrix();
-        matrices.scale(2.0f, 2.0f);
+        matrices.pushPose();
+        matrices.scale(2.0f, 2.0f, 2.0f);
         if (isVillage) {
-            context.centeredText(font, village.getName(), width / 4, height / 4 - 48, 0xffffffff);
+            context.drawCenteredString(font, village.getName(), width / 4, height / 4 - 48, 0xffffffff);
         } else {
-            context.centeredText(font, Component.translatable("gui.blueprint.settlement"), width / 4, height / 4 - 48, 0xffffffff);
+            context.drawCenteredString(font, Component.translatable("gui.blueprint.settlement"), width / 4, height / 4 - 48, 0xffffffff);
         }
-        matrices.popMatrix();
+        matrices.popPose();
     }
 
-    private void renderStats(GuiGraphicsExtractor context) {
+    private void renderStats(GuiGraphics context) {
         int x = width / 2 + (page.equals("rank") ? -70 : 105);
         int y = height / 2 - 50;
 
@@ -370,32 +369,32 @@ public class BlueprintScreen extends ExtendedScreen {
         Component rankStr = Component.translatable(rank.getTranslationKey());
         int rankColor = rank.ordinal() == 0 ? 0xffff0000 : 0xffffff00;
 
-        context.text(font, Component.translatable("gui.blueprint.currentRank", rankStr), x, y, rankColor);
-        context.text(font, Component.translatable("gui.blueprint.reputation", String.valueOf(reputation)), x, y + 11, rank.ordinal() == 0 ? 0xffff0000 : 0xffffffff);
-        context.text(font, Component.translatable("gui.blueprint.buildings", village.getBuildings().size()), x, y + 22, 0xffffffff);
-        context.text(font, Component.translatable("gui.blueprint.population", village.getPopulation(), village.getMaxPopulation()), x, y + 33, 0xffffffff);
+        context.drawString(font, Component.translatable("gui.blueprint.currentRank", rankStr), x, y, rankColor);
+        context.drawString(font, Component.translatable("gui.blueprint.reputation", String.valueOf(reputation)), x, y + 11, rank.ordinal() == 0 ? 0xffff0000 : 0xffffffff);
+        context.drawString(font, Component.translatable("gui.blueprint.buildings", village.getBuildings().size()), x, y + 22, 0xffffffff);
+        context.drawString(font, Component.translatable("gui.blueprint.population", village.getPopulation(), village.getMaxPopulation()), x, y + 33, 0xffffffff);
     }
 
-    private void renderMap(GuiGraphicsExtractor context) {
-        final Matrix3x2fStack matrices = context.pose();
+    private void renderMap(GuiGraphics context) {
+        final PoseStack matrices = context.pose();
         int mapSize = 75;
         int y = height / 2 + 8;
         WidgetUtils.drawRectangle(context, width / 2 - mapSize, y - mapSize, width / 2 + mapSize, y + mapSize, 0xffffff88);
 
         //hint
         if (!village.isAutoScan() && village.getBuildings().size() <= 1) {
-            context.centeredText(font, Component.translatable("gui.blueprint.autoScanDisabled"), width / 2, height / 2 + 90, 0xaaffffff);
+            context.drawCenteredString(font, Component.translatable("gui.blueprint.autoScanDisabled"), width / 2, height / 2 + 90, 0xaaffffff);
         }
 
-        matrices.pushMatrix();
+        matrices.pushPose();
 
         //center and scale the map
         float sc = Math.min((float) mapSize / (village.getBox().getMaxBlockCount() + 3) * 2, 2.0f);
         int mouseLocalX = (int) ((mouseX - width / 2.0) / sc + village.getCenter().getX());
         int mouseLocalY = (int) ((mouseY - y) / sc + village.getCenter().getZ());
-        matrices.translate(width / 2.0f, (float) y);
-        matrices.scale(sc, sc);
-        matrices.translate(-village.getCenter().getX(), -village.getCenter().getZ());
+        matrices.translate(width / 2.0, y, 0);
+        matrices.scale(sc, sc, 0.0f);
+        matrices.translate(-village.getCenter().getX(), -village.getCenter().getZ(), 0);
 
         //show the players location
         assert minecraft != null;
@@ -438,7 +437,7 @@ public class BlueprintScreen extends ExtendedScreen {
             }
         }
 
-        matrices.popMatrix();
+        matrices.popPose();
 
         //sort vertically
         hoverBuildings.sort((a, b) -> b.getCenter().getY() - a.getCenter().getY());
@@ -458,7 +457,7 @@ public class BlueprintScreen extends ExtendedScreen {
         //render
         int py = mouseY - h / 2 + 12;
         for (List<Component> b : tooltips) {
-            WidgetUtils.drawTooltip(context, font, b, mouseX, py);
+            context.renderComponentTooltip(font, b, mouseX, py);
             py += getTooltipHeight(b) + 9;
         }
     }
@@ -476,14 +475,14 @@ public class BlueprintScreen extends ExtendedScreen {
         }
 
         //present blocks
-        for (Map.Entry<Identifier, List<BlockPos>> block : hoverBuilding.getBlocks().entrySet()) {
+        for (Map.Entry<ResourceLocation, List<BlockPos>> block : hoverBuilding.getBlocks().entrySet()) {
             lines.add(Component.literal(block.getValue().size() + " x ").append(getBlockName(block.getKey())).withStyle(ChatFormatting.GRAY));
         }
 
         return lines;
     }
 
-    private void renderTasks(GuiGraphicsExtractor context) {
+    private void renderTasks(GuiGraphics context) {
         if (rank == null) {
             return;
         }
@@ -495,54 +494,54 @@ public class BlueprintScreen extends ExtendedScreen {
         for (Task task : tasks.get(rank.promote())) {
             boolean completed = completedTasks.contains(task.getId());
             Component t = task.getTranslatable().withStyle(completed ? ChatFormatting.STRIKETHROUGH : ChatFormatting.RESET);
-            context.text(font, t, x, y, completed ? 0xff88ff88 : 0xffff5555);
+            context.drawString(font, t, x, y, completed ? 0xff88ff88 : 0xffff5555);
             y += 11;
         }
     }
 
-    private void renderCatalog(GuiGraphicsExtractor context) {
-        final Matrix3x2fStack matrices = context.pose();
+    private void renderCatalog(GuiGraphics context) {
+        final PoseStack matrices = context.pose();
         //title
-        matrices.pushMatrix();
-        matrices.scale(2.0f, 2.0f);
-        context.centeredText(font, Component.translatable("gui.blueprint.catalogFull"), width / 4, height / 4 - 52, 0xffffffff);
-        matrices.popMatrix();
+        matrices.pushPose();
+        matrices.scale(2.0f, 2.0f, 2.0f);
+        context.drawCenteredString(font, Component.translatable("gui.blueprint.catalogFull"), width / 4, height / 4 - 52, 0xffffffff);
+        matrices.popPose();
 
         //explanation
-        context.centeredText(font, Component.translatable("gui.blueprint.catalogHint").withStyle(ChatFormatting.GRAY), width / 2, height / 2 - 82, 0xffffffff);
+        context.drawCenteredString(font, Component.translatable("gui.blueprint.catalogHint").withStyle(ChatFormatting.GRAY), width / 2, height / 2 - 82, 0xffffffff);
 
         //building
         int x = width / 2 + 35;
         int y = height / 2 - 50;
         if (selectedBuilding != null) {
             //name
-            context.text(font, Component.translatable("buildingType." + selectedBuilding.name()), x, y, selectedBuilding.getColor());
+            context.drawString(font, Component.translatable("buildingType." + selectedBuilding.name()), x, y, selectedBuilding.getColor());
             y += 12;
 
             //description
             List<Component> wrap = FlowingText.wrap(Component.translatable("buildingType." + selectedBuilding.name() + ".description").withStyle(ChatFormatting.GRAY).withStyle(ChatFormatting.ITALIC), 150);
             for (Component t : wrap) {
-                context.text(font, t, x, y, 0xffffffff);
+                context.drawString(font, t, x, y, 0xffffffff);
                 y += 10;
             }
             y += 24;
 
             //required blocks
-            for (Map.Entry<Identifier, Integer> b : selectedBuilding.getGroups().entrySet()) {
-                context.text(font, Component.literal(b.getValue() + " x ").append(getBlockName(b.getKey())), x, y, 0xffffffff);
+            for (Map.Entry<ResourceLocation, Integer> b : selectedBuilding.getGroups().entrySet()) {
+                context.drawString(font, Component.literal(b.getValue() + " x ").append(getBlockName(b.getKey())), x, y, 0xffffffff);
                 y += 10;
             }
         } else {
             //help
             List<Component> wrap = FlowingText.wrap(Component.translatable("gui.blueprint.buildingTypes").withStyle(ChatFormatting.GRAY).withStyle(ChatFormatting.ITALIC), 150);
             for (Component t : wrap) {
-                context.text(font, t, x, y, 0xffffffff);
+                context.drawString(font, t, x, y, 0xffffffff);
                 y += 10;
             }
         }
     }
 
-    private void renderVillagers(GuiGraphicsExtractor context) {
+    private void renderVillagers(GuiGraphics context) {
         int maxPages = (int) Math.ceil(village.getPopulation() / 9.0);
         buttonPage.setMessage(Component.literal((pageNumber + 1) + "/" + maxPages));
 
@@ -555,7 +554,7 @@ public class BlueprintScreen extends ExtendedScreen {
             if (index < villager.size()) {
                 int y = height / 2 - 51 + i * 11;
                 boolean hover = isMouseWithin(width / 2 - 50, y - 1, 100, 11);
-                context.centeredText(font, Component.literal(villager.get(index).getValue()), width / 2, y, hover ? 0xFFD7D784 : 0xFFFFFFFF);
+                context.drawCenteredString(font, Component.literal(villager.get(index).getValue()), width / 2, y, hover ? 0xFFD7D784 : 0xFFFFFFFF);
                 if (hover) {
                     selectedVillager = villager.get(index).getKey();
                 }
@@ -565,44 +564,45 @@ public class BlueprintScreen extends ExtendedScreen {
         }
     }
 
-    private void renderRules(GuiGraphicsExtractor context) {
+    private void renderRules(GuiGraphics context) {
         buttonTaxes[0].setMessage(Component.literal((int) (village.getTaxes() * 100) + "%"));
         buttonMarriage[0].setMessage(Component.literal((int) (village.getMarriageThreshold() * 100) + "%"));
         buttonBirths[0].setMessage(Component.literal((int) (village.getPopulationThreshold() * 100) + "%"));
 
         //taxes
-        context.centeredText(font, Component.translatable("gui.blueprint.taxes"), width / 2, height / 2 + POSITION_TAXES, 0xffffffff);
+        context.drawCenteredString(font, Component.translatable("gui.blueprint.taxes"), width / 2, height / 2 + POSITION_TAXES, 0xffffffff);
         if (!rank.isAtLeast(Rank.MERCHANT)) {
-            context.centeredText(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_TAXES + 15, 0xffffffff);
+            context.drawCenteredString(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_TAXES + 15, 0xffffffff);
             toggleButtons(buttonTaxes, false);
         } else {
             toggleButtons(buttonTaxes, true);
         }
 
         //births
-        context.centeredText(font, Component.translatable("gui.blueprint.birth"), width / 2, height / 2 + POSITION_BIRTH, 0xffffffff);
+        context.drawCenteredString(font, Component.translatable("gui.blueprint.birth"), width / 2, height / 2 + POSITION_BIRTH, 0xffffffff);
         if (!rank.isAtLeast(Rank.NOBLE)) {
-            context.centeredText(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_BIRTH + 15, 0xffffffff);
+            context.drawCenteredString(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_BIRTH + 15, 0xffffffff);
             toggleButtons(buttonBirths, false);
         } else {
             toggleButtons(buttonBirths, true);
         }
 
         //marriages
-        context.centeredText(font, Component.translatable("gui.blueprint.marriage"), width / 2, height / 2 + POSITION_MARRIAGE, 0xffffffff);
+        context.drawCenteredString(font, Component.translatable("gui.blueprint.marriage"), width / 2, height / 2 + POSITION_MARRIAGE, 0xffffffff);
         if (!rank.isAtLeast(Rank.MAYOR)) {
-            context.centeredText(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_MARRIAGE + 15, 0xffffffff);
+            context.drawCenteredString(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_MARRIAGE + 15, 0xffffffff);
             toggleButtons(buttonMarriage, false);
         } else {
             toggleButtons(buttonMarriage, true);
         }
     }
 
-    private Component getBlockName(Identifier id) {
-        return BuiltInRegistries.BLOCK
-                .get(id)
-                .<Component>map(block -> Component.translatable(block.value().getDescriptionId()))
-                .orElseGet(() -> Component.translatable("tag.block." + id.getNamespace() + "." + id.getPath()));
+    private Component getBlockName(ResourceLocation id) {
+        if (BuiltInRegistries.BLOCK.containsKey(id)) {
+            return Component.translatable(BuiltInRegistries.BLOCK.get(id).getDescriptionId());
+        } else {
+            return Component.translatable("tag.block." + id.getNamespace() + "." + id.getPath());
+        }
     }
 
     private void toggleButtons(ButtonWidget[] buttons, boolean active) {
@@ -613,13 +613,13 @@ public class BlueprintScreen extends ExtendedScreen {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (page.equals("villagers") && selectedVillager != null) {
             assert minecraft != null;
             minecraft.setScreen(new FamilyTreeScreen(selectedVillager));
         }
 
-        return super.mouseClicked(event, doubleClick);
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     protected boolean isMouseWithin(int x, int y, int w, int h) {
@@ -643,7 +643,3 @@ public class BlueprintScreen extends ExtendedScreen {
         this.tasks = tasks;
     }
 }
-
-
-
-
