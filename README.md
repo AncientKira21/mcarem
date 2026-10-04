@@ -1,5 +1,9 @@
 # Minecraft Comes Alive Remastered
 ![Interaction](https://media.forgecdn.net/attachments/1945/262/minecraft-logo-2013-1-3-png.png)
+[![Get it on CurseForge](https://img.shields.io/badge/Get%20it%20on-CurseForge-F16436?style=for-the-badge&logo=curseforge&logoColor=white)](https://www.curseforge.com/minecraft/mc-mods/minecraft-comes-alive-remastered)
+[![Made with Java](https://img.shields.io/badge/Made%20with-Java-ED8B00?style=for-the-badge&logo=coffeescript&logoColor=white)](https://www.java.com)
+
+
 Bring life to those boring villages but with some tweaks!
 *   Build your way to kingship by helping to improve the village!
 *   Replaces the big noses with player-like NPCs!
