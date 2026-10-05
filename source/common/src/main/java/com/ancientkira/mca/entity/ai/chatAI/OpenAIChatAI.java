@@ -1,7 +1,9 @@
 package com.ancientkira.mca.entity.ai.chatAI;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import com.ancientkira.mca.Config;
@@ -57,7 +59,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private static Answer parseAnswer(String body) {
         JsonObject map = JsonParser.parseString(body).getAsJsonObject();
         String message = map.has("choices") ? map.getAsJsonArray("choices").get(0).getAsJsonObject().getAsJsonObject("message").getAsJsonPrimitive("content").getAsString() : null;
-        String error = map.has("error") ? map.get("error").getAsString().trim().replace("\n", " ") : null;
+        String error = getErrorMessage(map.get("error"));
 
         if (message != null) {
             // Parse json further
@@ -83,9 +85,33 @@ public class OpenAIChatAI implements ChatAIStrategy {
         return new Answer(structuredReply, error);
     }
 
+    private static String getErrorMessage(JsonElement error) {
+        if (error == null || error.isJsonNull()) {
+            return null;
+        }
+        if (error.isJsonObject()) {
+            JsonObject details = error.getAsJsonObject();
+            for (String key : List.of("message", "detail", "code", "type")) {
+                JsonElement value = details.get(key);
+                if (value != null && value.isJsonPrimitive()) {
+                    String message = value.getAsString().trim().replace('\n', ' ');
+                    if (!message.isEmpty()) {
+                        return message;
+                    }
+                }
+            }
+        }
+        if (error.isJsonPrimitive()) {
+            String message = error.getAsString().trim().replace('\n', ' ');
+            return message.isEmpty() ? null : message;
+        }
+        return error.toString();
+    }
+
     public static Answer post(String url, String requestBody, String token) {
+        HttpURLConnection con = null;
         try {
-            HttpURLConnection con = getHttpURLConnection(url, token);
+            con = getHttpURLConnection(url, token);
 
             // Write the request body to the connection
             try (DataOutputStream wr = new DataOutputStream(con.getOutputStream())) {
@@ -93,13 +119,40 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 wr.flush();
             }
 
-            InputStream response = con.getInputStream();
-            String body = IOUtils.toString(response, StandardCharsets.UTF_8);
+            int statusCode = con.getResponseCode();
+            String body;
+            try (InputStream response = statusCode >= HttpURLConnection.HTTP_BAD_REQUEST
+                    ? con.getErrorStream() : con.getInputStream()) {
+                body = response == null ? "" : IOUtils.toString(response, StandardCharsets.UTF_8);
+            }
+
+            if (statusCode >= HttpURLConnection.HTTP_BAD_REQUEST) {
+                try {
+                    Answer responseAnswer = parseAnswer(body);
+                    if (responseAnswer.error() != null) {
+                        return responseAnswer;
+                    }
+                } catch (JsonParseException | IllegalStateException ignored) {
+                    // Non-JSON error pages fall back to their response text below.
+                }
+                String details = body.replaceAll("\\s+", " ").trim();
+                if (details.length() > 500) {
+                    details = details.substring(0, 500) + "...";
+                }
+                return new Answer(null, details.isEmpty()
+                        ? "HTTP " + statusCode : "HTTP " + statusCode + ": " + details);
+            }
 
             return parseAnswer(body);
         } catch (Exception e) {
             MCA.LOGGER.error(e);
-            return new Answer(null, "Unknown error, check log!");
+            String message = e.getMessage();
+            return new Answer(null, message == null || message.isBlank()
+                    ? e.getClass().getSimpleName() : message);
+        } finally {
+            if (con != null) {
+                con.disconnect();
+            }
         }
     }
 
@@ -315,14 +368,20 @@ public class OpenAIChatAI implements ChatAIStrategy {
             } else if (message.error.equals("limit_premium")) {
                 player.sendSystemMessage(Component.translatable("mca.limit.premium").withStyle(ChatFormatting.RED));
             } else {
-                player.sendSystemMessage(Component.literal(message.error).withStyle(ChatFormatting.RED));
+                player.sendSystemMessage(formatFailureMessage(message.error).withStyle(ChatFormatting.RED));
             }
         } catch (Exception e) {
             MCA.LOGGER.error("Failed to parse LLM response!", e);
-            player.sendSystemMessage(Component.translatable("mca.ai_broken").withStyle(ChatFormatting.RED));
+            String error = e.getMessage() == null || e.getMessage().isBlank()
+                    ? e.getClass().getSimpleName() : e.getMessage();
+            player.sendSystemMessage(formatFailureMessage(error).withStyle(ChatFormatting.RED));
         }
 
         return Optional.empty();
+    }
+
+    private static MutableComponent formatFailureMessage(String error) {
+        return Component.literal("Error: " + error + "\n\nThe villager failed to talk and is sad. Reason: " + error);
     }
 
     public record StructuredResponse(@Nullable String message, String optionalCommand) {
