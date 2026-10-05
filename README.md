@@ -20,7 +20,7 @@ Bring life to those boring villages but with some tweaks!
 ![Interaction](https://media.forgecdn.net/attachments/1945/204/b4264769-jpg.jpg)
 
 ## Manage entire villages!
-![Management](https://media.forgecdn.net/attachments/1945/203/a1f01b56-jpg.jpg)
+![Management](https://media.forgecdn.net/attachments/2011/931/2026-10-04_20-45-38-png.png)
 
 ## Edit villagers!
 ![Editor](https://media.forgecdn.net/attachments/1945/205/e53a5a5-jpg.jpg)
