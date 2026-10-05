@@ -37,6 +37,9 @@ public class Building {
     private int pos1X, pos1Y, pos1Z;
     private int posX, posY, posZ;
     private int id;
+    private int structureId = -1;
+    private int floorNumber;
+    private boolean inheritanceEnabled;
     private boolean strictScan;
     private long lastScan;
 
@@ -67,6 +70,9 @@ public class Building {
 
     public Building(CompoundTag v) {
         id = v.getInt("id").orElse(0);
+        structureId = v.getInt("structureId").orElse(id);
+        floorNumber = v.getInt("floorNumber").orElse(0);
+        inheritanceEnabled = v.getBoolean("inheritanceEnabled").orElse(false);
         size = v.getInt("size").orElse(0);
         pos0X = v.getInt("pos0X").orElse(0);
         pos0Y = v.getInt("pos0Y").orElse(0);
@@ -101,6 +107,9 @@ public class Building {
     public CompoundTag save() {
         CompoundTag v = new CompoundTag();
         v.putInt("id", id);
+        v.putInt("structureId", getStructureId());
+        v.putInt("floorNumber", floorNumber);
+        v.putBoolean("inheritanceEnabled", inheritanceEnabled);
         v.putInt("size", size);
         v.putInt("pos0X", pos0X);
         v.putInt("pos0Y", pos0Y);
@@ -447,7 +456,53 @@ public class Building {
     }
 
     public void setId(int id) {
+        if (structureId < 0) {
+            structureId = id;
+        }
         this.id = id;
+    }
+
+    public int getStructureId() {
+        return structureId < 0 ? id : structureId;
+    }
+
+    public void setStructureId(int structureId) {
+        this.structureId = structureId;
+    }
+
+    public int getFloorNumber() {
+        return floorNumber;
+    }
+
+    public void setFloorNumber(int floorNumber) {
+        this.floorNumber = floorNumber;
+    }
+
+    public boolean isInheritanceEnabled() {
+        return inheritanceEnabled;
+    }
+
+    public void setInheritanceEnabled(boolean inheritanceEnabled) {
+        this.inheritanceEnabled = inheritanceEnabled;
+    }
+
+    public void updateFrom(Building scanned, long gameTime) {
+        size = scanned.size;
+        pos0X = scanned.pos0X;
+        pos0Y = scanned.pos0Y;
+        pos0Z = scanned.pos0Z;
+        pos1X = scanned.pos1X;
+        pos1Y = scanned.pos1Y;
+        pos1Z = scanned.pos1Z;
+        posX = scanned.posX;
+        posY = scanned.posY;
+        posZ = scanned.posZ;
+        strictScan = scanned.strictScan;
+        lastScan = gameTime;
+        isTypeForced = scanned.isTypeForced;
+        type = scanned.type;
+        blocks.clear();
+        scanned.blocks.forEach((key, positions) -> blocks.put(key, new ArrayList<>(positions)));
     }
 
     public boolean overlaps(Building b) {
@@ -500,6 +555,8 @@ public class Building {
         TOO_SMALL,
         IDENTICAL,
         SUCCESS,
-        INVALID_TYPE
+        INVALID_TYPE,
+        NOT_IN_BUILDING,
+        ROOM_ALREADY_ADDED
     }
 }

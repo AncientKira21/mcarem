@@ -4,6 +4,7 @@ import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.client.gui.widget.WidgetUtils;
 import com.ancientkira.mca.network.Network;
 import com.ancientkira.mca.network.c2s.ConfirmBuildingPolymorphMessage;
+import com.ancientkira.mca.network.c2s.ReportBuildingMessage;
 import com.ancientkira.mca.resources.BuildingTypes;
 import com.ancientkira.mca.resources.data.BuildingType;
 import com.ancientkira.mca.util.compat.ButtonWidget;
@@ -25,14 +26,22 @@ public class BuildingPolymorphScreen extends ExtendedScreen {
 
     private final List<String> matchingTypes;
     private final BlockPos scanPos;
-    private final boolean isRoom;
+    private final ReportBuildingMessage.Action action;
+    private final int targetBuildingId;
     private int page;
 
-    public BuildingPolymorphScreen(List<String> matchingTypes, BlockPos scanPos, boolean isRoom) {
+    public BuildingPolymorphScreen(List<String> matchingTypes, BlockPos scanPos,
+                                   ReportBuildingMessage.Action action, int targetBuildingId) {
         super(Component.translatable("gui.building_polymorph.title"));
         this.matchingTypes = List.copyOf(matchingTypes);
         this.scanPos = scanPos;
-        this.isRoom = isRoom;
+        this.action = action;
+        this.targetBuildingId = targetBuildingId;
+    }
+
+    public BuildingPolymorphScreen(List<String> matchingTypes, BlockPos scanPos, boolean isRoom) {
+        this(matchingTypes, scanPos,
+                isRoom ? ReportBuildingMessage.Action.ADD_ROOM : ReportBuildingMessage.Action.ADD, -1);
     }
 
     private void drawBuildingIcon(GuiGraphicsExtractor context, String typeName, int x, int y) {
@@ -92,7 +101,7 @@ public class BuildingPolymorphScreen extends ExtendedScreen {
                     typeName,
                     Component.translatable("buildingType." + typeName),
                     button -> {
-                        Network.sendToServer(new ConfirmBuildingPolymorphMessage(scanPos, isRoom, typeName));
+                        Network.sendToServer(new ConfirmBuildingPolymorphMessage(scanPos, action, targetBuildingId, typeName));
                         Objects.requireNonNull(this.minecraft).setScreen(null);
                     }
             ));

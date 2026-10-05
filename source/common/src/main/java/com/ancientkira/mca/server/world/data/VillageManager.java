@@ -282,6 +282,231 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         );
     }
 
+    public BuildingScanResult analyzeRoomAddition(BlockPos pos) {
+        return analyzeRoomAddition(pos, -1);
+    }
+
+    public BuildingScanResult analyzeRoomAddition(BlockPos pos, int expectedParentId) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        RoomScanPlan plan = village == null ? RoomScanPlan.addBuilding(pos) : village.getRoomScanPlan(pos);
+        Building current = plan.building().orElse(null);
+        if (current != null && current.isStrictScan()) {
+            return failedBuildingScan(Building.validationResult.ROOM_ALREADY_ADDED, pos, village, true);
+        }
+        if (expectedParentId >= 0 && (plan.mode() != Village.RoomScanMode.ADD_ROOM
+                || current == null || current.getId() != expectedParentId)) {
+            return failedBuildingScan(Building.validationResult.NOT_IN_BUILDING, pos, village, true);
+        }
+        return analyzeIndependentBuilding(pos, true, current, village);
+    }
+
+    public BuildingScanResult analyzeRoomUpdate(BlockPos pos, int expectedBuildingId) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building existing = village == null ? null : village.getBuilding(expectedBuildingId).orElse(null);
+        if (existing == null || !existing.isStrictScan() || !existing.containsPos(pos)) {
+            return failedBuildingScan(Building.validationResult.NOT_IN_BUILDING, pos, village, true);
+        }
+        return analyzeIndependentBuilding(pos, true, existing, village);
+    }
+
+    public BuildingScanResult analyzeAttachedRoom(BlockPos pos, Village.RoomScanMode mode, int targetBuildingId) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building target = village == null ? null : village.getBuilding(targetBuildingId).orElse(null);
+        RoomScanPlan plan = village == null ? RoomScanPlan.addBuilding(pos) : village.getRoomScanPlan(pos);
+        if (target == null || !mode.isAttachment() || plan.mode() != mode || plan.targetBuildingId() != targetBuildingId) {
+            return failedBuildingScan(Building.validationResult.NOT_IN_BUILDING, pos, village, true);
+        }
+        return analyzeIndependentBuilding(pos, true, null, village);
+    }
+
+    private BuildingScanResult analyzeIndependentBuilding(BlockPos pos, boolean strictScan, Building replace, Village village) {
+        Set<BlockPos> blocked = village == null ? Set.of() : new HashSet<>(getBlockedSet(village));
+        if (replace != null) {
+            blocked.remove(replace.getSourceBlock());
+        }
+        Building candidate = new Building(pos, strictScan);
+        Building.validationResult result = candidate.validateBuilding(world, blocked);
+        List<String> matchingTypes = result == Building.validationResult.SUCCESS
+                ? candidate.getVisibleMatchingTypes().stream().map(BuildingType::name).toList()
+                : List.of();
+        return new BuildingScanResult(result, candidate.getSourceBlock(), strictScan, candidate, matchingTypes, village);
+    }
+
+    private static BuildingScanResult failedBuildingScan(Building.validationResult result, BlockPos source,
+                                                        Village village, boolean strictScan) {
+        return new BuildingScanResult(result, source, strictScan, new Building(source, strictScan), List.of(), village);
+    }
+
+    public Building.validationResult commitRoomAddition(BuildingScanResult scan, String forcedType,
+                                                        Village.RoomScanMode mode, int targetBuildingId) {
+        if (scan.result() != Building.validationResult.SUCCESS) {
+            return scan.result();
+        }
+        if (forcedType != null && !scan.matchesType(forcedType)) {
+            return Building.validationResult.INVALID_TYPE;
+        }
+        if (forcedType == null && scan.isAmbiguous()) {
+            return Building.validationResult.INVALID_TYPE;
+        }
+        Village village = scan.village();
+        if (village == null) {
+            if (targetBuildingId >= 0) {
+                return Building.validationResult.NOT_IN_BUILDING;
+            }
+            village = new Village(lastVillageId++, world);
+            villages.put(village.getId(), village);
+        }
+        Building target = village.getBuilding(targetBuildingId).orElse(null);
+        if (mode != Village.RoomScanMode.ADD_BUILDING && targetBuildingId >= 0 && target == null) {
+            return Building.validationResult.NOT_IN_BUILDING;
+        }
+        Building added = scan.building();
+        if (forcedType != null) {
+            added.setTypeForced(true);
+            added.setType(forcedType);
+        } else {
+            added.setTypeForced(false);
+            added.determineType();
+        }
+        added.setId(lastBuildingId++);
+        if (mode == Village.RoomScanMode.ADD_ROOM && target != null) {
+            added.setStructureId(target.getStructureId());
+            added.setFloorNumber(target.getFloorNumber());
+        } else if (mode.isAttachment() && target != null) {
+            added.setStructureId(target.getStructureId());
+            added.setFloorNumber(target.getFloorNumber() + (mode == Village.RoomScanMode.ADD_BASEMENT ? -1 : 1));
+        } else {
+            added.setStructureId(added.getId());
+            added.setFloorNumber(0);
+        }
+        village.getBuildings().put(added.getId(), added);
+        village.calculateDimensions();
+        village.recalculateRoomTypes(added.getStructureId());
+        village.markDirty();
+        setDirty();
+        return Building.validationResult.SUCCESS;
+    }
+
+    public Building.validationResult commitRoomUpdate(BuildingScanResult scan, String forcedType, int expectedBuildingId) {
+        if (scan.result() != Building.validationResult.SUCCESS) {
+            return scan.result();
+        }
+        Village village = scan.village();
+        Building existing = village == null ? null : village.getBuilding(expectedBuildingId).orElse(null);
+        if (existing == null || !existing.isStrictScan()) {
+            return Building.validationResult.NOT_IN_BUILDING;
+        }
+        if (forcedType != null && !scan.matchesType(forcedType)) {
+            return Building.validationResult.INVALID_TYPE;
+        }
+        if (forcedType == null && scan.isAmbiguous()) {
+            return Building.validationResult.INVALID_TYPE;
+        }
+        Building scanned = scan.building();
+        if (forcedType != null) {
+            scanned.setTypeForced(true);
+            scanned.setType(forcedType);
+        } else {
+            scanned.setTypeForced(false);
+            scanned.determineType();
+        }
+        existing.updateFrom(scanned, world.getGameTime());
+        village.calculateDimensions();
+        village.recalculateRoomTypes(existing.getStructureId());
+        village.markDirty();
+        return Building.validationResult.SUCCESS;
+    }
+
+    public BuildingEditResult removeBuilding(BlockPos pos) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building target = village == null ? null : village.getBuildingAt(pos).orElse(null);
+        if (target == null) {
+            return BuildingEditResult.NO_BUILDING;
+        }
+        int structureId = target.getStructureId();
+        List<Integer> members = village.getBuildings().values().stream()
+                .filter(building -> building.getStructureId() == structureId)
+                .map(Building::getId).toList();
+        members.forEach(village::removeBuilding);
+        if (village.getBuildings().isEmpty()) {
+            villages.remove(village.getId());
+        }
+        setDirty();
+        return BuildingEditResult.SUCCESS;
+    }
+
+    public BuildingEditResult removeRoom(BlockPos pos) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        if (village == null) {
+            return BuildingEditResult.NO_BUILDING;
+        }
+        Building room = village.getFunctionalRoomAt(pos).orElse(null);
+        if (room == null) {
+            return village.getBuildingAt(pos).isPresent() ? BuildingEditResult.NO_ROOM : BuildingEditResult.NO_BUILDING;
+        }
+        if (village.isMainRoom(room)) {
+            return BuildingEditResult.CANNOT_REMOVE_MAIN_ROOM;
+        }
+        village.removeBuilding(room.getId());
+        setDirty();
+        return BuildingEditResult.SUCCESS;
+    }
+
+    public boolean setRoomInheritance(BlockPos pos, boolean enabled) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building room = village == null ? null : village.getFunctionalRoomAt(pos).orElse(null);
+        if (room == null || room.isInheritanceEnabled() == enabled) {
+            return false;
+        }
+        room.setInheritanceEnabled(enabled);
+        village.recalculateRoomTypes(room.getStructureId());
+        village.markDirty();
+        return true;
+    }
+
+    public boolean forceRoomType(BlockPos pos, String type) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building building = village == null ? null : village.getBuildingAt(pos).orElse(null);
+        if (building == null) {
+            return false;
+        }
+        if (building.getType().equals(type)) {
+            building.setTypeForced(false);
+            building.determineType();
+        } else {
+            building.setTypeForced(true);
+            building.setType(type);
+        }
+        village.markDirty();
+        return true;
+    }
+
+    public BuildingEditResult toggleMainRoom(BlockPos pos) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        if (village == null) {
+            return BuildingEditResult.NO_BUILDING;
+        }
+        Building room = village.getFunctionalRoomAt(pos).orElse(null);
+        if (room == null) {
+            return BuildingEditResult.NO_ROOM;
+        }
+        boolean changed = village.isMainRoomAutomatic(room)
+                ? village.setMainRoom(room)
+                : village.useAutomaticMainRoom(room);
+        return changed ? BuildingEditResult.SUCCESS : BuildingEditResult.NO_ROOM;
+    }
+
+    public Building.validationResult fullScan(Village village) {
+        Building.validationResult result = Building.validationResult.SUCCESS;
+        for (Building building : village.getBuildings().values().stream().toList()) {
+            Building.validationResult current = processBuilding(building.getSourceBlock(), true, building.isStrictScan());
+            if (current != Building.validationResult.SUCCESS) {
+                result = current;
+            }
+        }
+        return result;
+    }
+
     public Building.validationResult commitBuilding(BuildingScanResult scan, String forcedType) {
         if (scan.result() != Building.validationResult.SUCCESS) {
             return scan.result();
@@ -415,5 +640,11 @@ public class VillageManager extends SavedData implements Iterable<Village> {
     public void merge(Village into, Village from) {
         into.merge(from);
     }
-}
 
+    public enum BuildingEditResult {
+        SUCCESS,
+        NO_BUILDING,
+        NO_ROOM,
+        CANNOT_REMOVE_MAIN_ROOM
+    }
+}

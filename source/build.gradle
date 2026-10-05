@@ -29,7 +29,7 @@ allprojects {
     }
 }
 
-def mod_version = "8.1.13.1"
+def mod_version = "8.1.14"
 
 def getAppVersion = { ->
     try {
@@ -53,5 +53,13 @@ subprojects {
     apply plugin: 'base'
     base {
         archivesName = "mcarem"
+    }
+
+    if (name in ['fabric', 'neoforge']) {
+        def modLoader = name
+        tasks.withType(AbstractArchiveTask).configureEach {
+            archiveBaseName.set("mcarem-${modLoader}-${mod_version}+${rootProject.minecraft_version}")
+            archiveVersion.set('')
+        }
     }
 }

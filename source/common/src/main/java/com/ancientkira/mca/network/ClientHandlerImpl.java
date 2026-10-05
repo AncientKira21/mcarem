@@ -265,6 +265,7 @@ public class ClientHandlerImpl implements ClientHandler {
 
     @Override
     public void handleBuildingPolymorph(BuildingPolymorphMessage message) {
-        client.setScreen(new BuildingPolymorphScreen(message.matchingTypes(), message.scanPos(), message.isRoom()));
+        client.setScreen(new BuildingPolymorphScreen(message.matchingTypes(), message.scanPos(),
+                message.action(), message.targetBuildingId()));
     }
 }

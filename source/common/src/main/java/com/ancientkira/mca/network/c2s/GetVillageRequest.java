@@ -23,6 +23,10 @@ public record GetVillageRequest() implements HandleablePayload {
 
     @Override
     public void handleServer(ServerPlayer player) {
+        sendResponse(player);
+    }
+
+    public static void sendResponse(ServerPlayer player) {
         Optional<Village> village = Village.findNearest(player);
         if (village.isPresent()) {
             GraveyardManager.get(player.level()).reportToVillageManager(player);

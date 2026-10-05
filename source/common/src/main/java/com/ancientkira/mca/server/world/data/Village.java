@@ -5,6 +5,7 @@ import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.ai.Memories;
 import com.ancientkira.mca.resources.API;
 import com.ancientkira.mca.resources.BuildingTypes;
+import com.ancientkira.mca.resources.data.BuildingType;
 import com.ancientkira.mca.server.world.data.villageComponents.*;
 import com.ancientkira.mca.util.BlockBoxExtended;
 import com.ancientkira.mca.util.NbtHelper;
@@ -12,6 +13,7 @@ import com.ancientkira.mca.util.WorldUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.Vec3i;
+import net.minecraft.resources.Identifier;
 import net.minecraft.nbt.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -29,6 +31,7 @@ public class Village implements Iterable<Building> {
     public static final int PLAYER_BORDER_MARGIN = 32;
     public static final int BORDER_MARGIN = 48;
     public static final int MERGE_MARGIN = 64;
+    private static final int MAX_FLOOR_ATTACHMENT_GAP = 4;
     private static final int MOVE_IN_COOLDOWN = 1200;
     private static final long BED_SYNC_TIME = 200;
 
@@ -36,6 +39,7 @@ public class Village implements Iterable<Building> {
 
     private final ServerLevel world;
     private final Map<Integer, Building> buildings = new HashMap<>();
+    private final Map<Integer, Integer> mainRoomOverrides = new HashMap<>();
     private final int id;
     private final VillageGuardsManager villageGuardsManager = new VillageGuardsManager(this);
     private final VillageInnManager villageInnManager = new VillageInnManager(this);
@@ -93,6 +97,11 @@ public class Village implements Iterable<Building> {
                 buildings.put(building.getId(), building);
             }
         }
+        ListTag savedMainRooms = v.getList("mainRoomOverrides").orElseGet(ListTag::new);
+        for (int i = 0; i < savedMainRooms.size(); i++) {
+            CompoundTag entry = savedMainRooms.getCompound(i).orElseGet(CompoundTag::new);
+            mainRoomOverrides.put(entry.getInt("structureId").orElse(-1), entry.getInt("roomId").orElse(-1));
+        }
 
         if (!buildings.isEmpty()) {
             calculateDimensions();
@@ -124,9 +133,17 @@ public class Village implements Iterable<Building> {
     }
 
     public void removeBuilding(int id) {
-        buildings.remove(id);
+        Building removed = buildings.remove(id);
+        if (removed != null && Objects.equals(mainRoomOverrides.get(removed.getStructureId()), id)) {
+            mainRoomOverrides.put(removed.getStructureId(), -1);
+        }
+        if (removed != null) {
+            recalculateRoomTypes(removed.getStructureId());
+        }
         if (!buildings.isEmpty()) {
             calculateDimensions();
+        } else {
+            box = new BlockBoxExtended(0, 0, 0, 0, 0, 0);
         }
         markDirty();
     }
@@ -137,6 +154,165 @@ public class Village implements Iterable<Building> {
 
     public Optional<Building> getBuildingAt(Vec3i pos) {
         return getBuildings().values().stream().filter(b -> b.containsPos(pos)).findAny();
+    }
+
+    public Optional<Building> getFunctionalRoomAt(BlockPos pos) {
+        return buildings.values().stream()
+                .filter(Building::isStrictScan)
+                .filter(building -> building.containsPos(pos))
+                .min(Comparator.comparingLong(Village::boundsVolume));
+    }
+
+    public RoomScanPlan getRoomScanPlan(BlockPos pos) {
+        Optional<Building> containing = buildings.values().stream()
+                .filter(building -> !building.getBuildingType().grouped())
+                .filter(building -> building.containsPos(pos))
+                .min(Comparator.comparing((Building building) -> !building.isStrictScan())
+                        .thenComparingLong(Village::boundsVolume));
+        if (containing.isPresent()) {
+            Building building = containing.get();
+            return building.isStrictScan()
+                    ? RoomScanPlan.updateRoom(building, pos)
+                    : RoomScanPlan.addRoom(building, pos);
+        }
+
+        Building attachment = buildings.values().stream()
+                .filter(Building::isComplete)
+                .filter(building -> pos.getX() >= building.getPos0().getX()
+                        && pos.getX() <= building.getPos1().getX()
+                        && pos.getZ() >= building.getPos0().getZ()
+                        && pos.getZ() <= building.getPos1().getZ())
+                .filter(building -> Math.min(Math.abs(pos.getY() - building.getPos0().getY()),
+                        Math.abs(pos.getY() - building.getPos1().getY())) <= MAX_FLOOR_ATTACHMENT_GAP)
+                .min(Comparator.comparingInt(building -> Math.min(
+                        Math.abs(pos.getY() - building.getPos0().getY()),
+                        Math.abs(pos.getY() - building.getPos1().getY()))))
+                .orElse(null);
+        if (attachment != null) {
+            boolean basement = pos.getY() < attachment.getPos0().getY();
+            int floor = attachment.getFloorNumber() + (basement ? -1 : 1);
+            return RoomScanPlan.attachment(attachment.getId(), floor, pos);
+        }
+        return RoomScanPlan.addBuilding(pos);
+    }
+
+    private static long boundsVolume(Building building) {
+        BlockPos min = building.getPos0();
+        BlockPos max = building.getPos1();
+        return (long) (max.getX() - min.getX() + 1)
+                * (max.getY() - min.getY() + 1)
+                * (max.getZ() - min.getZ() + 1);
+    }
+
+    public Optional<Building> getMainRoom(Building room) {
+        if (room == null) {
+            return Optional.empty();
+        }
+        int structureId = room.getStructureId();
+        int mainRoomId = mainRoomOverrides.getOrDefault(structureId, -1);
+        if (mainRoomId >= 0) {
+            Optional<Building> selected = Optional.ofNullable(buildings.get(mainRoomId))
+                    .filter(candidate -> candidate.getStructureId() == structureId && candidate.isStrictScan());
+            if (selected.isPresent()) {
+                return selected;
+            }
+        }
+        return buildings.values().stream()
+                .filter(candidate -> candidate.getStructureId() == structureId && candidate.isStrictScan())
+                .min(Comparator.comparingInt(Building::getFloorNumber).thenComparingInt(Building::getId));
+    }
+
+    public boolean isMainRoom(Building room) {
+        return room != null && getMainRoom(room).map(main -> main.getId() == room.getId()).orElse(false);
+    }
+
+    public boolean isMainRoomAutomatic(Building room) {
+        return room == null || mainRoomOverrides.getOrDefault(room.getStructureId(), -1) < 0;
+    }
+
+    public boolean setMainRoom(Building room) {
+        if (room == null || !room.isStrictScan() || buildings.get(room.getId()) != room) {
+            return false;
+        }
+        if (Objects.equals(mainRoomOverrides.get(room.getStructureId()), room.getId())) {
+            return false;
+        }
+        mainRoomOverrides.put(room.getStructureId(), room.getId());
+        recalculateRoomTypes(room.getStructureId());
+        markDirty();
+        return true;
+    }
+
+    public boolean useAutomaticMainRoom(Building room) {
+        if (room == null || !room.isStrictScan() || buildings.get(room.getId()) != room
+                || isMainRoomAutomatic(room)) {
+            return false;
+        }
+        mainRoomOverrides.put(room.getStructureId(), -1);
+        recalculateRoomTypes(room.getStructureId());
+        markDirty();
+        return true;
+    }
+
+    public void recalculateRoomTypes(int structureId) {
+        List<Building> rooms = buildings.values().stream()
+                .filter(Building::isStrictScan)
+                .filter(room -> room.getStructureId() == structureId)
+                .sorted(Comparator.comparingInt(Building::getId))
+                .toList();
+        if (rooms.isEmpty()) {
+            return;
+        }
+        Building main = getMainRoom(rooms.getFirst()).orElse(null);
+        for (Building room : rooms) {
+            if (room.isTypeForced()) {
+                continue;
+            }
+            if (room != main) {
+                room.setType(room.getVisibleMatchingTypes().stream().findFirst().map(BuildingType::name).orElse("building"));
+                continue;
+            }
+
+            Map<Identifier, LinkedHashSet<BlockPos>> combined = new HashMap<>();
+            mergePoi(combined, room.getBlocks());
+            if (room.isInheritanceEnabled()) {
+                rooms.stream()
+                        .filter(contributor -> contributor != room && contributor.isInheritanceEnabled())
+                        .forEach(contributor -> mergePoi(combined, contributor.getBlocks()));
+            }
+            Map<Identifier, List<BlockPos>> effective = new HashMap<>();
+            combined.forEach((id, positions) -> effective.put(id, List.copyOf(positions)));
+            BuildingType inheritedType = matchingTypes(effective).stream()
+                    .findFirst().orElse(null);
+            room.setType(inheritedType == null ? "house" : inheritedType.name());
+        }
+        markDirty();
+    }
+
+    private static List<BuildingType> matchingTypes(Map<Identifier, List<BlockPos>> poi) {
+        List<BuildingType> matchingTypes = BuildingTypes.getInstance().getBuildingTypes().values().stream()
+                    .filter(type -> !type.grouped())
+                    .filter(type -> {
+                        Map<Identifier, List<BlockPos>> grouped = type.getGroups(poi);
+                        return type.getGroups().entrySet().stream().allMatch(entry ->
+                                grouped.getOrDefault(entry.getKey(), List.of()).size() >= entry.getValue());
+                    })
+                    .sorted(Comparator.comparingInt(BuildingType::priority).reversed().thenComparing(BuildingType::name))
+                    .filter(type -> type.visible() || type.name().equals("house"))
+                    .filter(type -> !type.name().equals("blocked") && !type.name().equals("building"))
+                    .toList();
+        boolean hasBigHouse = matchingTypes.stream().anyMatch(type -> type.name().equals("big_house"));
+        return hasBigHouse ? matchingTypes.stream().filter(type -> !type.name().equals("house")).toList() : matchingTypes;
+    }
+
+    private static void mergePoi(Map<Identifier, LinkedHashSet<BlockPos>> destination,
+                                 Map<Identifier, List<BlockPos>> source) {
+        source.forEach((id, positions) -> destination.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).addAll(positions));
+    }
+
+    public List<Integer> getFloorOrdinals() {
+        return buildings.values().stream().filter(Building::isComplete)
+                .map(Building::getFloorNumber).distinct().sorted().toList();
     }
 
     public void calculateDimensions() {
@@ -204,7 +380,10 @@ public class Village implements Iterable<Building> {
     }
 
     public void setAutoScan(boolean autoScan) {
-        this.autoScan = autoScan;
+        if (this.autoScan != autoScan) {
+            this.autoScan = autoScan;
+            markDirty();
+        }
     }
 
     public void toggleAutoScan() {
@@ -390,12 +569,21 @@ public class Village implements Iterable<Building> {
         v.putFloat("marriageThresholdFloat", marriageThreshold);
         v.put("buildings", NbtHelper.fromList(buildings.values(), Building::save));
         v.putBoolean("autoScan", autoScan);
+        v.put("mainRoomOverrides", NbtHelper.fromList(mainRoomOverrides.entrySet(), entry -> {
+            CompoundTag mainRoom = new CompoundTag();
+            mainRoom.putInt("structureId", entry.getKey());
+            mainRoom.putInt("roomId", entry.getValue());
+            return mainRoom;
+        }));
         return v;
     }
 
     public void merge(Village village) {
         buildings.putAll(village.buildings);
+        mainRoomOverrides.putAll(village.mainRoomOverrides);
         calculateDimensions();
+        buildings.values().stream().map(Building::getStructureId).distinct()
+                .forEach(this::recalculateRoomTypes);
     }
 
     public boolean isVillage() {
@@ -434,5 +622,17 @@ public class Village implements Iterable<Building> {
 
     public Optional<CivilRegistryManager> getCivilRegistry() {
         return world != null ? Optional.of(CivilRegistryManager.get(world, this)) : Optional.empty();
+    }
+
+    public enum RoomScanMode {
+        ADD_BUILDING,
+        ADD_ROOM,
+        UPDATE_ROOM,
+        ADD_FLOOR,
+        ADD_BASEMENT;
+
+        public boolean isAttachment() {
+            return this == ADD_FLOOR || this == ADD_BASEMENT;
+        }
     }
 }
