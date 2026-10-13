@@ -82,9 +82,9 @@ Once you have finished modifying the contents, head over to gradle.properties an
 ### Baking
 Once you have finished modifying, go to the `source` folder and type:
 ```zsh
-./gradlew clean build
+./buildmca
 ```
-And the build will start. 
+And the build will start. Alternatively, use `./buildmca --version <version>` to build for specificversions.
 This builds Fabric and NeoForge for Minecraft 26.1.2, 26.2, and 26.3. All three versions
 are kept together in each loader's `build/libs/` folder.
 
@@ -153,37 +153,3 @@ Following mods have the required resource packs included and are therefore fully
 - And many more!
 
 Licensed under the [GNU General Public License v3.0](LICENSE).
-
-### Pillagers and marriage proposal mail
-
-Vanilla pillagers are converted to adult `mca:person` villagers with the `mca:pillager` profession. Pillagers remain hostile, use crossbows, attack players, villagers and iron golems, and are opposed by guards and golems. Conversion keeps their name, UUID, health, equipment, passengers and active raid membership. Raid waves and health bars include converted Pillagers; captain banners and ominous bottle drops are retained. The `mca:pillager_spawn_egg` creates an adult person with this profession, including through dispensers and spawners. Disable conversion with `overwriteOriginalPillagers` if desired.
-
-Happy adult people with the required marriage affection can send a named marriage proposal through the existing mail inbox. They respect attraction, family relationships and existing partners. The letter offers clickable **Yes** and **No** responses. Yes marries both parties after checking eligibility again; No dismisses the proposal. Proposals survive saving, expire after seven Minecraft days, and cannot be accepted twice or by another player. Visit an unloaded sender before accepting. Eligible nearby people have a 25% chance per Minecraft day to propose, with a seven-day cooldown after sending; configure `villagerMarriageProposalChance` or disable `enableVillagerMarriageProposals`. The existing mail setting also applies.
-
-### MCA Vindicators, Evokers and Witches
-
-`mca:vindicator`, `mca:evoker` and `mca:witch` are hostile professions on the shared `mca:person` entity, each with its own spawn egg. Vanilla counterparts convert automatically, including during raids, and retain UUIDs, names, health, effects, equipment and raid membership. Individual conversion switches are `overwriteOriginalVindicators`, `overwriteOriginalEvokers` and `overwriteOriginalWitches`.
-
-Vindicators wield iron axes. Evokers use timed fang spells and summon owner-linked, limited-lifetime Vexes, with a limit of six nearby owned Vexes. Witches drink defensive potions, throw offensive splash potions at players or attackers, and support injured members of their own active raid with healing or regeneration. Witches do not initiate attacks on civilian villagers. Spellcasters use distance and spell/potion cooldowns instead of the guard melee routine. Guards, archers and golems recognize all these professions as enemies. Evokers retain totem drops, Witches retain their ingredient loot and magic resistance, and Vindicators retain emerald loot. All four professions remain part of vanilla raid wave counts and health bars; their profession eggs also preserve their jobs in ordinary spawners.
-
-### Raider professions in Peaceful mode
-
-Hostile mobs seek ordinary MCA people and vanilla villagers as attack targets, using their native attack behavior. They ignore MCA Pillagers, Vindicators, Evokers and Witches as attack targets. This also rejects retaliation targets and clears existing mob or brain attack targets. Guards and golems can still oppose hostile raider professions outside Peaceful mode.
-
-In Peaceful mode these people remain in the world and keep their saved professions, but use ordinary unemployed villager routines, seek homes, socialize and stop attacking or casting. Guards and golems no longer treat them as enemies. Difficulty changes clear combat state and refresh their routines once; returning to Easy, Normal or Hard restores their raider behavior. Entering Peaceful mode removes their previous raid membership.
-
-### Raider friendship, families and editor tools
-
-All raider professions appear in family trees, civil records and revival searches like other people; only the Blueprint **Villagers** list hides them. Real family links remain available, and raiders never choose their relatives or partners as attack targets. Unknown players are initially neutral. A positive interaction with an ordinary villager marks the player as a villager friend and makes uncontacted raiders hostile. While a raider's interaction menu is open, all MCA raiders pause their attacks on that player, including Johnny; they remain hostile to other players. Closing the menu ends the pause. A positive interaction befriends only that raider, and a negative interaction makes that raider hostile again even after earlier positive hearts. Attacks can still provoke retaliation. Raiders never convert automatically from friendship. Choose **Redeem from Raider** in Talk to ask them to become an ordinary villager. It uses the adventurer **Ask to stay** acceptance chances, repeat-request memory and village-space checks. Acceptance retains their UUID, family and friendship while ending their raid membership. Raiders stand their ground in combat instead of fleeing, with no panic animation, panic screams or hurt/badly-hurt dialogue. Guards and archers can catch raiders: pursuit limits their speed. Iron golems still damage raiders normally.
-
-Villagers do not lose mood or mourn when a raider dies, but family and spouse records still update. Raiders only grieve deaths of their own relatives or spouse. Raiders remain eligible for revival. The Villager Editor's **Misc** tab includes Pillager, Vindicator, Evoker and Witch professions. Naming a Vindicator **Johnny** through the editor or a name tag makes it attack living non-raiders, including animals, hostile mobs, relatives and Survival players. Vanilla raiders and people with raider professions are spared; Creative/Spectator players, players talking to a raider or befriended by that Vindicator and Peaceful mode remain protected.
-
-Two shapeless recipes unlock when you obtain the Book of Supporters: **Book of Supporters + Staff of Life → Villager Reviver**, and **Book of Supporters + Feather → Villager Editor**.
-
-### MCA wandering traders
-
-Inn traders and former cultist villagers use the `mca:wandering_trader` profession. They remain MCA people with their names, personalities and relationships, and offer normal Minecraft wandering-trader trades. Existing cultist villagers migrate on loading and discard their old cultist trade offers. The Misc editor tab exposes Wandering Trader.
-
-### Cleric rescue
-
-Guards and archers at 25% health or lower call for a cleric. The nearest available healthy cleric within 32 blocks answers, approaches and throws beneficial splash potions: strong healing for critical wounds, regeneration or healing for recovery, and fire resistance when the defender is burning. Throws have a three-second cooldown. At 85% health, once burning ends, the cleric resumes their normal work schedule. Rescue assignments also end if the patient dies, moves out of range, changes jobs, or cannot be reached within 30 seconds.
