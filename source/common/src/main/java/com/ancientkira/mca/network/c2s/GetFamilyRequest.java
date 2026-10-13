@@ -40,6 +40,8 @@ public record GetFamilyRequest() implements HandleablePayload {
                     nbt.remove("Inventory");
                     familyData.put(e.getUUID().toString(), nbt);
                 });
+        com.ancientkira.mca.server.world.data.VillagerTrackerManager.get(player.level()).getCaptives()
+                .forEach((id, data) -> familyData.put(id.toString(), data.copy()));
         Network.sendToPlayer(new GetFamilyResponse(familyData), player);
     }
 

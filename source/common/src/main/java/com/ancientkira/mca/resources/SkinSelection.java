@@ -25,9 +25,15 @@ public final class SkinSelection {
         return entryGender == Gender.NEUTRAL || gender == Gender.NEUTRAL || gender == Gender.UNASSIGNED || entryGender == gender;
     }
 
+    public static boolean canWearClothing(Clothing clothing, Gender gender) {
+        // This shirtless outfit is the sole exception to shared clothing.
+        return !clothing.getIdentifier().equals("mca:skins/clothing/normal/male/shepherd/1.png")
+                || gender == Gender.MALE;
+    }
+
     public static List<Clothing> editorClothing(Collection<Clothing> available, Gender gender) {
         return available.stream()
-                .filter(clothing -> matchesGender(clothing, gender))
+                .filter(clothing -> canWearClothing(clothing, gender))
                 .filter(clothing -> !clothing.exclude)
                 .sorted((a, b) -> SkinListEntry.compareIdentifiers(a.getIdentifier(), b.getIdentifier()))
                 .toList();
@@ -41,13 +47,18 @@ public final class SkinSelection {
         }
 
         String profession = BuiltInRegistries.VILLAGER_PROFESSION.getKey(villager.getVillagerData().profession().value()).toString();
+        if (profession.equals("mca:wandering_trader")) {
+            return clothingForProfession(available, gender, profession);
+        }
         List<Clothing> options = clothingForProfession(available, gender, mapProfession(profession, professionConversions));
         return options.isEmpty() ? clothingForProfession(available, gender, mapProfession("minecraft:none", professionConversions)) : options;
     }
 
     public static List<Clothing> clothingForProfession(Collection<Clothing> available, Gender gender, @Nullable String profession) {
         return available.stream()
-                .filter(clothing -> matchesGender(clothing, gender))
+                .filter(clothing -> canWearClothing(clothing, gender))
+                .filter(clothing -> !"mca:wandering_trader".equals(profession)
+                        || clothing.getIdentifier().contains("/cultist/"))
                 .filter(clothing -> clothing.profession == null
                         || profession == null && !clothing.exclude
                         || profession != null && (clothing.profession.equals(profession) || clothing.profession.equals(profession.replace(":", "."))))

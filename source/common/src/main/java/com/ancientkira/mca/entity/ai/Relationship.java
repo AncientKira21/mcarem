@@ -81,7 +81,11 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
     @NotNull
     @Override
     public FamilyTreeNode getFamilyEntry() {
-        return getFamilyTree().getOrCreate(entity);
+        FamilyTreeNode entry = getFamilyTree().getOrCreate(entity);
+        if (entity.isAlive() && !entry.hasAppearanceData()) {
+            entry.setAppearanceData(entity);
+        }
+        return entry;
     }
 
     private Optional<BlockPos> placeTombstone(ServerLevel world, BlockPos entityPos) {
@@ -121,16 +125,25 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
     public void onDeath(DamageSource cause) {
         MinecraftServer server = entity.level().getServer();
         if (server != null) {
+            FamilyTreeNode familyEntry = getFamilyEntry();
+            familyEntry.setAppearanceData(entity);
+            familyEntry.setRevivalData(entity);
+            familyEntry.setDeceased(true);
             server.schedule(server.wrapRunnable(() -> finalizeDeath(cause)));
         }
     }
 
     private void finalizeDeath(DamageSource cause) {
+        // A quick revival can happen before this deferred burial task runs.
+        if (entity.isAlive() || !getFamilyEntry().isDeceased()) return;
         boolean beRemembered = getFamilyEntry().willBeRemembered();
+        boolean raider = entity instanceof VillagerEntityMCA person
+                && com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession());
         boolean beLoved = entity.getVillagerBrain().getMemories().values().stream().anyMatch(m -> m.getHearts() > Config.getInstance().heartsRequiredToAutoSpawnGravestone);
 
-        if (beRemembered || beLoved || !entity.isHostile()) {
-            getFamilyEntry().setDeceased(true);
+        if (beRemembered || beLoved || !entity.isHostile() || raider) {
+            FamilyTreeNode familyEntry = getFamilyEntry();
+            familyEntry.setDeceased(true);
 
             ServerLevel world = (ServerLevel) entity.level();
 
@@ -157,13 +170,8 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
             onTragedy(cause, null);
         }
 
-        // the family is too small to be remembered
-        if (!beRemembered) {
-            getFamilyEntry().streamParents().forEach(uuid -> {
-                getFamilyTree().remove(uuid);
-            });
-            getFamilyTree().remove(entity.getUUID());
-        }
+        // Retain death snapshots and family links even without surviving relatives:
+        // the reviver must be able to find every newly deceased MCA person.
     }
 
     public void onTragedy(DamageSource cause, @Nullable BlockPos burialSite) {
@@ -179,6 +187,12 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
 
     @Override
     public void onTragedy(DamageSource cause, @Nullable BlockPos burialSite, RelationshipType type, Entity with) {
+        if (with instanceof VillagerEntityMCA victim && com.ancientkira.mca.registry.ProfessionsMCA.isRaider(victim.getProfession())) {
+            EntityRelationship.super.onTragedy(cause, burialSite, type, with);
+            return;
+        }
+        if (entity instanceof VillagerEntityMCA person && com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())
+                && !getFamilyEntry().isRelative(with.getUUID()) && !isMarriedTo(with.getUUID())) return;
         if (!cause.is(DamageTypes.FELL_OUT_OF_WORLD)) {
             int moodAffect = 5 * type.getProximityAmplifier();
             entity.level().broadcastEntityEvent(entity, Status.MCA_VILLAGER_TRAGEDY);
@@ -203,11 +217,31 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
         EntityRelationship.super.onTragedy(cause, burialSite, type, with);
     }
 
+    @Override
+    public void marry(Entity spouse) {
+        boolean alreadyMarried = getFamilyEntry().partner().equals(spouse.getUUID()) && getRelationshipState().isMarried();
+        boolean recordedByPartner = spouse instanceof VillagerEntityMCA
+                && getFamilyTree().getOrEmpty(spouse.getUUID())
+                .map(entry -> entry.partner().equals(entity.getUUID()) && entry.getRelationshipState().isMarried()).orElse(false);
+        if (!alreadyMarried && entity instanceof VillagerEntityMCA person) {
+            com.ancientkira.mca.server.RaiderSocial.onMarriage(person, spouse, !recordedByPartner);
+        }
+        EntityRelationship.super.marry(spouse);
+        if (!alreadyMarried && !recordedByPartner && entity instanceof VillagerEntityMCA person) {
+            person.getResidency().getRegistryVillage().flatMap(com.ancientkira.mca.server.world.data.Village::getCivilRegistry)
+                    .ifPresent(registry -> registry.addText(net.minecraft.network.chat.Component.translatable(
+                            "events.marry", entity.getName(), spouse.getName())));
+        }
+    }
+
     public GiftSaturation getGiftSaturation() {
         return giftSaturation;
     }
 
     public void readFromNbt(CompoundTag nbt) {
+        if (entity instanceof VillagerEntityMCA person && com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())) {
+            nbt.getCompound("PrivateRaiderFamily").ifPresent(data -> getFamilyTree().restoreRaiderFamily(entity.getUUID(), data));
+        }
         giftSaturation.readFromNbt(nbt.getList("GiftSaturationQueue").orElseGet(net.minecraft.nbt.ListTag::new));
     }
 

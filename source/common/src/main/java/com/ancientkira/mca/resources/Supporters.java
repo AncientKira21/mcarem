@@ -34,6 +34,8 @@ public class Supporters extends SimpleJsonResourceReloadListener<JsonElement> {
 
     @Override
     protected void apply(Map<Identifier, JsonElement> prepared, ResourceManager manager, ProfilerFiller profiler) {
+        supporters.clear();
+        supporterGroups.clear();
         for (Map.Entry<Identifier, JsonElement> pair : prepared.entrySet()) {
             List<String> strings = supporterGroups.computeIfAbsent(pair.getKey().toString(), x -> new LinkedList<>());
             for (JsonElement e : pair.getValue().getAsJsonArray()) {
@@ -44,6 +46,6 @@ public class Supporters extends SimpleJsonResourceReloadListener<JsonElement> {
     }
 
     public String pickSupporter() {
-        return PoolUtil.pickOne(supporters, "nobody", rng);
+        return PoolUtil.pickOne(supporters, "someone", rng);
     }
 }

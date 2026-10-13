@@ -33,6 +33,7 @@ public interface MessagesMCA {
         c.register(CustomSkinListRequest.TYPE, CustomSkinListRequest.STREAM_CODEC, true);
         c.register(VillagerEditorSyncRequest.TYPE, VillagerEditorSyncRequest.STREAM_CODEC, true);
         c.register(VillagerNameRequest.TYPE, VillagerNameRequest.STREAM_CODEC, true);
+        c.register(VillagerReviverActionMessage.TYPE, VillagerReviverActionMessage.STREAM_CODEC, true);
         c.register(ConfirmBuildingPolymorphMessage.TYPE, ConfirmBuildingPolymorphMessage.STREAM_CODEC, true);
 
         c.register(AnalysisResults.TYPE, AnalysisResults.STREAM_CODEC, false);

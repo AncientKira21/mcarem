@@ -25,12 +25,18 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class SpawnQueue {
     private static final SpawnQueue INSTANCE = new SpawnQueue();
+    private final ConcurrentLinkedQueue<net.minecraft.world.entity.raid.Raider> raiderSpawnQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Villager> villagerSpawnQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<ZombieVillager> zombieVillagerSpawnQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Zombie> zombieSpawnList = new ConcurrentLinkedQueue<>();
 
     public static SpawnQueue getInstance() {
         return INSTANCE;
+    }
+
+    public boolean isQueuedRaider(Entity entity) {
+        return entity instanceof net.minecraft.world.entity.raid.Raider raider
+                && raiderSpawnQueue.contains(raider);
     }
 
     public static boolean shouldGetConverted(Entity entity) {
@@ -43,6 +49,51 @@ public class SpawnQueue {
     }
 
     public void tick() {
+        com.ancientkira.mca.MCA.getServer().ifPresent(BulkRevival::tick);
+        com.ancientkira.mca.MCA.getServer().ifPresent(server ->
+                com.ancientkira.mca.server.world.data.VillagerTrackerManager.get(server.overworld()).tickRescueRequests(server));
+        net.minecraft.world.entity.raid.Raider pillager = raiderSpawnQueue.poll();
+        if (pillager != null && raiderProfession(pillager) == null) {
+            pillager.level().addFreshEntity(pillager);
+            pillager = null;
+        }
+        if (pillager != null) {
+            ServerLevel world = (ServerLevel) pillager.level();
+            VillagerEntityMCA person = VillagerFactory.newVillager(world)
+                    .withUUID(pillager.getUUID())
+                    .withName(pillager.hasCustomName() ? pillager.getName().getString() : null)
+                    .withAge(0).withPosition(pillager)
+                    .withProfession(raiderProfession(pillager))
+                    .build(EntitySpawnReason.CONVERSION);
+            person.setUUID(pillager.getUUID());
+            // Vanilla raiders have no MCA appearance to preserve during conversion.
+            person.initialize(EntitySpawnReason.EVENT);
+            person.finalizeSpawn(world, world.getCurrentDifficultyAt(person.blockPosition()), EntitySpawnReason.CONVERSION, null);
+            person.setProfession(raiderProfession(pillager));
+            person.setYRot(pillager.getYRot());
+            person.setXRot(pillager.getXRot());
+            person.setDeltaMovement(pillager.getDeltaMovement());
+            person.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MAX_HEALTH).setBaseValue(pillager.getMaxHealth());
+            person.setHealth(pillager.getHealth());
+            copyPastaIntensifies(person, pillager);
+            pillager.getActiveEffects().forEach(effect -> person.addEffect(new net.minecraft.world.effect.MobEffectInstance(effect)));
+            for (net.minecraft.world.entity.EquipmentSlot slot : net.minecraft.world.entity.EquipmentSlot.values()) {
+                net.minecraft.world.item.ItemStack stack = pillager.getItemBySlot(slot).copy();
+                person.setItemSlot(slot, stack);
+                if (!stack.isEmpty()) person.getInventory().addItem(stack.copy());
+            }
+            if (world.addFreshEntity(person)) {
+                PillagerRaids.transfer(pillager, person);
+                Entity vehicle = pillager.getVehicle();
+                pillager.stopRiding();
+                if (vehicle != null) person.startRiding(vehicle);
+                for (Entity passenger : java.util.List.copyOf(pillager.getPassengers())) passenger.startRiding(person);
+                pillager.discard();
+            } else {
+                raiderSpawnQueue.add(pillager);
+            }
+        }
+
         // After testing with 10k chunk radius with chunky pregen it seems the checks are not needed.
         // The queue system did not work properly and would build up overtime if villages arnt loaded near the player, and would clear on server stop resulting in empty villages anyways.
         // The chunk loaded check apparently does not function properly in this context, this is shown by villagers spawning fine without it, but NEVER spawn with it if far away and JUST generated.
@@ -107,6 +158,11 @@ public class SpawnQueue {
     }
 
     public boolean addVillager(Entity entity) {
+        if (entity instanceof net.minecraft.world.entity.raid.Raider raider
+                && raiderProfession(raider) != null && entity.level() instanceof ServerLevel
+                && !raiderSpawnQueue.contains(raider)) {
+            return raiderSpawnQueue.add(raider);
+        }
         if (entity instanceof IVillagerEntity villagerEntity && !handlesSpawnReason(villagerEntity.mca$getSpawnReason())) {
             return false;
         }
@@ -133,6 +189,20 @@ public class SpawnQueue {
             return zombieSpawnList.add((Zombie) entity);
         }
         return false;
+    }
+
+    public static VillagerProfession raiderProfession(net.minecraft.world.entity.raid.Raider raider) {
+        Config config = Config.getInstance();
+        Class<?> type = raider.getClass();
+        if (type == net.minecraft.world.entity.monster.illager.Pillager.class && config.overwriteOriginalPillagers)
+            return com.ancientkira.mca.registry.ProfessionsMCA.PILLAGER;
+        if (type == net.minecraft.world.entity.monster.illager.Vindicator.class && config.overwriteOriginalVindicators)
+            return com.ancientkira.mca.registry.ProfessionsMCA.VINDICATOR;
+        if (type == net.minecraft.world.entity.monster.illager.Evoker.class && config.overwriteOriginalEvokers)
+            return com.ancientkira.mca.registry.ProfessionsMCA.EVOKER;
+        if (type == net.minecraft.world.entity.monster.Witch.class && config.overwriteOriginalWitches)
+            return com.ancientkira.mca.registry.ProfessionsMCA.WITCH;
+        return null;
     }
 
     private boolean handlesSpawnReason(EntitySpawnReason reason) {

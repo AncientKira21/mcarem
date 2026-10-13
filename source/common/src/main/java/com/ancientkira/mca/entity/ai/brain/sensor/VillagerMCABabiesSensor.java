@@ -27,7 +27,7 @@ public class VillagerMCABabiesSensor extends Sensor<LivingEntity> {
     }
 
     private boolean isVillagerBaby(LivingEntity entity) {
-        return (entity.getType() == EntitiesMCA.FEMALE_VILLAGER || entity.getType() == EntitiesMCA.MALE_VILLAGER) && entity.isBaby();
+        return (entity.getType() == EntitiesMCA.PERSON) && entity.isBaby();
     }
 
     private NearestVisibleLivingEntities getVisibleMobs(LivingEntity entity) {

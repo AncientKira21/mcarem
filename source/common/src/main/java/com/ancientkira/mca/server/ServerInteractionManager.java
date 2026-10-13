@@ -56,6 +56,9 @@ public class ServerInteractionManager {
 
     public void onPlayerJoin(ServerPlayer player) {
         PlayerSaveData playerData = PlayerSaveData.get(player);
+        if (playerData.markWelcome820Shown()) {
+            Network.sendToPlayer(new ShowToastRequest("gui.destiny.welcome", "gui.destiny.version"), player);
+        }
         if (!playerData.isEntityDataSet()) {
             if (Config.getInstance().launchIntoDestiny) {
                 launchDestiny(player);

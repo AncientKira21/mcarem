@@ -26,6 +26,7 @@ public class FamilyTreeSearchScreen extends Screen {
     private List<FamilyTreeSearchEntry> list = new LinkedList<>();
     private ButtonWidget buttonPage;
     private int pageNumber;
+    protected String searchTerm = "";
 
     private FamilyTreeSearchEntry selectedVillager;
 
@@ -33,7 +34,11 @@ public class FamilyTreeSearchScreen extends Screen {
     private int mouseY;
 
     public FamilyTreeSearchScreen() {
-        super(Component.translatable("gui.family_tree.title"));
+        this(Component.translatable("gui.family_tree.title"));
+    }
+
+    protected FamilyTreeSearchScreen(Component title) {
+        super(title);
     }
 
     @Override
@@ -46,6 +51,7 @@ public class FamilyTreeSearchScreen extends Screen {
         EditBox field = addRenderableWidget(new EditBox(this.font, width / 2 - DATA_WIDTH / 2, height / 2 - 80, DATA_WIDTH, 18, Component.translatable("structure_block.structure_name")));
         field.setMaxLength(32);
         field.setResponder(this::searchVillager);
+        field.setValue(searchTerm);
         field.setFocused(true);
         setFocused(field);
 
@@ -82,7 +88,11 @@ public class FamilyTreeSearchScreen extends Screen {
 
         renderVillagers(context);
 
-        context.centeredText(font, Component.translatable("gui.title.family_tree"), width / 2, height / 2 - 100, 16777215);
+        Component searchHint = getSearchHint();
+        if (searchHint != null) {
+            context.centeredText(font, searchHint, width / 2, height / 2 - 60, 0xffaaaaaa);
+        }
+        context.centeredText(font, getTitle(), width / 2, height / 2 - 100, 16777215);
     }
 
     private void renderVillagers(GuiGraphicsExtractor context) {
@@ -94,7 +104,8 @@ public class FamilyTreeSearchScreen extends Screen {
         for (int i = 0; i < RESULTS_PER_PAGE; i++) {
             int index = i + pageNumber * RESULTS_PER_PAGE;
             if (index < list.size()) {
-                int y = height / 2 - 52 + i * (RESULT_ROW_HEIGHT + RESULT_ROW_GAP);
+                int y = height / 2 - 52 + (getSearchHint() == null ? 0 : 4)
+                        + i * (RESULT_ROW_HEIGHT + RESULT_ROW_GAP);
                 boolean hover = isMouseWithin(width / 2 - DATA_WIDTH / 2, y - 1, DATA_WIDTH, RESULT_ROW_HEIGHT);
                 FamilyTreeSearchEntry entry = list.get(index);
 
@@ -113,9 +124,12 @@ public class FamilyTreeSearchScreen extends Screen {
         }
     }
 
-    private void searchVillager(String v) {
+    protected void searchVillager(String v) {
+        searchTerm = v;
         if (!MCA.isBlankString(v)) {
-            Network.sendToServer(new FamilyTreeUUIDLookup(v));
+            Network.sendToServer(new FamilyTreeUUIDLookup(v, false));
+        } else {
+            setList(List.of());
         }
     }
 
@@ -124,20 +138,39 @@ public class FamilyTreeSearchScreen extends Screen {
         pageNumber = Math.min(pageNumber, pageCount() - 1);
     }
 
+    protected void removeSearchResult(UUID villager) {
+        setList(list.stream().filter(entry -> !entry.uuid().equals(villager)).toList());
+    }
+
+    protected boolean deleteVillager(FamilyTreeSearchEntry villager) {
+        return false;
+    }
+
+    protected Component getSearchHint() {
+        return null;
+    }
+
+    public boolean acceptsDeceasedVillagersOnly() {
+        return false;
+    }
+
     protected boolean isMouseWithin(int x, int y, int w, int h) {
         return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
     }
 
     @Override
     public boolean mouseClicked(@NonNull MouseButtonEvent event, boolean doubleClick) {
-        if (selectedVillager != null) {
+        if (selectedVillager != null && event.button() == 0) {
             selectVillager(selectedVillager.name(), selectedVillager.uuid());
+            return true;
+        } else if (selectedVillager != null && event.button() == 1) {
+            return deleteVillager(selectedVillager);
         }
 
         return super.mouseClicked(event, doubleClick);
     }
 
-    void selectVillager(String name, UUID villager) {
+    protected void selectVillager(String name, UUID villager) {
         minecraft.setScreen(new FamilyTreeScreen(villager));
     }
 

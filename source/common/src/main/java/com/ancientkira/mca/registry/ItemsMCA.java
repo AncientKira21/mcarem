@@ -26,11 +26,22 @@ import java.util.stream.Collectors;
 public interface ItemsMCA {
     Map<Identifier, Item> ITEMS = new LinkedHashMap<>();
 
-    Item MALE_VILLAGER_SPAWN_EGG = register("male_villager_spawn_egg", new SpawnEggItem(baseProps("male_villager_spawn_egg").spawnEgg(EntitiesMCA.MALE_VILLAGER)));
-    Item FEMALE_VILLAGER_SPAWN_EGG = register("female_villager_spawn_egg", new SpawnEggItem(baseProps("female_villager_spawn_egg").spawnEgg(EntitiesMCA.FEMALE_VILLAGER)));
+    Item PERSON_SPAWN_EGG = register("person_spawn_egg", new SpawnEggItem(baseProps("person_spawn_egg").spawnEgg(EntitiesMCA.PERSON)));
 
-    Item MALE_ZOMBIE_VILLAGER_SPAWN_EGG = register("male_zombie_villager_spawn_egg", new SpawnEggItem(baseProps("male_zombie_villager_spawn_egg").spawnEgg(EntitiesMCA.MALE_ZOMBIE_VILLAGER)));
-    Item FEMALE_ZOMBIE_VILLAGER_SPAWN_EGG = register("female_zombie_villager_spawn_egg", new SpawnEggItem(baseProps("female_zombie_villager_spawn_egg").spawnEgg(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER)));
+    // Keep saved eggs usable; only the canonical egg appears in the creative tab.
+    Item MALE_VILLAGER_SPAWN_EGG = register("male_villager_spawn_egg", new SpawnEggItem(baseProps("male_villager_spawn_egg").spawnEgg(EntitiesMCA.PERSON)));
+    Item FEMALE_VILLAGER_SPAWN_EGG = register("female_villager_spawn_egg", new SpawnEggItem(baseProps("female_villager_spawn_egg").spawnEgg(EntitiesMCA.PERSON)));
+
+    Item VINDICATOR_SPAWN_EGG = register("vindicator_spawn_egg", new ProfessionSpawnEggItem(baseProps("vindicator_spawn_egg"), "mca:vindicator"));
+    Item EVOKER_SPAWN_EGG = register("evoker_spawn_egg", new ProfessionSpawnEggItem(baseProps("evoker_spawn_egg"), "mca:evoker"));
+    Item WITCH_SPAWN_EGG = register("witch_spawn_egg", new ProfessionSpawnEggItem(baseProps("witch_spawn_egg"), "mca:witch"));
+    Item WANDERING_TRADER_SPAWN_EGG = register("wandering_trader_spawn_egg", new ProfessionSpawnEggItem(baseProps("wandering_trader_spawn_egg"), "mca:wandering_trader"));
+    Item PILLAGER_SPAWN_EGG = register("pillager_spawn_egg", new PillagerSpawnEggItem(baseProps("pillager_spawn_egg")));
+
+    Item ZOMBIE_PERSON_SPAWN_EGG = register("zombie_person_spawn_egg", new SpawnEggItem(baseProps("zombie_person_spawn_egg").spawnEgg(EntitiesMCA.ZOMBIE_PERSON)));
+
+    Item MALE_ZOMBIE_VILLAGER_SPAWN_EGG = register("male_zombie_villager_spawn_egg", new SpawnEggItem(baseProps("male_zombie_villager_spawn_egg").spawnEgg(EntitiesMCA.ZOMBIE_PERSON)));
+    Item FEMALE_ZOMBIE_VILLAGER_SPAWN_EGG = register("female_zombie_villager_spawn_egg", new SpawnEggItem(baseProps("female_zombie_villager_spawn_egg").spawnEgg(EntitiesMCA.ZOMBIE_PERSON)));
 
     Item GRIM_REAPER_SPAWN_EGG = register("grim_reaper_spawn_egg", new SpawnEggItem(baseProps("grim_reaper_spawn_egg").spawnEgg(EntitiesMCA.GRIM_REAPER)));
 
@@ -46,10 +57,11 @@ public interface ItemsMCA {
     Item MATCHMAKERS_RING = register("matchmakers_ring", new MatchmakersRingItem(baseProps("matchmakers_ring").stacksTo(2)));
 
     Item VILLAGER_EDITOR = register("villager_editor", new VillagerEditorItem(baseProps("villager_editor")));
-    Item STAFF_OF_LIFE = register("staff_of_life", new StaffOfLifeItem(baseProps("staff_of_life").durability(10).rarity(Rarity.EPIC)));
+    Item STAFF_OF_LIFE = register("staff_of_life", new StaffOfLifeItem(baseProps("staff_of_life").durability(10).enchantable(10).rarity(Rarity.EPIC)));
     Item WHISTLE = register("whistle", new WhistleItem(baseProps("whistle")));
     Item BLUEPRINT = register("blueprint", new BlueprintItem(baseProps("blueprint")));
     Item FAMILY_TREE = register("family_tree", new FamilyTreeItem(baseProps("family_tree")));
+    Item VILLAGER_REVIVER = register("villager_reviver", new VillagerReviverItem(baseProps("villager_reviver")));
     Item VILLAGER_TRACKER = register("villager_tracker", new VillagerTrackerItem(unstackableProps("villager_tracker")));
 
     Item SCYTHE = register("scythe", new ScytheItem(baseProps("scythe").sword(ToolMaterial.GOLD, 10, -2.4F)));
@@ -212,6 +224,11 @@ public interface ItemsMCA {
 
     static Item.Properties unstackableProps(String name) {
         return baseProps(name).stacksTo(1);
+    }
+
+    static boolean isVisibleInCreative(Item item) {
+        return item != MALE_VILLAGER_SPAWN_EGG && item != FEMALE_VILLAGER_SPAWN_EGG
+                && item != MALE_ZOMBIE_VILLAGER_SPAWN_EGG && item != FEMALE_ZOMBIE_VILLAGER_SPAWN_EGG;
     }
 
     static void registerItems(MCA.RegisterHelper<Item> helper) {

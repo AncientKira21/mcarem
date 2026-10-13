@@ -14,6 +14,8 @@ import java.util.Map;
 
 public class VillageGuardsManager {
     private final Village village;
+    private long lastSupplyCheck = Long.MIN_VALUE;
+    private int supplyUnits;
 
     public VillageGuardsManager(Village village) {
         this.village = village;
@@ -68,19 +70,48 @@ public class VillageGuardsManager {
     }
 
     public EquipmentSet getGuardEquipment(VillagerProfession profession) {
-        int villageLevel = getVillageEquipmentLevel();
-        if (profession == ProfessionsMCA.ARCHER) {
-            return getArcherEquipmentForLevel(villageLevel);
-        } else {
-            return getGuardEquipmentForLevel(villageLevel);
-        }
+        int units = getSupplyUnits();
+        boolean archer = profession == ProfessionsMCA.ARCHER;
+        if (units >= 4) return archer ? EquipmentSet.ARCHER_NETHERITE : EquipmentSet.GUARD_NETHERITE;
+        if (units >= 2) return archer ? EquipmentSet.ARCHER_DIAMOND : EquipmentSet.GUARD_DIAMOND;
+        return archer ? getArcherEquipmentForLevel(units) : getGuardEquipmentForLevel(units);
     }
 
-    private int getVillageEquipmentLevel() {
-        int level = 0;
-        if (village.hasBuilding("armory")) level++;
-        if (village.hasBuilding("blacksmith")) level++;
-        return level;
+    public boolean suppliesEnchantedEquipment() { return getSupplyUnits() >= 10; }
+
+    public int getSupplyUnits() {
+        ServerLevel world = village.getWorld();
+        if (world == null) return 0;
+        long now = world.getGameTime();
+        if (lastSupplyCheck != Long.MIN_VALUE && now >= lastSupplyCheck && now - lastSupplyCheck < 100) return supplyUnits;
+        lastSupplyCheck = now;
+        java.util.Map<Integer, Integer> buildingUnits = new java.util.HashMap<>();
+        for (var building : village.getBuildings().values()) {
+            if (java.util.Set.of("armory", "armorer", "weaponsmith", "blacksmith").contains(building.getType())) {
+                buildingUnits.put(building.getStructureId(), 1);
+            }
+        }
+        java.util.Map<Integer, java.util.Set<net.minecraft.core.BlockPos>> staffed = new java.util.HashMap<>();
+        for (var worker : village.getResidents(world)) {
+            if (!worker.isAlive() || worker.isKidnapped()) continue;
+            var profession = worker.getVillagerData().profession();
+            if (!profession.is(VillagerProfession.ARMORER) && !profession.is(VillagerProfession.WEAPONSMITH)
+                    && !profession.is(VillagerProfession.TOOLSMITH)) continue;
+            worker.getBrain().getMemoryInternal(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE)
+                    .filter(site -> site.dimension().equals(world.dimension()))
+                    .filter(site -> world.hasChunkAt(site.pos()))
+                    .ifPresent(site -> {
+                        var block = world.getBlockState(site.pos());
+                        boolean matches = profession.is(VillagerProfession.ARMORER) && block.is(net.minecraft.world.level.block.Blocks.BLAST_FURNACE)
+                                || profession.is(VillagerProfession.WEAPONSMITH) && block.is(net.minecraft.world.level.block.Blocks.GRINDSTONE)
+                                || profession.is(VillagerProfession.TOOLSMITH) && block.is(net.minecraft.world.level.block.Blocks.SMITHING_TABLE);
+                        if (matches) village.getBuildingAt(site.pos()).ifPresent(building ->
+                                staffed.computeIfAbsent(building.getStructureId(), key -> new java.util.HashSet<>()).add(site.pos()));
+                    });
+        }
+        for (var entry : staffed.entrySet()) buildingUnits.merge(entry.getKey(), entry.getValue().size(), Math::max);
+        supplyUnits = buildingUnits.values().stream().mapToInt(Integer::intValue).sum();
+        return supplyUnits;
     }
 
     private static EquipmentSet getConfiguredEquipment(Map<String, EquipmentSet> config, int level, EquipmentSet fallback) {

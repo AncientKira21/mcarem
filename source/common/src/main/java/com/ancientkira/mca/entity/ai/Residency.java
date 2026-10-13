@@ -99,8 +99,18 @@ public class Residency {
                 });
     }
 
+    /** Event records may belong to a nearby village even when a traveler/raider has no home. */
+    public Optional<Village> getRegistryVillage() {
+        return getHomeVillage().or(() -> VillageManager.get((ServerLevel) entity.level())
+                .findNearestVillage(entity.blockPosition(), 32));
+    }
+
     public Optional<Village> getHomeVillage() {
         VillageManager manager = VillageManager.get((ServerLevel) entity.level());
+
+        // Occupied rooms may have no POI (especially basements). Retry these
+        // positions so an entrance discovered later can establish their floor.
+        manager.reportBuilding(entity.blockPosition());
         return manager.getOrEmpty(entity.getTrackedValue(VILLAGE));
     }
 

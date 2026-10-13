@@ -1,4 +1,6 @@
 {
+  "villager.cleric_help/1": "Where’s a cleric? I need help!",
+  "villager.cleric_response/1": "I’m right here! I’m coming!",
   "villager.ranaway/1": "That's right, you'd better run!",
   "villager.ranaway/2": "If you come back, I'm calling the guards!",
   "villager.ranaway/3": "Come back and fight like a man!",
@@ -554,6 +556,7 @@
   "dialogue.main.divorcePapers": "Divorce papers",
   "dialogue.main.hire": "Hire",
   "dialogue.main.stay": "Ask to stay",
+  "dialogue.main.redeem_raider": "Redeem from Raider",
   "dialogue.rumors.failed/1": "Hmm, no I heard nothing new.",
   "dialogue.rumors.lore/1": "Ah, it looks like Apple is releasing iPhone Ultra, the foldable, this year, 2026!",
   "dialogue.rumors.lore/2": "MacBooks looks like they're having touchscreens!",
@@ -1473,5 +1476,7 @@
   "dialogue.rock_paper_scissor.loose.scissor/1": "Rock crushes scissors, I win!",
   "dialogue.rock_paper_scissor.win.rock/1": "Ahh, rock crushes scissor, I lost.",
   "dialogue.rock_paper_scissor.win.paper/1": "I can never seem to win with rock.",
-  "dialogue.rock_paper_scissor.win.scissor/1": "Scissors cut paper, you got me this time."
+  "dialogue.rock_paper_scissor.win.scissor/1": "Scissors cut paper, you got me this time.",
+  "villager.warning.first/1": "I'm warning you, don't attack our friends!",
+  "villager.warning.last/1": "Last warning! Attack again and we will stop you!"
 }

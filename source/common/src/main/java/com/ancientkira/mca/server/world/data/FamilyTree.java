@@ -22,13 +22,26 @@ public class FamilyTree extends SavedData {
 
 
     private final Map<UUID, FamilyTreeNode> entries;
+    public void restoreRaiderFamily(UUID id, CompoundTag data) {
+        // Import family data from any preview build that kept raider families privately.
+        entries.put(id, new FamilyTreeNode(this, data));
+        setDirty();
+    }
+    private final Set<UUID> permanentlyDeleted = new HashSet<>();
 
     FamilyTree(ServerLevel world) {
         entries = new HashMap<>();
     }
 
     FamilyTree(CompoundTag nbt, HolderLookup.Provider provider) {
-        entries = NbtHelper.toMap(nbt, UUID::fromString, (id, element) -> new FamilyTreeNode(this, (CompoundTag) element));
+        CompoundTag entriesTag = nbt.copy();
+        entriesTag.remove("permanentlyDeleted");
+        entries = NbtHelper.toMap(entriesTag, UUID::fromString, (id, element) -> new FamilyTreeNode(this, (CompoundTag) element));
+        nbt.getList("permanentlyDeleted").ifPresent(list -> list.forEach(element -> {
+            if (element instanceof CompoundTag tag) {
+                tag.read("uuid", net.minecraft.core.UUIDUtil.CODEC).ifPresent(permanentlyDeleted::add);
+            }
+        }));
     }
 
     public static FamilyTree get(ServerLevel world) {
@@ -36,11 +49,26 @@ public class FamilyTree extends SavedData {
     }
 
     public CompoundTag save(CompoundTag nbt, HolderLookup.Provider provider) {
-        return NbtHelper.fromMap(nbt, entries, UUID::toString, FamilyTreeNode::save);
+        nbt.remove("permanentlyDeleted");
+        NbtHelper.fromMap(nbt, entries, UUID::toString, FamilyTreeNode::save);
+        net.minecraft.nbt.ListTag deleted = new net.minecraft.nbt.ListTag();
+        permanentlyDeleted.forEach(id -> {
+            CompoundTag entry = new CompoundTag();
+            entry.store("uuid", net.minecraft.core.UUIDUtil.CODEC, id);
+            deleted.add(entry);
+        });
+        nbt.put("permanentlyDeleted", deleted);
+        return nbt;
     }
 
     public Optional<FamilyTreeNode> getOrEmpty(@Nullable UUID id) {
         return id == null ? Optional.empty() : Optional.ofNullable(entries.get(id));
+    }
+
+    public Stream<FamilyTreeNode> getAllEntries() {
+        return entries.values().stream().sorted(Comparator
+                .comparing(FamilyTreeNode::getName, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(FamilyTreeNode::id));
     }
 
     public Stream<FamilyTreeNode> getAllWithName(String name) {
@@ -82,6 +110,35 @@ public class FamilyTree extends SavedData {
     public void remove(UUID id) {
         entries.remove(id);
         setDirty();
+    }
+
+    public boolean isPermanentlyDeleted(UUID id) {
+        return permanentlyDeleted.contains(id);
+    }
+
+    public boolean removePermanently(UUID id) {
+        FamilyTreeNode node = entries.get(id);
+        if (node == null) {
+            return false;
+        }
+
+        node.removeFather();
+        node.removeMother();
+        for (UUID childId : Set.copyOf(node.children())) {
+            getOrEmpty(childId).ifPresent(child -> {
+                if (id.equals(child.father())) {
+                    child.removeFather();
+                }
+                if (id.equals(child.mother())) {
+                    child.removeMother();
+                }
+            });
+        }
+        node.updatePartner((net.minecraft.world.entity.Entity) null, null);
+        entries.remove(id);
+        permanentlyDeleted.add(id);
+        setDirty();
+        return true;
     }
 
     @NotNull

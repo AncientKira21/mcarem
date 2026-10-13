@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
+    "mca:person",
     "minecraft:villager",
     "mca:male_villager",
     "mca:female_villager"

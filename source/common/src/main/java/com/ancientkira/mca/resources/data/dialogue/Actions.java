@@ -20,6 +20,12 @@ import java.util.Map;
 import java.util.function.BiFunction;
 
 public class Actions {
+    private static void closeDialogue(VillagerEntityMCA villager, ServerPlayer player) {
+        villager.getInteractions().stopInteracting(false);
+        Network.sendToPlayer(new com.ancientkira.mca.network.s2c.OpenGuiRequest(
+                com.ancientkira.mca.network.s2c.OpenGuiRequest.Type.CLOSE, villager), player);
+    }
+
     public static final Map<String, Factory<JsonElement>> TYPES = new HashMap<>();
 
     static {
@@ -44,10 +50,10 @@ public class Actions {
 
                 // close screen
                 if (newQuestion == null || newQuestion.isCloseScreen()) {
-                    villager.getInteractions().stopInteracting();
+                    closeDialogue(villager, player);
                 }
             } else {
-                villager.getInteractions().stopInteracting();
+                closeDialogue(villager, player);
             }
         });
 
@@ -65,7 +71,7 @@ public class Actions {
             }
         });
 
-        register("quit", (a, b) -> a, id -> (villager, player) -> villager.getInteractions().stopInteracting());
+        register("quit", (a, b) -> a, id -> (villager, player) -> closeDialogue(villager, player));
 
         register("negative", GsonHelper::convertToInt, hearts -> (villager, player) -> {
             villager.getVillagerBrain().modifyMoodValue(-hearts);

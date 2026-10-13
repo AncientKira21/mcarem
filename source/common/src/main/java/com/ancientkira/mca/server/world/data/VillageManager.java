@@ -65,6 +65,10 @@ public class VillageManager extends SavedData implements Iterable<Village> {
                 setDirty();
             } else {
                 villages.put(village.getId(), village);
+                if (village.normalizeFloorNumbers()) {
+                    setDirty();
+                }
+                if (village.repairOutpostTypes()) setDirty();
             }
         }
     }
@@ -154,6 +158,8 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             processBuilding(buildingQueue.removeFirst());
         }
 
+        com.ancientkira.mca.server.AutomaticVillageConflicts.get(world).tick();
+        com.ancientkira.mca.server.VillageWarfare.get(world).tick();
         reapers.tick(world);
         SpawnQueue.getInstance().tick();
     }
@@ -215,11 +221,136 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         //mark in cache
         cache.add(pos);
 
-        buildingQueue.add(pos);
+        if (!buildingQueue.contains(pos)) {
+            buildingQueue.add(pos.immutable());
+        }
     }
 
     public Building.validationResult processBuilding(BlockPos pos) {
-        return processBuilding(pos, false, true);
+        if (getGroupedBuildingType(pos) != null) {
+            return processBuilding(pos, false, true);
+        }
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        RoomScanPlan plan = village == null ? RoomScanPlan.addBuilding(pos) : village.getRoomScanPlan(pos);
+        if (plan.mode() == Village.RoomScanMode.UPDATE_ROOM) {
+            Building existing = plan.building().orElseThrow();
+            BuildingScanResult scan = analyzeIndependentBuilding(existing.getSourceBlock(), true, existing, village);
+            return commitRoomUpdate(scan, existing.isTypeForced() ? existing.getType() : null, existing.getId(), true);
+        }
+        BuildingScanResult scan = analyzeIndependentBuilding(pos, true,
+                plan.mode() == Village.RoomScanMode.ADD_ROOM ? plan.building().orElse(null) : null,
+                village, plan.mode() == Village.RoomScanMode.ADD_BUILDING ? 0 : plan.prospectiveFloorNumber());
+        if (plan.mode() == Village.RoomScanMode.ADD_BUILDING) {
+            // An upstairs door or workstation can be discovered first. Find
+            // the lowest valid entrance before choosing the ground-room anchor.
+            BuildingScanResult whole = analyzeIndependentBuilding(pos, false, null, village);
+            if (whole.result() == Building.validationResult.SUCCESS) {
+                Building shell = whole.building();
+                List<BlockPos> doors = BlockPos.betweenClosedStream(shell.getPos0(), shell.getPos1())
+                        .filter(door -> world.getBlockState(door).getBlock() instanceof net.minecraft.world.level.block.DoorBlock)
+                        .map(BlockPos::immutable)
+                        .sorted(Comparator.comparingInt(BlockPos::getY))
+                        .toList();
+                for (BlockPos door : doors) {
+                    if (!(world.getBlockState(door).getBlock() instanceof net.minecraft.world.level.block.DoorBlock)) {
+                        continue;
+                    }
+                    for (net.minecraft.core.Direction direction : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                        BlockPos entrance = door.relative(direction);
+                        if (!world.getBlockState(entrance).isAir() || world.getBlockState(entrance.below()).isAir()) {
+                            continue;
+                        }
+                        BuildingScanResult ground = analyzeIndependentBuilding(entrance, true, null, village);
+                        if (ground.result() == Building.validationResult.SUCCESS
+                                && commitRoomAddition(ground, null, Village.RoomScanMode.ADD_BUILDING, -1, true)
+                                == Building.validationResult.SUCCESS) {
+                            Village anchored = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+                            // Only retry after the entrance actually establishes an
+                            // attachment; offset rooms must not recursively add roots.
+                            if (anchored != null && anchored.getRoomScanPlan(pos).mode() != Village.RoomScanMode.ADD_BUILDING) {
+                                return processBuilding(pos);
+                            }
+                            return Building.validationResult.NO_DOOR;
+                        }
+                    }
+                }
+            }
+        }
+        return commitRoomAddition(scan, null, plan.mode(), plan.targetBuildingId(), true);
+    }
+
+    public Building.validationResult scanStructure(BlockPos pos) {
+        if (getGroupedBuildingType(pos) != null) {
+            return processBuilding(pos);
+        }
+        // Discover the connected interior without registered rooms blocking the
+        // search. Room validation below still enforces enclosure.
+        Building shell = new Building(pos, false);
+        Building.validationResult result = shell.validateBuilding(world, Set.of());
+        if (result != Building.validationResult.SUCCESS) {
+            return result;
+        }
+        result = processBuilding(pos);
+        if (result != Building.validationResult.SUCCESS) {
+            return result;
+        }
+        Set<BlockPos> visited = new HashSet<>();
+        Deque<BlockPos> pending = new ArrayDeque<>();
+        List<BlockPos> seeds = new ArrayList<>();
+        pending.add(pos.immutable());
+        visited.add(pos.immutable());
+        while (!pending.isEmpty() && visited.size() <= Config.getInstance().maxBuildingSize) {
+            BlockPos current = pending.removeFirst();
+            if (world.getBlockState(current).isAir()
+                    && world.getBlockState(current.above()).isAir()
+                    && !world.getBlockState(current.below()).isAir()
+                    && world.getBlockState(current.below()).getFluidState().isEmpty()
+                    && !(world.getBlockState(current.below()).getBlock() instanceof net.minecraft.world.level.block.DoorBlock)) {
+                seeds.add(current);
+            }
+            for (net.minecraft.core.Direction direction : net.minecraft.core.Direction.values()) {
+                BlockPos next = current.relative(direction);
+                if (!shell.containsPos(next) || visited.contains(next)) {
+                    continue;
+                }
+                var state = world.getBlockState(next);
+                if (state.isAir() || !state.getFluidState().isEmpty()
+                        || state.getBlock() instanceof net.minecraft.world.level.block.DoorBlock) {
+                    visited.add(next);
+                    pending.addLast(next);
+                }
+            }
+        }
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building root = village == null ? null : village.getBuildingAt(pos).orElse(null);
+        int anchorY = root == null ? pos.getY() : village.getBuilding(root.getStructureId())
+                .orElse(root).getSourceBlock().getY();
+        // Nearer levels establish attachments before more distant levels.
+        seeds.sort(Comparator.comparingInt(seed -> Math.abs(seed.getY() - anchorY)));
+        Set<BlockPos> scannedRooms = new HashSet<>();
+        for (BlockPos seed : seeds) {
+            if (scannedRooms.contains(seed)) {
+                continue;
+            }
+            Village currentVillage = findNearestVillage(seed, Village.MERGE_MARGIN).orElse(null);
+            RoomScanPlan plan = currentVillage == null ? RoomScanPlan.addBuilding(seed) : currentVillage.getRoomScanPlan(seed);
+            if (plan.mode() != Village.RoomScanMode.UPDATE_ROOM && plan.mode() != Village.RoomScanMode.ADD_BUILDING) {
+                Set<BlockPos> blocked = new HashSet<>(getBlockedSet(currentVillage));
+                if (plan.mode() == Village.RoomScanMode.ADD_ROOM) {
+                    plan.building().ifPresent(parent -> blocked.remove(parent.getSourceBlock()));
+                }
+                Building room = new Building(seed, true);
+                room.setFloorNumber(plan.prospectiveFloorNumber());
+                Building.validationResult roomResult = room.validateBuilding(world, blocked, scannedRooms);
+                scannedRooms.add(seed);
+                if (roomResult == Building.validationResult.SUCCESS) {
+                    BuildingScanResult scan = new BuildingScanResult(roomResult, seed, true, room,
+                            room.getVisibleMatchingTypes().stream().map(BuildingType::name).toList(), currentVillage);
+                    commitRoomAddition(scan, null, plan.mode(), plan.targetBuildingId(), true);
+                }
+            }
+        }
+        return Building.validationResult.SUCCESS;
     }
 
     //checks weather the given block contains a grouped building block, e.g., a town bell or gravestone
@@ -264,6 +395,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         Building building;
         if (blockResult.existingBuilding() != null) {
             building = new Building(blockResult.existingBuilding().getSourceBlock(), blockResult.existingBuilding().isStrictScan());
+            building.setFloorNumber(blockResult.existingBuilding().getFloorNumber());
         } else {
             building = new Building(pos, strictScan);
         }
@@ -316,15 +448,23 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         if (target == null || !mode.isAttachment() || plan.mode() != mode || plan.targetBuildingId() != targetBuildingId) {
             return failedBuildingScan(Building.validationResult.NOT_IN_BUILDING, pos, village, true);
         }
-        return analyzeIndependentBuilding(pos, true, null, village);
+        return analyzeIndependentBuilding(pos, true, null, village, plan.prospectiveFloorNumber());
     }
 
     private BuildingScanResult analyzeIndependentBuilding(BlockPos pos, boolean strictScan, Building replace, Village village) {
+        return analyzeIndependentBuilding(pos, strictScan, replace, village,
+                replace == null ? 0 : replace.getFloorNumber());
+    }
+
+    private BuildingScanResult analyzeIndependentBuilding(BlockPos pos, boolean strictScan, Building replace,
+                                                         Village village, int floorNumber) {
         Set<BlockPos> blocked = village == null ? Set.of() : new HashSet<>(getBlockedSet(village));
         if (replace != null) {
             blocked.remove(replace.getSourceBlock());
         }
         Building candidate = new Building(pos, strictScan);
+        // The floor must be known before validation, including updates to existing floors.
+        candidate.setFloorNumber(floorNumber);
         Building.validationResult result = candidate.validateBuilding(world, blocked);
         List<String> matchingTypes = result == Building.validationResult.SUCCESS
                 ? candidate.getVisibleMatchingTypes().stream().map(BuildingType::name).toList()
@@ -339,13 +479,18 @@ public class VillageManager extends SavedData implements Iterable<Village> {
 
     public Building.validationResult commitRoomAddition(BuildingScanResult scan, String forcedType,
                                                         Village.RoomScanMode mode, int targetBuildingId) {
+        return commitRoomAddition(scan, forcedType, mode, targetBuildingId, false);
+    }
+
+    private Building.validationResult commitRoomAddition(BuildingScanResult scan, String forcedType,
+                                                        Village.RoomScanMode mode, int targetBuildingId, boolean automatic) {
         if (scan.result() != Building.validationResult.SUCCESS) {
             return scan.result();
         }
         if (forcedType != null && !scan.matchesType(forcedType)) {
             return Building.validationResult.INVALID_TYPE;
         }
-        if (forcedType == null && scan.isAmbiguous()) {
+        if (!automatic && forcedType == null && scan.isAmbiguous()) {
             return Building.validationResult.INVALID_TYPE;
         }
         Village village = scan.village();
@@ -360,6 +505,13 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         if (mode != Village.RoomScanMode.ADD_BUILDING && targetBuildingId >= 0 && target == null) {
             return Building.validationResult.NOT_IN_BUILDING;
         }
+        if (mode.isAttachment()) {
+            RoomScanPlan currentPlan = village.getRoomScanPlan(scan.source());
+            if (target == null || currentPlan.mode() != mode
+                    || currentPlan.targetBuildingId() != targetBuildingId) {
+                return Building.validationResult.NOT_IN_BUILDING;
+            }
+        }
         Building added = scan.building();
         if (forcedType != null) {
             added.setTypeForced(true);
@@ -373,13 +525,13 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             added.setStructureId(target.getStructureId());
             added.setFloorNumber(target.getFloorNumber());
         } else if (mode.isAttachment() && target != null) {
-            added.setStructureId(target.getStructureId());
-            added.setFloorNumber(target.getFloorNumber() + (mode == Village.RoomScanMode.ADD_BASEMENT ? -1 : 1));
+            village.assignAddedFloor(target, added, mode);
         } else {
             added.setStructureId(added.getId());
             added.setFloorNumber(0);
         }
         village.getBuildings().put(added.getId(), added);
+        village.normalizeFloorNumbers();
         village.calculateDimensions();
         village.recalculateRoomTypes(added.getStructureId());
         village.markDirty();
@@ -388,6 +540,11 @@ public class VillageManager extends SavedData implements Iterable<Village> {
     }
 
     public Building.validationResult commitRoomUpdate(BuildingScanResult scan, String forcedType, int expectedBuildingId) {
+        return commitRoomUpdate(scan, forcedType, expectedBuildingId, false);
+    }
+
+    private Building.validationResult commitRoomUpdate(BuildingScanResult scan, String forcedType, int expectedBuildingId,
+                                                      boolean automatic) {
         if (scan.result() != Building.validationResult.SUCCESS) {
             return scan.result();
         }
@@ -399,7 +556,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         if (forcedType != null && !scan.matchesType(forcedType)) {
             return Building.validationResult.INVALID_TYPE;
         }
-        if (forcedType == null && scan.isAmbiguous()) {
+        if (!automatic && forcedType == null && scan.isAmbiguous()) {
             return Building.validationResult.INVALID_TYPE;
         }
         Building scanned = scan.building();
@@ -411,6 +568,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             scanned.determineType();
         }
         existing.updateFrom(scanned, world.getGameTime());
+        village.normalizeFloorNumbers();
         village.calculateDimensions();
         village.recalculateRoomTypes(existing.getStructureId());
         village.markDirty();
@@ -464,7 +622,19 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         return true;
     }
 
+    public boolean setStructureOutpost(BlockPos pos, boolean outpost) {
+        Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
+        Building room = village == null ? null : village.getBuildingAt(pos).orElse(null);
+        if (room == null || outpost && !village.canRegisterOutpost(room)) return false;
+        Building root = village.getBuilding(room.getStructureId()).orElse(room);
+        root.setType(outpost ? "pillager_outpost" : "house");
+        root.setTypeForced(true);
+        village.markDirty();
+        return true;
+    }
+
     public boolean forceRoomType(BlockPos pos, String type) {
+        if ("pillager_outpost".equals(type) || "house".equals(type)) return setStructureOutpost(pos, "pillager_outpost".equals(type));
         Village village = findNearestVillage(pos, Village.MERGE_MARGIN).orElse(null);
         Building building = village == null ? null : village.getBuildingAt(pos).orElse(null);
         if (building == null) {

@@ -32,7 +32,7 @@ public class CDataParameter<T> implements CParameter<T, T> {
 
     @Override
     public T getDefault() {
-        return defaultValue;
+        return valueType.copy(defaultValue);
     }
 
     @Override
@@ -42,17 +42,17 @@ public class CDataParameter<T> implements CParameter<T, T> {
 
     @Override
     public void set(EntityDataAccessor<T> param, SynchedEntityData tracker, T v) {
-        tracker.set(param, v);
+        tracker.set(param, valueType.copy(v));
     }
 
     @Override
     public T load(CompoundTag nbt, RegistryAccess registryAccess) {
-        return load.apply(nbt, id, registryAccess);
+        return valueType.copy(load.apply(nbt, id, registryAccess));
     }
 
     @Override
     public void save(CompoundTag nbt, T value, RegistryAccess registryAccess) {
-        save.accept(nbt, id, value, registryAccess);
+        save.accept(nbt, id, valueType.copy(value), registryAccess);
     }
 
     @Override

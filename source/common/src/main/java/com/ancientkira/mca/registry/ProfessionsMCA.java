@@ -30,6 +30,10 @@ public interface ProfessionsMCA {
     Set<ResourceKey<VillagerProfession>> IS_IMPORTANT = new HashSet<>();
     Set<ResourceKey<VillagerProfession>> NEEDS_NO_HOME = new HashSet<>();
 
+    VillagerProfession VINDICATOR = register("vindicator", false, true, true, poi -> false, poi -> false, SoundEvents.VINDICATOR_AMBIENT);
+    VillagerProfession EVOKER = register("evoker", false, true, true, poi -> false, poi -> false, SoundEvents.EVOKER_AMBIENT);
+    VillagerProfession WITCH = register("witch", false, true, true, poi -> false, poi -> false, SoundEvents.WITCH_AMBIENT);
+    VillagerProfession PILLAGER = register("pillager", false, true, true, poi -> false, poi -> false, SoundEvents.PILLAGER_AMBIENT);
     VillagerProfession OUTLAW = register("outlaw", false, true, true, PoiType.NONE, VillagerProfession.ALL_ACQUIRABLE_JOBS, SoundEvents.VILLAGER_WORK_FARMER);
     VillagerProfession GUARD = register("guard", false, true, false, PoiType.NONE, VillagerProfession.ALL_ACQUIRABLE_JOBS, SoundEvents.VILLAGER_WORK_ARMORER);
     VillagerProfession ARCHER = register("archer", false, true, false, PoiType.NONE, VillagerProfession.ALL_ACQUIRABLE_JOBS, SoundEvents.VILLAGER_WORK_FLETCHER);
@@ -44,6 +48,9 @@ public interface ProfessionsMCA {
             TradeOffersMCA.ADVENTURER_TRADES
     );
     VillagerProfession MERCENARY = register("mercenary", false, true, true, PoiType.NONE, VillagerProfession.ALL_ACQUIRABLE_JOBS, SoundEvents.VILLAGER_WORK_FLETCHER);
+    VillagerProfession WANDERING_TRADER = register("wandering_trader", true, true, true, PoiType.NONE,
+            VillagerProfession.ALL_ACQUIRABLE_JOBS, SoundEvents.WANDERING_TRADER_AMBIENT);
+    // Retain the old registry entry so existing worlds can migrate safely.
     VillagerProfession CULTIST = register(
             "cultist",
             true,
@@ -118,6 +125,14 @@ public interface ProfessionsMCA {
         }
         PROFESSIONS.put(id, result);
         return result;
+    }
+
+    static boolean isRaider(VillagerProfession profession) {
+        return profession == PILLAGER || profession == VINDICATOR || profession == EVOKER || profession == WITCH;
+    }
+
+    static boolean isSpellcaster(VillagerProfession profession) {
+        return profession == EVOKER || profession == WITCH;
     }
 
     static String getFavoredBuilding(VillagerProfession profession) {

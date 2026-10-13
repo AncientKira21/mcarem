@@ -59,6 +59,8 @@ public enum Constraint implements BiPredicate<VillagerLike<?>, ServerPlayer> {
     CLERIC("cleric", (villager, player) -> villager.getVillagerData().profession().is(VillagerProfession.CLERIC)),
     NOT_CLERIC("!cleric", (villager, player) -> !villager.getVillagerData().profession().is(VillagerProfession.CLERIC)),
 
+    RAIDER("raider", (villager, player) -> ProfessionsMCA.isRaider(villager.getVillagerData().profession().value())),
+    TRAVELING_GUEST("traveling_guest", (villager, player) -> villager.getVillagerData().profession().value() == ProfessionsMCA.ADVENTURER || villager.getVillagerData().profession().value() == ProfessionsMCA.WANDERING_TRADER),
     ADVENTURER("adventurer", (villager, player) -> villager.getVillagerData().profession().value() == ProfessionsMCA.ADVENTURER),
     NOT_ADVENTURER("!adventurer", (villager, player) -> villager.getVillagerData().profession().value() != ProfessionsMCA.ADVENTURER),
 

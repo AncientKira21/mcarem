@@ -6,6 +6,7 @@ import com.ancientkira.mca.network.Network;
 import com.ancientkira.mca.server.world.data.Building;
 import com.ancientkira.mca.network.s2c.BuildingPolymorphMessage;
 import com.ancientkira.mca.server.world.data.BuildingScanResult;
+import com.ancientkira.mca.server.world.data.RoomScanPlan;
 import com.ancientkira.mca.server.world.data.Village;
 import com.ancientkira.mca.server.world.data.VillageManager;
 import net.minecraft.core.BlockPos;
@@ -57,7 +58,7 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
                 }
             }
             switch (action) {
-                case ADD, ADD_BUILDING -> handleBuildingScan(villages, player, villages.analyzeBuilding(source, false), action, targetId);
+                case ADD, ADD_BUILDING -> handleBuildingOrFloorScan(villages, player, source, action);
                 case ADD_ROOM -> handleRoomScan(villages, player,
                         villages.analyzeRoomAddition(source, targetId), action, targetId);
                 case UPDATE_ROOM -> handleRoomScan(villages, player,
@@ -67,6 +68,7 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
                             ? Village.RoomScanMode.ADD_FLOOR : Village.RoomScanMode.ADD_BASEMENT;
                     handleRoomScan(villages, player, villages.analyzeAttachedRoom(source, mode, targetId), action, targetId);
                 }
+                case DECLARE_WAR, CANCEL_WAR -> handleWar(villages, player, action == Action.CANCEL_WAR);
                 case AUTO_SCAN -> villages.findNearestVillage(player).ifPresent(Village::toggleAutoScan);
                 case FULL_SCAN -> {
                     Village village = villages.findNearestVillage(player).orElse(null);
@@ -104,6 +106,46 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
         } finally {
             GetVillageRequest.sendResponse(player);
         }
+    }
+
+    private void handleWar(VillageManager manager, ServerPlayer player, boolean cancel) {
+        try {
+            String[] parts = data == null ? new String[0] : data.split(":");
+            if (parts.length != 3) { display(player, "mca.war.invalid"); return; }
+            int sourceId = Integer.parseInt(parts[0]), targetId = Integer.parseInt(parts[1]), minutes = Integer.parseInt(parts[2]);
+            Village origin = manager.findNearestVillage(player).orElse(null);
+            if (origin == null || origin.getId() != sourceId) { display(player, "mca.war.invalid"); return; }
+            var warfare = com.ancientkira.mca.server.VillageWarfare.get(player.level());
+            boolean success = cancel ? warfare.cancel(origin, targetId) : warfare.declare(origin, targetId, minutes);
+            if (!success) display(player, "mca.war.invalid");
+        } catch (NumberFormatException exception) { display(player, "mca.war.invalid"); }
+    }
+
+    private void handleBuildingOrFloorScan(VillageManager manager, ServerPlayer player, BlockPos source, Action action) {
+        if (action == Action.ADD_BUILDING || action == Action.ADD) {
+            Building.validationResult result = manager.scanStructure(source);
+            displayResult(player, result, "blueprint.buildingAdded");
+            if (result == Building.validationResult.SUCCESS) {
+                Village village = manager.findNearestVillage(source, Village.MERGE_MARGIN).orElse(null);
+                com.ancientkira.mca.server.world.data.Building room = village == null ? null : village.getBuildingAt(source).orElse(null);
+                if (room != null && village.canRegisterOutpost(room)) {
+                    Network.sendToPlayer(new BuildingPolymorphMessage(java.util.List.of("house", "pillager_outpost"),
+                            source, Action.FORCE_TYPE, room.getStructureId()), player);
+                }
+            }
+            return;
+        }
+        Village village = manager.findNearestVillage(source, Village.MERGE_MARGIN).orElse(null);
+        RoomScanPlan plan = village == null ? RoomScanPlan.addBuilding(source) : village.getRoomScanPlan(source);
+        if (plan.mode().isAttachment()) {
+            BuildingScanResult roomScan = manager.analyzeAttachedRoom(source, plan.mode(), plan.targetBuildingId());
+            if (roomScan.result() == Building.validationResult.SUCCESS) {
+                handleRoomScan(manager, player, roomScan, plan.mode() == Village.RoomScanMode.ADD_FLOOR
+                        ? Action.ADD_FLOOR : Action.ADD_BASEMENT, plan.targetBuildingId());
+                return;
+            }
+        }
+        handleBuildingScan(manager, player, manager.analyzeBuilding(source, false), action, -1);
     }
 
     private static OptionalInt parseTargetBuildingId(String value) {
@@ -194,6 +236,8 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
         SET_ROOM_INHERITANCE,
         ADD_BUILDING,
         ADD_FLOOR,
-        ADD_BASEMENT
+        ADD_BASEMENT,
+        DECLARE_WAR,
+        CANCEL_WAR
     }
 }

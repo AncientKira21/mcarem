@@ -37,10 +37,11 @@ final class BlueprintTooltipFactory {
         BlueprintRoomTypeResolver.Context context = roomTypeResolver.resolve(building);
         lines.add(Component.translatable("buildingType." + context.presentationType().name()));
         if (floorOrdinal != null) {
+            int displayedFloor = floorOrdinal > 0 ? floorOrdinal + 1 : -floorOrdinal;
             lines.add(Component.translatable(floorOrdinal == 0
                     ? "gui.blueprint.floor.ground"
                     : floorOrdinal > 0 ? "gui.blueprint.floor.upper" : "gui.blueprint.floor.basement",
-                    Math.abs(floorOrdinal)).withStyle(ChatFormatting.GRAY));
+                    displayedFloor).withStyle(ChatFormatting.GRAY));
         }
         if (context.isMainRoom()) {
             lines.add(Component.translatable("gui.blueprint.roomTooltip.mainRoom").withStyle(ChatFormatting.GOLD));

@@ -26,11 +26,16 @@ public class ProfessionIcons {
         ICONS.put("toolsmith", Items.SMITHING_TABLE.getDefaultInstance());
         ICONS.put("weaponsmith", Items.GRINDSTONE.getDefaultInstance());
 
+        ICONS.put("mca.vindicator", Items.IRON_AXE.getDefaultInstance());
+        ICONS.put("mca.evoker", Items.TOTEM_OF_UNDYING.getDefaultInstance());
+        ICONS.put("mca.witch", Items.POTION.getDefaultInstance());
+        ICONS.put("mca.pillager", Items.CROSSBOW.getDefaultInstance());
         ICONS.put("mca.outlaw", Items.BLACK_BANNER.getDefaultInstance());
         ICONS.put("mca.guard", Items.IRON_SWORD.getDefaultInstance());
         ICONS.put("mca.archer", Items.BOW.getDefaultInstance());
         ICONS.put("mca.adventurer", Items.MAP.getDefaultInstance());
         ICONS.put("mca.mercenary", Items.EMERALD.getDefaultInstance());
-        ICONS.put("mca.cultist", Items.BOOK.getDefaultInstance());
+        ICONS.put("mca.wandering_trader", Items.EMERALD.getDefaultInstance());
+        ICONS.put("mca.cultist", Items.EMERALD.getDefaultInstance());
     }
 }

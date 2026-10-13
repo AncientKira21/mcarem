@@ -54,6 +54,12 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
     public boolean handle(ServerPlayer player, String command) {
         Memories memory = entity.getVillagerBrain().getMemoriesForPlayer(player);
 
+        if (ProfessionsMCA.isRaider(entity.getProfession())
+                && MoveState.byCommand(command).filter(state -> state == MoveState.STAY || state == MoveState.FOLLOW).isPresent()) {
+            entity.sendChatMessage(Component.translatable("mca.raider.refuse_orders"), player);
+            return true;
+        }
+
         if (MoveState.byCommand(command).filter(state -> {
             entity.getVillagerBrain().setMoveState(state, player);
             return true;
@@ -83,6 +89,10 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 return handlePickUp(player);
             }
             case "ridehorse" -> {
+                if (ProfessionsMCA.isRaider(entity.getProfession())) {
+                    entity.sendChatMessage(Component.translatable("mca.raider.refuse_orders"), player);
+                    return true;
+                }
                 if (entity.isPassenger()) {
                     entity.stopRiding();
                 } else {
@@ -111,11 +121,19 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 return true;
             }
             case "gohome" -> {
+                if (ProfessionsMCA.isRaider(entity.getProfession())) {
+                    entity.sendChatMessage(Component.translatable("mca.raider.refuse_orders"), player);
+                    return true;
+                }
                 entity.getResidency().goHome(player);
                 stopInteracting();
                 return false;
             }
             case "setworkplace" -> {
+                if (ProfessionsMCA.isRaider(entity.getProfession()) || entity.getProfession() == ProfessionsMCA.ADVENTURER) {
+                    entity.sendChatMessage(Component.translatable("mca.traveler.refuse_work"), player);
+                    return true;
+                }
                 entity.getResidency().setWorkplace(player);
                 return true;
             }

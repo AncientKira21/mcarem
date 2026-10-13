@@ -23,4 +23,3 @@ public class FamilyTreeItem extends TooltippedItem {
         return world.isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
     }
 }
-

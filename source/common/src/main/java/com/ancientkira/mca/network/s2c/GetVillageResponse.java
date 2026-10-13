@@ -72,7 +72,7 @@ public record GetVillageResponse(
     }
 
     public GetVillageResponse(Village data, Rank rank, int reputation, boolean isVillage, Set<String> ids) {
-        this(data.save(), rank, reputation, isVillage, ids, Tasks.getInstance().tasks, BuildingTypes.getInstance().getServerBuildingTypes());
+        this(data.getBlueprintData(), rank, reputation, isVillage, ids, Tasks.getInstance().tasks, BuildingTypes.getInstance().getServerBuildingTypes());
     }
 
     public CompoundTag data() {

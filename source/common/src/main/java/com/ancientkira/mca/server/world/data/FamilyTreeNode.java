@@ -2,6 +2,8 @@ package com.ancientkira.mca.server.world.data;
 
 import io.netty.buffer.ByteBuf;
 import com.ancientkira.mca.MCA;
+import com.ancientkira.mca.entity.VillagerEntityMCA;
+import com.ancientkira.mca.entity.VillagerLike;
 import com.ancientkira.mca.entity.ai.relationship.EntityRelationship;
 import com.ancientkira.mca.entity.ai.relationship.Gender;
 import com.ancientkira.mca.entity.ai.relationship.RelationshipState;
@@ -17,9 +19,12 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Util;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.npc.villager.VillagerProfession;
+import net.minecraft.util.ProblemReporter;
+import net.minecraft.world.level.storage.TagValueOutput;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -45,8 +50,11 @@ public final class FamilyTreeNode {
     private UUID father;
     private UUID mother;
     private UUID partner = Util.NIL_UUID;
+    private UUID widowedPartner = Util.NIL_UUID;
     private RelationshipState relationshipState = RelationshipState.SINGLE;
     private boolean deceased;
+    private CompoundTag revivalData;
+    private CompoundTag appearanceData;
 
     public FamilyTreeNode(FamilyTree rootNode, UUID id, String name, boolean isPlayer, Gender gender, UUID father, UUID mother) {
         this.rootNode = rootNode;
@@ -74,7 +82,10 @@ public final class FamilyTreeNode {
         profession = nbt.getString("profession").orElse(profession);
         deceased = nbt.getBoolean("isDeceased").orElse(false);
         partner = nbt.read("spouse", UUIDUtil.CODEC).orElse(Util.NIL_UUID);
+        widowedPartner = nbt.read("widowedPartner", UUIDUtil.CODEC).orElse(Util.NIL_UUID);
         relationshipState = RelationshipState.byId(nbt.getInt("marriageState").orElse(0));
+        revivalData = nbt.getCompound("revivalData").orElse(null);
+        appearanceData = nbt.getCompound("appearanceData").orElse(null);
     }
 
     public static boolean isValid(@Nullable UUID uuid) {
@@ -118,7 +129,101 @@ public final class FamilyTreeNode {
     }
 
     public void setDeceased(boolean deceased) {
+        boolean changed = this.deceased != deceased;
+        if (changed && deceased) rememberWidowedMarriage();
         this.deceased = deceased;
+        if (changed && !deceased) restoreWidowedMarriage();
+        markDirty();
+    }
+
+    private void rememberWidowedMarriage() {
+        if (!relationshipState.isMarried() || partner.equals(Util.NIL_UUID)) return;
+        UUID spouseId = partner;
+        widowedPartner = spouseId;
+        rootNode.getOrEmpty(spouseId).ifPresent(spouse -> {
+            if (spouse.partner.equals(id) && spouse.relationshipState.isMarried()) {
+                spouse.widowedPartner = id;
+                spouse.partner = Util.NIL_UUID;
+                spouse.relationshipState = RelationshipState.WIDOW;
+                spouse.markDirty();
+            }
+        });
+        partner = Util.NIL_UUID;
+        relationshipState = RelationshipState.WIDOW;
+    }
+
+    private void restoreWidowedMarriage() {
+        if (widowedPartner.equals(Util.NIL_UUID) || !partner.equals(Util.NIL_UUID)
+                || relationshipState != RelationshipState.WIDOW) return;
+        rootNode.getOrEmpty(widowedPartner).ifPresent(spouse -> {
+            if (!spouse.deceased && spouse.partner.equals(Util.NIL_UUID)
+                    && spouse.relationshipState == RelationshipState.WIDOW && spouse.widowedPartner.equals(id)) {
+                updatePartner(spouse);
+                spouse.updatePartner(this);
+            }
+        });
+    }
+
+    public UUID getWidowedPartner() { return widowedPartner; }
+
+    public Optional<CompoundTag> getRevivalData() {
+        return Optional.ofNullable(revivalData).map(CompoundTag::copy);
+    }
+
+    public void setRevivalData(Entity entity) {
+        TagValueOutput output = TagValueOutput.createWithContext(
+                ProblemReporter.DISCARDING, entity.level().registryAccess());
+        entity.saveWithoutId(output);
+        revivalData = output.buildResult();
+        revivalData.putString("id", BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
+        revivalData.store("MCAEntityUUID", UUIDUtil.CODEC, entity.getUUID());
+        if (entity instanceof VillagerEntityMCA person) {
+            person.getResidency().getRegistryVillage().ifPresent(village -> {
+                revivalData.putInt("MCARevivalVillage", village.getId());
+                revivalData.putString("MCARevivalDimension", entity.level().dimension().identifier().toString());
+            });
+        }
+        markDirty();
+    }
+
+    public boolean hasAppearanceData() {
+        return appearanceData != null && !appearanceData.isEmpty();
+    }
+
+    public Optional<CompoundTag> getAppearanceData() {
+        return Optional.ofNullable(appearanceData).map(CompoundTag::copy);
+    }
+
+    public void setAppearanceData(Entity entity) {
+        if (!(entity instanceof VillagerLike<?>)) {
+            return;
+        }
+        TagValueOutput output = TagValueOutput.createWithContext(
+                ProblemReporter.DISCARDING, entity.level().registryAccess());
+        entity.saveWithoutId(output);
+        CompoundTag saved = output.buildResult()
+                .getCompound(VillagerEntityMCA.MCA_DATA_KEY)
+                .orElseGet(CompoundTag::new);
+        CompoundTag appearance = new CompoundTag();
+        List.of(
+                "Clothes", "ClothingLocked", "Skin", "Hair", "HairStyle",
+                "HairBase", "HairBangs", "HairBack", "HairFront", "HairExtra",
+                "SkinColor", "HairColor", "EyeColor", "EyeColorLeft", "AgeState", "Gender"
+        ).forEach(key -> {
+            net.minecraft.nbt.Tag value = saved.get(key);
+            if (value != null) {
+                appearance.put(key, value.copy());
+            }
+        });
+        saved.keySet().stream()
+                .filter(key -> key.startsWith("Gene"))
+                .forEach(key -> appearance.put(key, saved.get(key).copy()));
+        appearanceData = appearance;
+        markDirty();
+    }
+
+    public void clearRevivalData() {
+        revivalData = null;
         markDirty();
     }
 
@@ -188,9 +293,12 @@ public final class FamilyTreeNode {
     //debug usage only
     public void setRelationshipState(RelationshipState relationshipState) {
         this.relationshipState = relationshipState;
+        if (relationshipState != RelationshipState.WIDOW) widowedPartner = Util.NIL_UUID;
+        markDirty();
     }
 
     public void updatePartner(@Nullable Entity newPartner, @Nullable RelationshipState state) {
+        if (newPartner != null || state != RelationshipState.WIDOW) widowedPartner = Util.NIL_UUID;
         //cancel relationship with previous partner
         if (!this.partner.equals(Util.NIL_UUID) && (newPartner == null || !this.partner.equals(newPartner.getUUID()))) {
             getRoot().getOrEmpty(this.partner).ifPresent(n -> {
@@ -211,6 +319,7 @@ public final class FamilyTreeNode {
     }
 
     public void updatePartner(FamilyTreeNode spouse) {
+        widowedPartner = Util.NIL_UUID;
         this.partner = spouse.id();
         this.relationshipState = spouse.isPlayer ? RelationshipState.MARRIED_TO_PLAYER : RelationshipState.MARRIED_TO_VILLAGER;
         markDirty();
@@ -462,8 +571,15 @@ public final class FamilyTreeNode {
         nbt.store("father", UUIDUtil.CODEC, father);
         nbt.store("mother", UUIDUtil.CODEC, mother);
         nbt.store("spouse", UUIDUtil.CODEC, partner);
+        nbt.store("widowedPartner", UUIDUtil.CODEC, widowedPartner);
         nbt.putInt("marriageState", relationshipState.ordinal());
         nbt.putString("profession", profession);
+        if (revivalData != null) {
+            nbt.put("revivalData", revivalData.copy());
+        }
+        if (appearanceData != null) {
+            nbt.put("appearanceData", appearanceData.copy());
+        }
         nbt.put("children", NbtHelper.fromList(children, child -> {
             CompoundTag n = new CompoundTag();
             n.store("uuid", UUIDUtil.CODEC, child);

@@ -1,6 +1,48 @@
 plugins {
+    id 'base'
     id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
     id 'net.neoforged.moddev' version "${moddev_version}" apply false
+}
+
+// Additional targets use separate intermediates while publishing alongside 26.1.2.
+def singleVersionBuild = providers.gradleProperty('mca_single_version').isPresent()
+if (singleVersionBuild) {
+    allprojects {
+        layout.buildDirectory.set(file("build/targets/${rootProject.minecraft_version}"))
+    }
+}
+
+if (!singleVersionBuild && !gradle.startParameter.projectProperties.containsKey('minecraft_version')) {
+    def buildMinecraft262 = tasks.register('buildMinecraft262', Exec) {
+        group = 'build'
+        description = 'Build Fabric and NeoForge for Minecraft 26.2 alongside 26.1.2.'
+        workingDir = rootDir
+        executable = new File(rootDir, System.getProperty('os.name').toLowerCase().contains('windows') ? 'gradlew.bat' : 'gradlew').absolutePath
+        args 'build', '-Pmca_single_version=true', '-Pminecraft_version=26.2',
+                '-Pminecraft_version_range=[26.2,)', '-Pneo_form_version=26.2-2',
+                '-Ploader_version=0.19.5', '-Pfabric_api_version=0.161.0+26.2',
+                '-Pneoforge_version=26.2.0.88', '--console=plain', '--non-interactive'
+        mustRunAfter subprojects.collect { "${it.path}:build" }
+    }
+    tasks.named('build') {
+        dependsOn buildMinecraft262
+        dependsOn subprojects.collect { "${it.path}:build" }
+    }
+    def buildMinecraft263 = tasks.register('buildMinecraft263', Exec) {
+        group = 'build'
+        description = 'Build Fabric and NeoForge for Minecraft 26.3 alongside earlier versions.'
+        workingDir = rootDir
+        executable = new File(rootDir, System.getProperty('os.name').toLowerCase().contains('windows') ? 'gradlew.bat' : 'gradlew').absolutePath
+        args 'build', '-Pmca_single_version=true', '-Pminecraft_version=26.3',
+                '-Pminecraft_version_range=[26.3,)', '-Pneo_form_version=26.3-1',
+                '-Ploader_version=0.19.5', '-Pfabric_api_version=0.162.0+26.3',
+                '-Pneoforge_version=26.3.0.69-beta', '--console=plain', '--non-interactive'
+        mustRunAfter buildMinecraft262
+        mustRunAfter subprojects.collect { "${it.path}:build" }
+    }
+    tasks.named('build') {
+        dependsOn buildMinecraft263
+    }
 }
 
 def nativeAccessJvmArgs = ['--enable-native-access=ALL-UNNAMED', '--illegal-native-access=allow']
@@ -29,7 +71,8 @@ allprojects {
     }
 }
 
-def mod_version = "8.1.14"
+def mod_version = "8.2.0"
+ext.mcaReleaseVersion = mod_version
 
 def getAppVersion = { ->
     try {
@@ -60,6 +103,9 @@ subprojects {
         tasks.withType(AbstractArchiveTask).configureEach {
             archiveBaseName.set("mcarem-${modLoader}-${mod_version}+${rootProject.minecraft_version}")
             archiveVersion.set('')
+            if (singleVersionBuild) {
+                destinationDirectory.set(file('build/libs'))
+            }
         }
     }
 }

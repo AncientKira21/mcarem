@@ -74,6 +74,9 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
         InteractionHand hand = arm == mob.getMainArm() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
         if (mob.isUsingItem() && mob.getUsedItemHand() == hand) {
             ItemUseAnimation anim = itemStack.getUseAnimation();
+            if (anim == ItemUseAnimation.BLOCK) {
+                return HumanoidModel.ArmPose.BLOCK;
+            }
             if (anim == ItemUseAnimation.BOW) {
                 return HumanoidModel.ArmPose.BOW_AND_ARROW;
             }
@@ -92,9 +95,12 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
     @Override
     public void extractRenderState(T entity, VillagerRenderState state, float partialTicks) {
         super.extractRenderState(entity, state, partialTicks);
+        state.isCastingSpell = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isCastingSpell();
+        state.isKidnapped = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA captive && captive.isKidnapped();
         VillagerStateHolder holder = VillagerStateHolder.require(state);
         holder.mca$setVillagerRenderData(VillagerRenderData.create(VillagerLike.PlayerModel.VILLAGER, entity));
-        state.panicAnimationProgress = entity.getVillagerBrain().getPanicAnimationProgress(partialTicks);
+        state.panicAnimationProgress = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA captive && captive.isKidnapped()
+                ? 1.0F : entity.getVillagerBrain().getPanicAnimationProgress(partialTicks);
         VillagerRenderStateHooks.extractScaledBounds(entity, state);
     }
 

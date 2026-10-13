@@ -82,7 +82,7 @@ public class DestinyScreen extends VillagerEditorScreen {
 
     @Override
     public void onClose() {
-        if (!page.equals("intro") && !page.equals("story")) {
+        if (!page.equals("welcome") && !page.equals("intro") && !page.equals("story")) {
             setPage("destiny");
         }
     }
@@ -122,6 +122,16 @@ public class DestinyScreen extends VillagerEditorScreen {
         final Matrix3x2fStack matrices = context.pose();
 
         switch (page) {
+            case "welcome" -> {
+                List<Component> lines = FlowingText.wrap(Component.translatable("gui.destiny.welcome"),
+                        Math.min(320, Math.max(80, (int) (width / 1.5f) - 32)));
+                int y = height / 2 - 24 - (lines.size() - 1) * 9;
+                for (Component line : lines) {
+                    drawScaledText(context, line, width / 2, y, 1.5f);
+                    y += 18;
+                }
+                drawScaledText(context, Component.translatable("gui.destiny.version"), width / 2, y + 4, 1.0f);
+            }
             case "intro" -> {
                 drawScaledText(context, Component.translatable("gui.destiny.whoareyou"), width / 2, height / 2 - 24, 1.5f);
                 matrices.pushMatrix();
@@ -144,7 +154,7 @@ public class DestinyScreen extends VillagerEditorScreen {
 
     @Override
     protected boolean shouldDrawEntity() {
-        return !page.equals("intro") && !page.equals("destiny") && !page.equals("story") && super.shouldDrawEntity();
+        return !page.equals("welcome") && !page.equals("intro") && !page.equals("destiny") && !page.equals("story") && super.shouldDrawEntity();
     }
 
     protected String getPath(String location) {
@@ -239,6 +249,8 @@ public class DestinyScreen extends VillagerEditorScreen {
         this.page = page;
         clearWidgets();
         switch (page) {
+            case "welcome" -> addRenderableWidget(new ButtonWidget(width / 2 - 48, height / 2 + 32,
+                    96, 20, Component.translatable("gui.destiny.next"), sender -> setPage("intro")));
             case "intro" -> {
                 drawName(width / 2 - DATA_WIDTH / 2, height / 2, name -> {
                     this.updateName(name);

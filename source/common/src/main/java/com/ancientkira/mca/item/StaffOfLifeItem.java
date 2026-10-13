@@ -32,7 +32,19 @@ public class StaffOfLifeItem extends TooltippedItem {
     @Override
     @SuppressWarnings("deprecation")
     public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay tooltipDisplay, Consumer<Component> consumer, TooltipFlag flag) {
-        consumer.accept(Component.translatable(getDescriptionId() + ".uses", stack.getMaxDamage() - stack.getDamageValue()));
+        int remaining = Math.max(0, stack.getMaxDamage() - stack.getDamageValue());
+        var enchantments = stack.getOrDefault(net.minecraft.core.component.DataComponents.ENCHANTMENTS,
+                net.minecraft.world.item.enchantment.ItemEnchantments.EMPTY);
+        int unbreaking = enchantments.entrySet().stream()
+                .filter(entry -> entry.getKey().is(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING))
+                .mapToInt(entry -> entry.getIntValue()).max().orElse(0);
+        if (unbreaking > 0) {
+            long expectedUses = (long) remaining * (unbreaking + 1L);
+            consumer.accept(Component.translatableWithFallback(getDescriptionId() + ".estimated_uses",
+                    "Estimated uses left: %s", expectedUses));
+        } else {
+            consumer.accept(Component.translatable(getDescriptionId() + ".uses", remaining));
+        }
         super.appendHoverText(stack, context, tooltipDisplay, consumer, flag);
     }
 

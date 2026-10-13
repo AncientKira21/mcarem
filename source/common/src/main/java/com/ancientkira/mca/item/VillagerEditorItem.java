@@ -15,17 +15,18 @@ public class VillagerEditorItem extends TooltippedItem {
         super(settings);
     }
 
+    @Override
     public InteractionResult interactLivingEntity(ItemStack stack, Player player, LivingEntity entity, InteractionHand hand) {
-        if (entity instanceof VillagerLike<?> villager && !entity.level().isClientSide() && player instanceof ServerPlayer serverPlayer) {
+        if (!(entity instanceof VillagerLike<?> villager)) {
+            return InteractionResult.PASS;
+        }
+        if (player instanceof ServerPlayer serverPlayer) {
             if (player.isShiftKeyDown()) {
                 villager.getInteractions().handle(serverPlayer, "inventory");
             } else {
                 Network.sendToPlayer(new OpenGuiRequest(OpenGuiRequest.Type.VILLAGER_EDITOR, entity), serverPlayer);
             }
-            return InteractionResult.SUCCESS;
-        } else {
-            return InteractionResult.CONSUME;
         }
+        return InteractionResult.SUCCESS_SERVER;
     }
 }
-

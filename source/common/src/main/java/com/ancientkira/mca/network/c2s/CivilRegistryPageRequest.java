@@ -28,7 +28,7 @@ public record CivilRegistryPageRequest(int index, int from, int to) implements H
 
     @Override
     public void handleServer(ServerPlayer player) {
-        PlayerSaveData.get(player).getLastSeenVillage(VillageManager.get((ServerLevel) player.level())).flatMap(Village::getCivilRegistry).ifPresentOrElse(c -> {
+        PlayerSaveData.get(player).getRegistryVillage(player.level()).flatMap(Village::getCivilRegistry).ifPresentOrElse(c -> {
             List<Component> page = c.getPage(from, to);
             Network.sendToPlayer(CivilRegistryResponse.fromComponents(index, page), player);
         }, () -> {

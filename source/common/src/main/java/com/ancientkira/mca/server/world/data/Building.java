@@ -23,6 +23,8 @@ import java.util.stream.Stream;
 
 public class Building {
     public static final long SCAN_COOLDOWN = 4800;
+    private static final int STRICT_SCAN_VERTICAL_BELOW = 1;
+    private static final int STRICT_SCAN_VERTICAL_ABOVE = 2;
     private static final Direction[] directions = {
             Direction.UP, Direction.DOWN, Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST
     };
@@ -202,6 +204,10 @@ public class Building {
     }
 
     public validationResult validateBuilding(Level world, Set<BlockPos> blocked) {
+        return validateBuilding(world, blocked, null);
+    }
+
+    public validationResult validateBuilding(Level world, Set<BlockPos> blocked, Set<BlockPos> scannedPositions) {
         //validate grouped buildings differently
         if (getBuildingType().grouped()) {
             validateBlocks(world);
@@ -236,10 +242,8 @@ public class Building {
         while (!queue.isEmpty() && scanSize < maxSize) {
             BlockPos p = queue.removeLast();
 
-            //this block is marked as blocked, indicating an overlap
-            if (blocked.contains(p) && scanSize > 0) {
-                return validationResult.OVERLAP;
-            }
+            // Other registered room anchors may be inside the same floor structure.
+            // They must not reject this room's scan or update.
 
             //as long the max radius is not reached
             if (p.distManhattan(center) < maxRadius) {
@@ -248,6 +252,11 @@ public class Building {
 
                     //and the block is not already checked
                     if (!done.contains(n)) {
+                        int verticalOffset = n.getY() - center.getY();
+                        if (strictScan && (verticalOffset < -STRICT_SCAN_VERTICAL_BELOW
+                                || verticalOffset > STRICT_SCAN_VERTICAL_ABOVE)) {
+                            continue;
+                        }
                         BlockState state = world.getBlockState(n);
 
                         //mark it
@@ -299,12 +308,16 @@ public class Building {
             scanSize++;
         }
 
+        if (scannedPositions != null) {
+            scannedPositions.addAll(done);
+        }
+
         // min size is 32 by default, which equals an 8 block big cube with 6 times 4 sides
         if (!queue.isEmpty()) {
             return validationResult.BLOCK_LIMIT;
         } else if (done.size() <= minSize) {
             return validationResult.TOO_SMALL;
-        } else if (!hasDoor) {
+        } else if (!hasDoor && getFloorNumber() == 0) {
             return validationResult.NO_DOOR;
         } else {
             //dimensions
@@ -366,7 +379,7 @@ public class Building {
     public List<BuildingType> getMatchingTypes() {
         List<BuildingType> matches = new ArrayList<>();
         for (BuildingType bt : BuildingTypes.getInstance()) {
-            if (bt.grouped()) {
+            if (bt.grouped() || bt.name().equals("pillager_outpost")) {
                 continue;
             }
             if (matchesType(bt)) {

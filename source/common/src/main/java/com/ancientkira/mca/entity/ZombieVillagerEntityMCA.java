@@ -199,12 +199,6 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
     }
 
     @Override
-    public void setBaby(boolean isBaby) {
-        super.setBaby(isBaby);
-        setAgeState(isBaby ? AgeState.BABY : AgeState.ADULT);
-    }
-
-    @Override
     public boolean isHostile() {
         return true;
     }
@@ -232,7 +226,7 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
     @Override
     @Nullable
     public <T extends Mob> T convertTo(EntityType<T> type, ConversionParams params, ConversionParams.AfterConversion<T> afterConversion) {
-        EntityType<? extends Mob> convertedType = !isRemoved() && type == EntityType.VILLAGER ? getGenetics().getGender().getVillagerType() : type;
+        EntityType<? extends Mob> convertedType = !isRemoved() && type.equals(EntityType.VILLAGER) ? getGenetics().getGender().getVillagerType() : type;
 
         UUID oldUuid = getUUID();
 
@@ -313,4 +307,3 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
         return !isPersistenceRequired();
     }
 }
-

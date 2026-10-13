@@ -56,8 +56,7 @@ public class VillageMarriageManager {
                         village.broadCastMessage(world, "events.marry", suitor, mate);
                     }
 
-                    // civil entry
-                    village.getCivilRegistry().ifPresent(r -> r.addText(Component.translatable("events.marry", suitor.getName(), mate.getName())));
+                    // Relationship.marry records the event once, including raiders and player weddings.
                 });
     }
 }

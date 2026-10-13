@@ -49,6 +49,15 @@ public class Command {
                 .then(register("editor", Command::editor))
                 .then(register("destiny", Command::destiny))
                 .then(register("mail", Command::mail))
+                .then(register("raid").then(Commands.literal("start").executes(Command::startRaid)))
+                .then(register("familyRequest")
+                        .then(familyRequest("divorce"))
+                        .then(familyRequest("adopt")))
+                .then(register("villagerProposal")
+                        .then(Commands.literal("yes").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c -> com.ancientkira.mca.server.VillagerProposals.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "sender"), true))))
+                        .then(Commands.literal("no").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c -> com.ancientkira.mca.server.VillagerProposals.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "sender"), false)))))
                 .then(register("verify").then(Commands.argument("email", StringArgumentType.greedyString()).executes(Command::verify)))
                 .then(register("chatAI")
                         .executes(Command::chatAIHelp)
@@ -90,6 +99,51 @@ public class Command {
                         .then(Commands.literal("disable").executes(Command::ttsDisable))
                 )
         );
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<net.minecraft.commands.CommandSourceStack> familyRequest(String type) {
+        return Commands.literal(type)
+                .then(Commands.literal("yes").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
+                        .executes(context -> com.ancientkira.mca.server.FamilyRequests.respond(context.getSource().getPlayerOrException(), type,
+                                net.minecraft.commands.arguments.UuidArgument.getUuid(context, "sender"), true))))
+                .then(Commands.literal("no").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
+                        .executes(context -> com.ancientkira.mca.server.FamilyRequests.respond(context.getSource().getPlayerOrException(), type,
+                                net.minecraft.commands.arguments.UuidArgument.getUuid(context, "sender"), false))));
+    }
+
+    private static int startRaid(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ServerPlayer player = context.getSource().getPlayerOrException();
+        var world = player.level();
+        Village village = VillageManager.get(world).findNearestVillage(player).orElse(null);
+        if (village == null && !world.isVillage(player.blockPosition())) {
+            player.sendSystemMessage(Component.translatable("command.mca.raid.no_village"));
+            return 0;
+        }
+        if (world.getDifficulty() == net.minecraft.world.Difficulty.PEACEFUL) {
+            player.sendSystemMessage(Component.translatable("command.mca.raid.peaceful"));
+            return 0;
+        }
+        net.minecraft.core.BlockPos center = village == null ? player.blockPosition()
+                : new net.minecraft.core.BlockPos(village.getCenter().getX(), village.getCenter().getY(), village.getCenter().getZ());
+        if (world.getRaids().getNearbyRaid(center, 128 * 128) != null) {
+            player.sendSystemMessage(Component.translatable("command.mca.raid.already_active"));
+            return 0;
+        }
+        var raid = world.getRaids().createOrExtendRaid(player, center);
+        if (raid == null) {
+            player.sendSystemMessage(Component.translatable("command.mca.raid.disabled"));
+            return 0;
+        }
+        raid.setRaidOmenLevel(Math.max(1, raid.getRaidOmenLevel()));
+        ((com.ancientkira.mca.mixin.RaidCountdownAccessor) (Object) raid).mca$setRaidCooldownTicks(0);
+        world.getRaids().setDirty();
+        if (village != null) {
+            com.ancientkira.mca.server.AutomaticVillageConflicts.get(world).cancelRaidWarning(village.getId());
+            village.getCivilRegistry().ifPresent(registry -> registry.addText(
+                    Component.translatable("mca.conflict.raid_started", village.getName())));
+        }
+        player.sendSystemMessage(Component.translatable("command.mca.raid.started"));
+        return 1;
     }
 
     private static boolean canAccessLocalAiCommands(CommandSourceStack source) {

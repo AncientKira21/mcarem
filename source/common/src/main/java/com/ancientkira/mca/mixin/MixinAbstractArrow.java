@@ -27,6 +27,9 @@ abstract class MixinAbstractArrow {
         if (!(target instanceof LivingEntity livingTarget) || archer == null) {
             return original.call(target, source, damage);
         }
+        if (target instanceof VillagerEntityMCA person && !ProfessionsMCA.isRaider(person.getProfession())
+                && com.ancientkira.mca.server.VillageWarfare.isFighting(archer)
+                && !com.ancientkira.mca.server.VillageWarfare.isEnemy(archer, person)) return false;
 
         if (target.level().isClientSide()) {
             return true;

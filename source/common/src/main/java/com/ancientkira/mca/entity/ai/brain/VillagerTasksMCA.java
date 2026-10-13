@@ -113,12 +113,19 @@ public class VillagerTasksMCA {
     }
 
     public static Brain<VillagerEntityMCA> initializeTasks(VillagerEntityMCA villager, Brain<VillagerEntityMCA> brain) {
-        VillagerProfession profession = villager.getVillagerData().profession().value();
+        VillagerProfession profession = villager.isPeacefulRaider()
+                ? BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.NONE)
+                : villager.getVillagerData().profession().value();
         AgeState age = AgeState.byCurrentAge(villager.getAge());
 
         boolean noDefault = false;
 
-        if (brain.getMemoryInternal(MemoryModuleTypeMCA.STAYING).isPresent()) {
+        if (ProfessionsMCA.isRaider(profession)) {
+            brain.addActivity(Activity.CORE, getImportantCorePackage(0.5F), ImmutableSet.of(), ImmutableSet.of());
+            brain.addActivity(Activity.CORE, getGuardCorePackage(villager), ImmutableSet.of(), ImmutableSet.of());
+            brain.addActivity(Activity.IDLE, ImmutableList.of(Pair.of(10, new ConditionalTask<>(RandomStroll.stroll(0.5F), (VillagerEntityMCA v) -> !v.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)))), ImmutableSet.of(), ImmutableSet.of());
+            noDefault = true;
+        } else if (brain.getMemoryInternal(MemoryModuleTypeMCA.STAYING).isPresent()) {
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getStayingPackage(), ImmutableSet.of(), ImmutableSet.of());
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getImportantCorePackage(0.5f), ImmutableSet.of(), ImmutableSet.of());
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getSelfDefencePackage(), ImmutableSet.of(), ImmutableSet.of());
@@ -220,6 +227,7 @@ public class VillagerTasksMCA {
         return ImmutableList.of(
                 Pair.of(0, new Swim(0.8F)),
                 Config.getInstance().useSmarterDoorAI ? Pair.of(0, new SmarterOpenDoorsTask()) : Pair.of(0, InteractWithDoor.create()),
+                Pair.of(0, new CloseRememberedDoorsTask()),
                 Pair.of(0, new ConditionalTask<>(new LookAtTargetSink(45, 90), villager -> !isInDanger(villager))),
                 Pair.of(0, WakeUp.create()),
                 Pair.of(0, new DeliverMessageTask()),
@@ -290,7 +298,8 @@ public class VillagerTasksMCA {
 
     public static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super VillagerEntityMCA>>> getSelfDefencePackage() {
         return ImmutableList.of(
-                Pair.of(0, new VillagerPanicTrigger()),
+                Pair.of(0, new ConditionalTask<>(new VillagerPanicTrigger(), (VillagerEntityMCA v) -> !ProfessionsMCA.isRaider(v.getProfession())
+                        && !com.ancientkira.mca.server.CaptiveRescue.isHelping(v))),
                 Pair.of(1, new EquipmentTask(VillagerTasksMCA::isInDanger, v -> EquipmentSet.NAKED)),
                 Pair.of(2, new ExtendedMeleeAttackTask(15, 2.5F, MemoryModuleType.NEAREST_HOSTILE))
         );
@@ -313,7 +322,7 @@ public class VillagerTasksMCA {
                         new ExtendedMeleeAttackTask(15, 2.5F, MemoryModuleType.NEAREST_HOSTILE),
                         VillagerTasksMCA::guardTooHurt
                 )),
-                Pair.of(1, new EquipmentTask(VillagerTasksMCA::isOnDuty, v -> v.getResidency().getHomeVillage()
+                Pair.of(1, new EquipmentTask(v -> ProfessionsMCA.isRaider(v.getProfession()) || isOnDuty(v), v -> ProfessionsMCA.isRaider(v.getProfession()) ? com.ancientkira.mca.server.RaiderCombat.equipment(v.getProfession()) : v.getResidency().getHomeVillage()
                         .map(village -> village.getVillageGuardsManager().getGuardEquipment(v.getProfession()))
                         .orElseGet(() -> v.getProfession() == ProfessionsMCA.ARCHER
                                 ? VillageGuardsManager.getArcherEquipmentForLevel(0)
@@ -328,11 +337,11 @@ public class VillagerTasksMCA {
                 Pair.of(5, new BowTask<>(20, 15)),
                 Pair.of(7, new ConditionalTask<>(
                         SetWalkTargetFromAttackTargetIfTargetOutOfReach.create(0.75F),
-                        (VillagerEntityMCA v) -> !VillagerTasksMCA.isHoldingRangedWeapon(v)
+                        (VillagerEntityMCA v) -> !VillagerTasksMCA.isHoldingRangedWeapon(v) && !ProfessionsMCA.isSpellcaster(v.getProfession())
                 )),
                 Pair.of(8, new ConditionalTask<>(
                         new ExtendedMeleeAttackTask(20, 2.0F),
-                        (VillagerEntityMCA v) -> !VillagerTasksMCA.isHoldingRangedWeapon(v)
+                        (VillagerEntityMCA v) -> !VillagerTasksMCA.isHoldingRangedWeapon(v) && !ProfessionsMCA.isSpellcaster(v.getProfession())
                 )),
                 Pair.of(9, new ExtendedCrossbowAttackTask<VillagerEntityMCA, VillagerEntityMCA>())
         );
@@ -367,11 +376,13 @@ public class VillagerTasksMCA {
     }
 
     private static boolean guardTooHurt(VillagerEntityMCA villager) {
-        return villager.getHealth() < villager.getMaxHealth() * 0.25;
+        return !ProfessionsMCA.isRaider(villager.getProfession()) && villager.getHealth() < villager.getMaxHealth() * 0.25;
     }
 
     private static Optional<? extends LivingEntity> getPreferredTarget(VillagerEntityMCA villager) {
-        if (guardTooHurt(villager)) {
+        if (ProfessionsMCA.isRaider(villager.getProfession())) {
+            return com.ancientkira.mca.server.PillagerRaids.findTarget(villager);
+        } else if (guardTooHurt(villager)) {
             return Optional.empty();
         } else {
             Optional<LivingEntity> current = villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET);
@@ -389,7 +400,9 @@ public class VillagerTasksMCA {
     }
 
     private static boolean shouldKeepAttackTarget(VillagerEntityMCA villager, LivingEntity target) {
-        return target.isAlive()
+        return target != villager && !target.getUUID().equals(villager.getUUID())
+               && !(target instanceof VillagerEntityMCA person && person.isPeacefulRaider())
+               && target.isAlive()
                && !target.isRemoved()
                && target.level() == villager.level()
                && villager.canAttack(target);
@@ -402,7 +415,7 @@ public class VillagerTasksMCA {
     }
 
     private static boolean shouldRespondToAttackTarget(VillagerEntityMCA villager, LivingEntity target) {
-        return isFollowingPlayer(villager)
+        return com.ancientkira.mca.server.VillageWarfare.isFighting(villager) || isFollowingPlayer(villager)
                || getActivity(villager) != Activity.REST
                || target.distanceTo(villager) < 8.0
                || villager.getResidency().getHomeVillage().filter(village -> village.isWithinBorder(villager)).isEmpty();
@@ -568,8 +581,7 @@ public class VillagerTasksMCA {
         return ImmutableList.of(
                 Pair.of(1, new EnterFavoredBuildingTask(0.5f)),
                 Pair.of(2, new RunOne<>(ImmutableList.of(
-                        Pair.of(InteractWith.of(EntitiesMCA.FEMALE_VILLAGER, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2), 2),
-                        Pair.of(InteractWith.of(EntitiesMCA.MALE_VILLAGER, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2), 2),
+                        Pair.of(InteractWith.of(EntitiesMCA.PERSON, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2), 4),
                         Pair.of(InteractWith.of(EntityType.CAT, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2), 1),
                         Pair.of(VillageBoundRandomStroll.create(speedModifier), 1),
                         Pair.of(SetWalkTargetFromLookTarget.create(speedModifier, 2), 1),
@@ -647,8 +659,7 @@ public class VillagerTasksMCA {
 
     private static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super VillagerEntityMCA>>> getAdventurerPackage(float speedModifier) {
         return ImmutableList.of(
-                Pair.of(5, InteractWith.of(EntitiesMCA.FEMALE_VILLAGER, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2)),
-                Pair.of(5, InteractWith.of(EntitiesMCA.MALE_VILLAGER, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2)),
+                Pair.of(5, InteractWith.of(EntitiesMCA.PERSON, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2)),
                 Pair.of(5, InteractWith.of(EntityType.CAT, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2)),
                 Pair.of(5, VillageBoundRandomStroll.create(speedModifier)),
                 Pair.of(5, SetWalkTargetFromLookTarget.create(speedModifier, 2)),

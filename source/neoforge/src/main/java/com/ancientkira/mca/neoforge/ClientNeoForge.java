@@ -33,6 +33,14 @@ import net.neoforged.neoforge.client.renderstate.RegisterRenderStateModifiersEve
 @Mod(value = MCA.MOD_ID, dist = Dist.CLIENT)
 @EventBusSubscriber(modid = MCA.MOD_ID, value = Dist.CLIENT)
 public final class ClientNeoForge extends ClientProxyAbstractImpl {
+    @SubscribeEvent
+    public static void onBlueprintFloorClick(ScreenEvent.MouseButtonPressed.Pre event) {
+        if (event.getScreen() instanceof com.ancientkira.mca.client.gui.BlueprintScreen blueprint
+                && blueprint.handleFloorDropdownClick(event.getMouseButtonEvent())) {
+            event.setCanceled(true);
+        }
+    }
+
     public ClientNeoForge() {
     }
 
@@ -43,13 +51,17 @@ public final class ClientNeoForge extends ClientProxyAbstractImpl {
 
         // Entity renderers
         if (Config.getInstance().useSquidwardModels) {
+            event.registerEntityRenderer(EntitiesMCA.PERSON, VillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.MALE_VILLAGER, VillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.FEMALE_VILLAGER, VillagerRenderer::new);
+            event.registerEntityRenderer(EntitiesMCA.ZOMBIE_PERSON, ZombieVillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.MALE_ZOMBIE_VILLAGER, ZombieVillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerRenderer::new);
         } else {
+            event.registerEntityRenderer(EntitiesMCA.PERSON, VillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.MALE_VILLAGER, VillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.FEMALE_VILLAGER, VillagerEntityMCARenderer::new);
+            event.registerEntityRenderer(EntitiesMCA.ZOMBIE_PERSON, ZombieVillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.MALE_ZOMBIE_VILLAGER, ZombieVillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerEntityMCARenderer::new);
         }

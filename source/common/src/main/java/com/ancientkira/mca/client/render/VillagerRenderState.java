@@ -4,5 +4,7 @@ import net.minecraft.client.renderer.entity.state.UndeadRenderState;
 
 public class VillagerRenderState extends UndeadRenderState {
     public boolean isConverting;
+    public boolean isCastingSpell;
+    public boolean isKidnapped;
     public float panicAnimationProgress;
 }

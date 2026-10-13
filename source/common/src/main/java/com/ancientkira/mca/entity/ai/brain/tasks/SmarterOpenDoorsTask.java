@@ -20,9 +20,11 @@ import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.level.pathfinder.Node;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Iterator;
@@ -32,7 +34,6 @@ import java.util.Optional;
 public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
     private static final int RUN_TIME = 20;
     private static final double PATHING_DISTANCE = 2.0;
-    private static final double REACH_DISTANCE = 2.0;
 
     @Nullable
     private Node pathNode;
@@ -44,6 +45,10 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
 
     public static boolean setOpen(@Nullable Entity entity, Level world, BlockState state, BlockPos pos, boolean open) {
         if (state.hasProperty(BlockStateProperties.OPEN) && state.getValue(BlockStateProperties.OPEN) != open) {
+            if (state.getBlock() instanceof DoorBlock door) {
+                door.setOpen(entity, world, state, pos, open);
+                return true;
+            }
             world.setBlock(pos, state.setValue(BlockStateProperties.OPEN, open), Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
             world.gameEvent(entity, open ? GameEvent.BLOCK_OPEN : GameEvent.BLOCK_CLOSE, pos);
             playOpenCloseSound(entity, world, pos, open);
@@ -71,12 +76,18 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
                 BlockPos blockPos = globalPos.pos();
 
                 // Not far enough away
-                if (lastNode != null && lastNode.asBlockPos().equals(blockPos) || currentNode != null && currentNode.asBlockPos().equals(blockPos))
+                if ((lastNode != null && lastNode.asBlockPos().equals(blockPos)
+                        || currentNode != null && currentNode.asBlockPos().equals(blockPos))
+                        && blockPos.closerToCenterThan(entity.position(), PATHING_DISTANCE))
                     continue;
 
-                // Out of range
-                if (SmarterOpenDoorsTask.cannotReachDoor(world, entity, globalPos)) {
+                if (!globalPos.dimension().equals(world.dimension())) {
                     iterator.remove();
+                    continue;
+                }
+
+                // Retry unloaded doors without loading chunks; distance must not strand a sprinting villager's reminder.
+                if (SmarterOpenDoorsTask.cannotReachDoor(world, entity, globalPos)) {
                     continue;
                 }
 
@@ -94,7 +105,12 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
                 }
 
                 // Door is blocked by entities
-                if (SmarterOpenDoorsTask.hasOtherMobReachedDoor(entity, blockPos)) {
+                BlockPos doorwayBase = blockState.hasProperty(DoorBlock.HALF)
+                        && blockState.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER ? blockPos.below() : blockPos;
+                AABB doorway = new AABB(doorwayBase).expandTowards(0, 1, 0).inflate(0.2);
+                if (!world.getEntitiesOfClass(LivingEntity.class, doorway, LivingEntity::isAlive).isEmpty()
+                        || SmarterOpenDoorsTask.hasOtherMobReachedDoor(entity, blockPos)
+                        || blockState.hasProperty(BlockStateProperties.POWERED) && blockState.getValue(BlockStateProperties.POWERED)) {
                     continue;
                 }
 
@@ -131,7 +147,7 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
     }
 
     private static boolean cannotReachDoor(ServerLevel world, LivingEntity entity, GlobalPos doorPos) {
-        return doorPos.dimension() != world.dimension() || !doorPos.pos().closerToCenterThan(entity.position(), REACH_DISTANCE);
+        return !doorPos.dimension().equals(world.dimension()) || !world.hasChunkAt(doorPos.pos());
     }
 
     @Override

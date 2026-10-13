@@ -87,9 +87,9 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     private static final float STEVE_RAW_HEIGHT_SCALE = 0.9F;
 
     @NotNull
-    protected final VillagerEntityMCA villager = Objects.requireNonNull(EntitiesMCA.MALE_VILLAGER.create(Objects.requireNonNull(Minecraft.getInstance().level), EntitySpawnReason.LOAD));
+    protected final VillagerEntityMCA villager = Objects.requireNonNull(EntitiesMCA.PERSON.create(Objects.requireNonNull(Minecraft.getInstance().level), EntitySpawnReason.LOAD));
     @NotNull
-    protected final VillagerEntityMCA villagerVisualization = Objects.requireNonNull(EntitiesMCA.MALE_VILLAGER.create(Objects.requireNonNull(Minecraft.getInstance().level), EntitySpawnReason.LOAD));
+    protected final VillagerEntityMCA villagerVisualization = Objects.requireNonNull(EntitiesMCA.PERSON.create(Objects.requireNonNull(Minecraft.getInstance().level), EntitySpawnReason.LOAD));
 
     final UUID villagerUUID;
     final UUID playerUUID;
@@ -701,7 +701,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                     }
                 }
             }
-            case "debug" -> {
+            case "misc" -> {
                 //profession
                 boolean right = false;
                 List<ButtonWidget> professionButtons = new LinkedList<>();
@@ -711,9 +711,13 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                         ProfessionsMCA.ARCHER,
                         ProfessionsMCA.OUTLAW,
                         ProfessionsMCA.ADVENTURER,
-                        ProfessionsMCA.CULTIST,
+                        ProfessionsMCA.WANDERING_TRADER,
+                        ProfessionsMCA.PILLAGER,
+                        ProfessionsMCA.VINDICATOR,
+                        ProfessionsMCA.EVOKER,
+                        ProfessionsMCA.WITCH,
                 }) {
-                    ButtonWidget widget = addRenderableWidget(new ButtonWidget(width / 2 + (right ? DATA_WIDTH / 2 : 0), y, DATA_WIDTH / 2, 20, p.name(), b -> {
+                    ButtonWidget widget = addRenderableWidget(new ButtonWidget(width / 2 + (right ? DATA_WIDTH / 2 : 0), y, DATA_WIDTH / 2, 18, p.name(), b -> {
                         CompoundTag compound = new CompoundTag();
                         compound.putString("profession", BuiltInRegistries.VILLAGER_PROFESSION.getKey(p).toString());
                         syncVillagerData();
@@ -725,7 +729,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                     professionButtons.add(widget);
                     widget.active = villager.getProfession() != p;
                     if (right) {
-                        y += 20;
+                        y += 18;
                     }
                     right = !right;
                 }
@@ -1427,7 +1431,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
         if (villagerUUID.equals(playerUUID)) {
             return new String[]{"general", "body", "traits"};
         } else {
-            return new String[]{"general", "body", "personality", "traits", "debug"};
+            return new String[]{"general", "body", "personality", "traits", "misc"};
         }
     }
 

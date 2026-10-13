@@ -5,10 +5,10 @@ import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.entity.CommonSpeechManager;
 import com.ancientkira.mca.entity.ai.DialogueType;
 import com.ancientkira.mca.util.localization.PooledTranslationStorage;
+import com.ancientkira.mca.util.McaPair;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.ClientLanguage;
 import net.minecraft.locale.Language;
-import net.minecraft.util.Tuple;
 import org.jetbrains.annotations.NotNull;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -45,7 +45,7 @@ abstract class MixinClientLanguage extends Language {
     private void mca$injectGetOrDefault(String key, String fallback, CallbackInfoReturnable<String> info) {
         String modifiedKey = DialogueType.applyFallback(key);
 
-        Tuple<String, String> unpooled = mca$getPool().get(modifiedKey);
+        McaPair<String, String> unpooled = mca$getPool().get(modifiedKey);
         if (unpooled != null) {
             CommonSpeechManager.INSTANCE.lastResolvedKey = unpooled.getA();
             if (storage.containsKey(unpooled.getA()) && !storage.get(unpooled.getA()).equals(unpooled.getB())) {

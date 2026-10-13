@@ -12,12 +12,17 @@ import net.minecraft.world.entity.player.Player;
 
 import java.util.List;
 
-public record FamilyTreeUUIDResponse(List<FamilyTreeSearchEntry> list) implements HandleablePayload {
+public record FamilyTreeUUIDResponse(List<FamilyTreeSearchEntry> list, boolean deceasedVillagersOnly) implements HandleablePayload {
     public static final CustomPacketPayload.Type<FamilyTreeUUIDResponse> TYPE = new CustomPacketPayload.Type<>(MCA.locate("family_tree_uuid_response"));
     public static final StreamCodec<FriendlyByteBuf, FamilyTreeUUIDResponse> STREAM_CODEC = StreamCodec.composite(
             FamilyTreeSearchEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), FamilyTreeUUIDResponse::list,
+            ByteBufCodecs.BOOL, FamilyTreeUUIDResponse::deceasedVillagersOnly,
             FamilyTreeUUIDResponse::new
     );
+
+    public FamilyTreeUUIDResponse(List<FamilyTreeSearchEntry> list) {
+        this(list, false);
+    }
 
     @Override
     public void handle(Player player) {

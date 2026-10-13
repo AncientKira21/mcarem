@@ -1,6 +1,7 @@
 package com.ancientkira.mca.entity.ai.chatAI.modules;
 
 import com.ancientkira.mca.entity.VillagerEntityMCA;
+import com.ancientkira.mca.registry.ProfessionsMCA;
 import com.ancientkira.mca.server.world.data.Building;
 import com.ancientkira.mca.server.world.data.Village;
 import net.minecraft.server.level.ServerPlayer;
@@ -23,6 +24,13 @@ public class VillageModule {
     );
 
     public static void apply(List<String> input, VillagerEntityMCA villager, ServerPlayer player) {
+        if (ProfessionsMCA.isRaider(villager.getProfession())) {
+            String biome = villager.level().getBiome(villager.blockPosition()).unwrapKey()
+                    .map(v -> v.identifier().getPath().replace("_", " ")).orElse("plains");
+            input.add("$villager is currently in a " + biome + " biome. Nearby villages are surroundings, "
+                    + "not proof that you are a peaceful village resident. Do not invent an outpost or home location. ");
+            return;
+        }
         Optional<Village> village = villager.getResidency().getHomeVillage();
 
         // Probably completely over-detailed fact

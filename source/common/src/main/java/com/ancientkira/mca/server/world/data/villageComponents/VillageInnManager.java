@@ -11,7 +11,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader;
 import net.minecraft.world.level.BlockGetter;
 
 import java.util.ArrayList;
@@ -57,18 +56,12 @@ public class VillageInnManager {
         String name = null;
         if (this.doesNotSuffocateAt(world, blockPos)) {
             int i = world.getRandom().nextInt(10);
-            if (i == 0 && Config.getInstance().innSpawnsWanderingTraders) {
-                WanderingTrader trader = EntityType.WANDERING_TRADER.spawn(world, blockPos, EntitySpawnReason.EVENT);
+            if (i <= 1 && Config.getInstance().innSpawnsWanderingTraders) {
+                VillagerEntityMCA trader = spawnInnVillager(world, blockPos, Gender.getRandom());
                 if (trader != null) {
+                    trader.setProfession(ProfessionsMCA.WANDERING_TRADER);
                     name = trader.getName().getString();
                     trader.setDespawnDelay(Config.getInstance().adventurerStayTime);
-                }
-            } else if (i == 1 && Config.getInstance().innSpawnsCultists) {
-                VillagerEntityMCA adventurer = spawnInnVillager(world, blockPos, Gender.getRandom());
-                if (adventurer != null) {
-                    name = adventurer.getName().getString();
-                    adventurer.setProfession(ProfessionsMCA.CULTIST);
-                    adventurer.setDespawnDelay(Config.getInstance().adventurerStayTime);
                 }
             } else if (Config.getInstance().innSpawnsAdventurers) {
                 VillagerEntityMCA adventurer = spawnInnVillager(world, blockPos, Gender.getRandom());

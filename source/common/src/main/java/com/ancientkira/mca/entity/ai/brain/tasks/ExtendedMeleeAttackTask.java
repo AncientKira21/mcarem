@@ -36,6 +36,9 @@ public class ExtendedMeleeAttackTask extends Behavior<Mob> {
 
     @Override
     protected void start(ServerLevel world, Mob mobEntity, long l) {
+        if (mobEntity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isUsingCombatShield()) {
+            person.stopUsingItem();
+        }
         LivingEntity livingEntity = getTarget(mobEntity);
         BehaviorUtils.lookAtEntity(mobEntity, livingEntity);
         if (mobEntity instanceof VillagerLike<?> villager) {

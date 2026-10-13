@@ -142,7 +142,7 @@ public class ScytheItem extends Item {
 
         SoundEvent sound = SoundsMCA.REAPER_SCYTHE_OUT;
 
-        if (!hasSoul(stack) && target.isDeadOrDying() && (target.getType() == EntitiesMCA.MALE_VILLAGER || target.getType() == EntitiesMCA.FEMALE_VILLAGER)) {
+        if (!hasSoul(stack) && target.isDeadOrDying() && target.getType() == EntitiesMCA.PERSON) {
             setSoul(stack, true);
             sound = SoundEvents.BELL_RESONATE;
 

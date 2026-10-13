@@ -63,6 +63,10 @@ public class LongTermMemory {
         memories.put(id, currentTime + time);
     }
 
+    public void forget(String id) {
+        memories.remove(id);
+    }
+
     public long getMemory(String id) {
         if (memories.containsKey(id)) {
             if (entity.level().getGameTime() > memories.get(id)) {

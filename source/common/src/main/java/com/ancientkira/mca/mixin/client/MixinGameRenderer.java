@@ -3,10 +3,10 @@ package com.ancientkira.mca.mixin.client;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.MCAClient;
 import com.ancientkira.mca.entity.VillagerLike;
+import com.ancientkira.mca.util.McaPair;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.resources.Identifier;
-import net.minecraft.util.Tuple;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.jetbrains.annotations.Nullable;
@@ -34,7 +34,7 @@ public abstract class MixinGameRenderer {
     public abstract @Nullable Identifier currentPostEffect();
 
     @Unique
-    private Tuple<String, Identifier> mca$currentShader;
+    private McaPair<String, Identifier> mca$currentShader;
 
     @Unique
     private static @Nullable VillagerLike<?> mca$getCameraVillager(Entity entity) {
@@ -63,10 +63,10 @@ public abstract class MixinGameRenderer {
     }
 
     @Unique
-    private static @Nullable Tuple<String, Identifier> mca$findShader(VillagerLike<?> villager) {
+    private static @Nullable McaPair<String, Identifier> mca$findShader(VillagerLike<?> villager) {
         for (var entry : Config.getInstance().shaderLocationsMap.entrySet()) {
             if (villager.getTraits().hasTrait(entry.getKey()) && MCAClient.areShadersAllowed(entry.getKey() + "_shader")) {
-                return new Tuple<>(entry.getKey(), mca$normalizePostEffectId(entry.getValue()));
+                return new McaPair<>(entry.getKey(), mca$normalizePostEffectId(entry.getValue()));
             }
         }
         return null;

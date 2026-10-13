@@ -1,7 +1,13 @@
 {
   "replace": false,
   "values": [
+    "mca:person_spawn_egg",
     "mca:male_villager_spawn_egg",
-    "mca:female_villager_spawn_egg"
+    "mca:female_villager_spawn_egg",
+    "mca:pillager_spawn_egg",
+    "mca:vindicator_spawn_egg",
+    "mca:evoker_spawn_egg",
+    "mca:witch_spawn_egg",
+    "mca:wandering_trader_spawn_egg"
   ]
 }

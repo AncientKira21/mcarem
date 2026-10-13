@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "mca:book_supporters",
+    "minecraft:feather"
+  ],
+  "result": {
+    "id": "mca:villager_editor",
+    "count": 1
+  }
+}

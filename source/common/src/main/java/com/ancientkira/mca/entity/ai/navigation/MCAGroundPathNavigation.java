@@ -1,5 +1,7 @@
 package com.ancientkira.mca.entity.ai.navigation;
 
+import com.ancientkira.mca.entity.VillagerEntityMCA;
+import com.ancientkira.mca.server.world.data.Village;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
@@ -15,6 +17,9 @@ import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.pathfinder.PathFinder;
 import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.phys.Vec3;
+import java.util.Set;
+import java.util.Collections;
+import java.util.WeakHashMap;
 
 public class MCAGroundPathNavigation extends GroundPathNavigation {
     private static final double CLIMB_VERTICAL_SPEED = 0.16D;
@@ -25,6 +30,7 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
     private static final double DESCENT_NODE_TOLERANCE = 0.08D;
     private static final double EXIT_HEIGHT_TOLERANCE = 0.25D;
     private static final double EXIT_VERTICAL_BIAS = 0.08D;
+    private final Set<Path> villageRoadPaths = Collections.newSetFromMap(new WeakHashMap<>());
 
     public MCAGroundPathNavigation(Mob mob, Level level) {
         super(mob, level);
@@ -44,7 +50,40 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
 
     @Override
     public boolean canCutCorner(PathType type) {
-        return type != PathType.DOOR_OPEN && super.canCutCorner(type);
+        return !villageRoadPaths.contains(path) && type != PathType.DOOR_OPEN && super.canCutCorner(type);
+    }
+
+    @Override
+    protected Path createPath(Set<BlockPos> targets, int range, boolean offsetUpward, int accuracy, float followRange) {
+        if (!(mob instanceof VillagerEntityMCA villager) || villager.isGuard() || villager.isHostile() || level.isClientSide()) {
+            return super.createPath(targets, range, offsetUpward, accuracy, followRange);
+        }
+        Village village = villager.getResidency().getHomeVillage().orElse(null);
+        if (village == null || targets.isEmpty()) {
+            return super.createPath(targets, range, offsetUpward, accuracy, followRange);
+        }
+        // Leave the currently followed route intact; repeated movement requests reuse it.
+        if (path != null && !path.isDone() && targets.contains(getTargetPos())) {
+            return path;
+        }
+        MCAWalkNodeEvaluator evaluator = (MCAWalkNodeEvaluator) nodeEvaluator;
+        evaluator.configureRoads(village, mob.blockPosition(), targets, true);
+        try {
+            Path roadPath = super.createPath(targets, range, offsetUpward, accuracy, followRange);
+            if (roadPath != null && roadPath.canReach()) {
+                villageRoadPaths.add(roadPath);
+                return roadPath;
+            }
+            evaluator.configureRoads(village, mob.blockPosition(), targets, false);
+            return super.createPath(targets, range, offsetUpward, accuracy, followRange);
+        } finally {
+            evaluator.configureRoads(null, mob.blockPosition(), Set.of(), false);
+        }
+    }
+
+    @Override
+    protected boolean canMoveDirectly(Vec3 start, Vec3 end) {
+        return !villageRoadPaths.contains(path) && super.canMoveDirectly(start, end);
     }
 
     @Override

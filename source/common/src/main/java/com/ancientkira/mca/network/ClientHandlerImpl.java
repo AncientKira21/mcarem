@@ -36,6 +36,11 @@ public class ClientHandlerImpl implements ClientHandler {
         assert client.level != null;
         assert Minecraft.getInstance().player != null;
         switch (message.getGui()) {
+            case CLOSE:
+                if (client.screen instanceof InteractScreen interaction && interaction.isInteractingWith(message.villager())) {
+                    interaction.onClose();
+                }
+                break;
             case WHISTLE:
                 client.setScreen(new WhistleScreen());
                 break;
@@ -100,6 +105,9 @@ public class ClientHandlerImpl implements ClientHandler {
                 break;
             case VILLAGER_TRACKER:
                 client.setScreen(new VillagerTrackerSearchScreen());
+                break;
+            case VILLAGER_REVIVER:
+                client.setScreen(new VillagerReviverSearchScreen());
                 break;
             default:
         }
@@ -209,7 +217,8 @@ public class ClientHandlerImpl implements ClientHandler {
     @Override
     public void handleFamilyTreeUUIDResponse(FamilyTreeUUIDResponse response) {
         Screen screen = client.screen;
-        if (screen instanceof FamilyTreeSearchScreen gui) {
+        if (screen instanceof FamilyTreeSearchScreen gui
+                && gui.acceptsDeceasedVillagersOnly() == response.deceasedVillagersOnly()) {
             gui.setList(response.list());
         }
     }
@@ -217,7 +226,7 @@ public class ClientHandlerImpl implements ClientHandler {
     @Override
     public void handlePlayerDataMessage(PlayerDataMessage response) {
         assert client.level != null;
-        VillagerEntityMCA villager = EntitiesMCA.MALE_VILLAGER.create(client.level, EntitySpawnReason.LOAD);
+        VillagerEntityMCA villager = EntitiesMCA.PERSON.create(client.level, EntitySpawnReason.LOAD);
         assert villager != null;
         villager.load(TagValueInput.create(ProblemReporter.DISCARDING, villager.registryAccess(), response.nbt()));
         MCAClient.addPlayerData(response.uuid(), villager);

@@ -313,7 +313,7 @@ public class AdminCommand {
 
     private static Stream<VillagerEntityMCA> getLoadedVillagers(final CommandContext<CommandSourceStack> ctx) {
         ServerLevel world = ctx.getSource().getLevel();
-        return Stream.concat(world.getEntities(EntitiesMCA.FEMALE_VILLAGER, x -> true).stream(), world.getEntities(EntitiesMCA.MALE_VILLAGER, x -> true).stream());
+        return world.getEntities(EntitiesMCA.PERSON, x -> true).stream().map(VillagerEntityMCA.class::cast);
     }
 
     private static void success(String message, CommandContext<CommandSourceStack> ctx, Object... events) {

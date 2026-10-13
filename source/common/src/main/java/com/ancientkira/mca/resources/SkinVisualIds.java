@@ -39,7 +39,7 @@ public final class SkinVisualIds {
         ClothingList list = ClothingList.getInstance();
         Clothing clothing = getKnownClothing(identifier, list);
         return ImmersiveLibraryIds.isValid(identifier)
-                || clothing != null && SkinSelection.matchesGender(clothing, gender);
+                || clothing != null && SkinSelection.canWearClothing(clothing, gender);
     }
 
     public static boolean isHairStyle(String identifier) {

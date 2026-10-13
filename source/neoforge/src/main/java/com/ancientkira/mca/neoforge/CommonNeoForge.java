@@ -98,6 +98,9 @@ public final class CommonNeoForge {
                     .withTabsBefore(CreativeModeTabs.SPAWN_EGGS)
                     .displayItems((params, output) -> {
                         for (Item item : ItemsMCA.ITEMS.values()) {
+                            if (!ItemsMCA.isVisibleInCreative(item)) {
+                                continue;
+                            }
                             output.accept(new ItemStack(item));
                         }
                     })

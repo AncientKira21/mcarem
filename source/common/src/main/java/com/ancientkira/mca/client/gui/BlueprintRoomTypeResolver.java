@@ -52,13 +52,18 @@ final class BlueprintRoomTypeResolver {
         if (room.getId() == mainRoom.getId() && !room.isTypeForced() && !inherited.isEmpty()) {
             type = matchingTypes(effective).stream().findFirst().orElse(type);
         }
+        Building structure = village.getBuilding(room.getStructureId()).orElse(room);
+        if (structure.isTypeForced() && structure.getType().equals("pillager_outpost")
+                && village.canRegisterOutpost(structure)) {
+            type = structure.getBuildingType();
+        }
         return new Context(room, mainRoom, room.getBlocks(), inherited, type, contributors);
     }
 
     private static List<BuildingType> matchingTypes(Map<Identifier, List<BlockPos>> blocks) {
         List<BuildingType> matches = new ArrayList<>();
         for (BuildingType type : BuildingTypes.getInstance()) {
-            if (type.grouped()) {
+            if (type.grouped() || type.name().equals("pillager_outpost")) {
                 continue;
             }
             Map<Identifier, List<BlockPos>> available = type.getGroups(blocks);

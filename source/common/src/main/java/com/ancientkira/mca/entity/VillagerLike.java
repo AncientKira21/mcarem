@@ -81,7 +81,7 @@ public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrack
 
     static VillagerLike<?> toVillager(PlayerSaveData player) {
         CompoundTag villagerData = player.getEntityData();
-        VillagerEntityMCA villager = EntitiesMCA.MALE_VILLAGER.create(player.getWorld(), EntitySpawnReason.LOAD);
+        VillagerEntityMCA villager = EntitiesMCA.PERSON.create(player.getWorld(), EntitySpawnReason.LOAD);
         if (villager == null) {
             return null;
         }

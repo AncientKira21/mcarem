@@ -49,6 +49,16 @@ public class InteractScreen extends AbstractDynamicScreen {
         this.villager = villager;
     }
 
+    public boolean isInteractingWith(int entityId) {
+        return villager.asEntity().getId() == entityId;
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        Network.sendToServer(new InteractionCloseRequest(villager.asEntity().getUUID()));
+    }
+
     public static void setAnalysis(Analysis analysis) {
         InteractScreen.analysis = analysis;
     }
@@ -71,7 +81,7 @@ public class InteractScreen extends AbstractDynamicScreen {
     @Override
     public void onClose() {
         Objects.requireNonNull(this.minecraft).setScreen(null);
-        Network.sendToServer(new InteractionCloseRequest(villager.asEntity().getUUID()));
+
     }
 
     @Override

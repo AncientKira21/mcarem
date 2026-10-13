@@ -1,8 +1,8 @@
 package com.ancientkira.mca.util.localization;
 
 import com.ancientkira.mca.resources.PoolUtil;
+import com.ancientkira.mca.util.McaPair;
 import net.minecraft.util.RandomSource;
-import net.minecraft.util.Tuple;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,7 +14,7 @@ public class PooledTranslationStorage {
     private static final Pattern TRAILING_NUMBERS_PATTERN = Pattern.compile("/[0-9]+$");
     private static final Predicate<String> TRAILING_NUMBERS_PREDICATE = TRAILING_NUMBERS_PATTERN.asPredicate();
 
-    private final Map<String, List<Tuple<String, String>>> multiTranslations = new HashMap<>();
+    private final Map<String, List<McaPair<String, String>>> multiTranslations = new HashMap<>();
 
     private final RandomSource rand = RandomSource.create();
 
@@ -26,22 +26,21 @@ public class PooledTranslationStorage {
         if (TRAILING_NUMBERS_PREDICATE.test(key)) {
             multiTranslations
                     .computeIfAbsent(TRAILING_NUMBERS_PATTERN.matcher(key).replaceAll(""), k -> new ArrayList<>())
-                    .add(new Tuple<>(key, value));
+                    .add(new McaPair<>(key, value));
         }
     }
 
     @NotNull
-    private List<Tuple<String, String>> getOptions(String key) {
+    private List<McaPair<String, String>> getOptions(String key) {
         return multiTranslations.getOrDefault(key, Collections.emptyList());
     }
 
     @Nullable
-    public Tuple<String, String> get(String key) {
-        List<Tuple<String, String>> options = getOptions(key);
+    public McaPair<String, String> get(String key) {
+        List<McaPair<String, String>> options = getOptions(key);
         if (!options.isEmpty()) {
-            Tuple<String, String> pair = PoolUtil.pickOne(options, new Tuple<>(key, key), rand);
-            pair.setB(TemplateSet.INSTANCE.replace(pair.getB()));
-            return pair;
+            McaPair<String, String> pair = PoolUtil.pickOne(options, new McaPair<>(key, key), rand);
+            return new McaPair<>(pair.getA(), TemplateSet.INSTANCE.replace(pair.getB()));
         }
         return null;
     }

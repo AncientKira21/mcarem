@@ -3,6 +3,249 @@ plugins {
     id 'net.neoforged.moddev'
 }
 
+def compatibilityMinecraftVersion = minecraft_version
+def compatibilitySourcesTask = null
+if (minecraft_version in ['26.2', '26.3']) {
+    def compatibilitySourcesDirectory = layout.buildDirectory.dir("generated/minecraft-${minecraft_version}/java")
+    compatibilitySourcesTask = tasks.register('prepareMinecraftCompatibilitySources', Sync) {
+        inputs.dir('src/main/java')
+        inputs.file('build.gradle')
+        from('src/main/java') {
+            include '**/*.java'
+            if (compatibilityMinecraftVersion == '26.3') {
+                filesMatching('**/MixinGameRenderer.java') {
+                    int shadowIndex = 0
+                    filter { String line ->
+                        if (line.trim() == '@Shadow' && ++shadowIndex == 3) {
+                            return '    @org.spongepowered.asm.mixin.gen.Invoker("setSpectatedEntityPostEffect")'
+                        }
+                        line.replace('clearPostEffect', 'clearSpectatedEntityPostEffect')
+                                .replace('currentPostEffect', 'spectatedEntityPostEffect')
+                    }
+                }
+                filesMatching(['**/TombstoneBlock.java', '**/InfernalFlameBlock.java']) {
+                    boolean skippingCodec = false
+                    filter { String line ->
+                        if (line.contains(' CODEC = simpleCodec(') || line.trim() == '@Override') return ''
+                        if (line.contains('protected MapCodec<? extends')) {
+                            skippingCodec = true
+                            return ''
+                        }
+                        if (skippingCodec) {
+                            if (line.trim() == '}') skippingCodec = false
+                            return ''
+                        }
+                        line
+                    }
+                }
+                filesMatching('**/McaModelAnimationDriver.java') {
+                    filter { String line -> line.replace('public VertexConsumer setUv2(int u, int v) {',
+                            'public VertexConsumer setUv3(float u, float v) { return this; }\n\n        public VertexConsumer setUv2(int u, int v) {') }
+                }
+                filesMatching('**/MixinPlayerRenderer.java') {
+                    filter { String line -> line
+                            .replace('Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;', 'Lnet/minecraft/client/renderer/texture/UvMapping;')
+                            .replace('TextureAtlasSprite sprite', 'net.minecraft.client.renderer.texture.UvMapping sprite') }
+                }
+                filesMatching('**/MixinServerPlayer.java') {
+                    filter { String line -> line
+                            .replace('ItemStack;ZZ)', 'ItemStack;ZLnet/minecraft/util/Prediction;)')
+                            .replace('boolean thrownFromHand', 'net.minecraft.util.Prediction prediction') }
+                }
+                filesMatching('**/MixinAdvancementRewards.java') {
+                    filter { String line ->
+                        line.replace('loot:Ljava/util/List;', 'loot:Lnet/minecraft/core/HolderSet;')
+                                .replace('List<ResourceKey<LootTable>>', 'net.minecraft.core.HolderSet<LootTable>')
+                                .replace('return original.stream()', 'return net.minecraft.core.HolderSet.direct(original.stream()')
+                                .replace('.filter(key ->', '.filter(holder -> holder.unwrapKey().map(key ->')
+                                .replace('.startsWith("books/"))', '.startsWith("books/")).orElse(true))')
+                                .replace('.toList();', '.toList());')
+                    }
+                }
+            }
+            filesMatching('**/WhistleScreen.java') {
+                filter { String line ->
+                    line.replace('private void setVillagerData(int index) {',
+                            'private static final java.util.concurrent.atomic.AtomicInteger MCA_WHISTLE_PREVIEW_IDS = new java.util.concurrent.atomic.AtomicInteger(-2000000);\n\n    private void setVillagerData(int index) {')
+                            .replace('dummy.load(TagValueInput.create(',
+                                    'dummy.setId(MCA_WHISTLE_PREVIEW_IDS.getAndDecrement());\n            dummy.load(TagValueInput.create(')
+                }
+            }
+            filesMatching('**/MCAClient.java') {
+                filter { String line ->
+                    line.replace('public static void addPlayerData(UUID uuid, VillagerEntityMCA villager) {',
+                            'private static final java.util.concurrent.atomic.AtomicInteger MCA_CLIENT_VISUAL_IDS = new java.util.concurrent.atomic.AtomicInteger(-1000000);\n\n    public static void addPlayerData(UUID uuid, VillagerEntityMCA villager) {')
+                            .replace('playerData.put(uuid, villager);',
+                                    'villager.setId(MCA_CLIENT_VISUAL_IDS.getAndDecrement());\n        playerData.put(uuid, villager);')
+                }
+            }
+            filesMatching('**/VillagerEditorScreen.java') {
+                filter { String line ->
+                    if (line.contains('protected final VillagerEntityMCA villager =')) {
+                        return '    private static final java.util.concurrent.atomic.AtomicInteger MCA_PREVIEW_IDS = new java.util.concurrent.atomic.AtomicInteger(-1);\n' + line
+                    }
+                    if (line.contains('protected final VillagerEntityMCA villagerVisualization =')) {
+                        return line + '\n    {\n        villager.setId(MCA_PREVIEW_IDS.getAndDecrement());\n        villagerVisualization.setId(MCA_PREVIEW_IDS.getAndDecrement());\n    }'
+                    }
+                    line
+                }
+            }
+            filesMatching('**/VillagerEntityMCA.java') {
+                filter { String line ->
+                    line.replace('protected void blockUsingItem(ServerLevel level, LivingEntity attacker) {',
+                            compatibilityMinecraftVersion == '26.3'
+                                    ? 'protected void blockUsingItem(ServerLevel level, LivingEntity attacker, DamageSource source, float damage, boolean fullyBlocked) {'
+                                    : 'protected void blockUsingItem(ServerLevel level, LivingEntity attacker, DamageSource source, float damage) {')
+                            .replace('super.blockUsingItem(level, attacker);',
+                                    compatibilityMinecraftVersion == '26.3'
+                                            ? 'super.blockUsingItem(level, attacker, source, damage, fullyBlocked);'
+                                            : 'super.blockUsingItem(level, attacker, source, damage);')
+                }
+            }
+            filesMatching('**/PreviewEntityAnimation.java') {
+                // 26.2 entity hashCode requires an assigned ID; detached GUI dummies have none.
+                // Weak identity keys also keep the clock stable if an entity is assigned an ID later.
+                filter { String line ->
+                    line.replace('new WeakHashMap<>()',
+                            'new com.google.common.collect.MapMaker().weakKeys().makeMap()')
+                }
+            }
+            filesMatching('**/MixinGuiEntityRenderer.java') {
+                filter { String line ->
+                    line.replace('@WrapMethod(method = "renderToTexture")',
+                            '@WrapMethod(method = "renderToTexture(Lnet/minecraft/client/renderer/state/gui/pip/GuiEntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;)V")')
+                            .replace('Operation<Void> original',
+                                    'net.minecraft.client.renderer.SubmitNodeCollector submitNodeCollector, Operation<Void> original')
+                            .replace('original.call(guiState, poseStack)',
+                                    'original.call(guiState, poseStack, submitNodeCollector)')
+                }
+            }
+            filesMatching([
+                    '**/VillagerReviverActionMessage.java',
+                    '**/TombstoneBlock.java',
+                    '**/AdminCommand.java'
+            ]) {
+                filter { String line ->
+                    line.replace('EntitySpawnReason.LOAD',
+                            'new net.minecraft.world.entity.EntitySpawnRequest(EntitySpawnReason.LOAD, false)')
+                }
+            }
+            filter { String line ->
+                String compatibleLine = line
+                        .replace('net.minecraft.advancements.criterion.ContextAwarePredicate',
+                                'net.minecraft.advancements.predicates.ContextAwarePredicate')
+                        .replace('net.minecraft.advancements.criterion.EntityPredicate',
+                                'net.minecraft.advancements.predicates.entity.EntityPredicate')
+                        .replace('net.minecraft.advancements.criterion.MinMaxBounds',
+                                'net.minecraft.advancements.predicates.MinMaxBounds')
+                        .replace('net.minecraft.advancements.criterion.ItemPredicate',
+                                'net.minecraft.advancements.predicates.ItemPredicate')
+                        .replace('net.minecraft.advancements.criterion.',
+                                'net.minecraft.advancements.triggers.')
+                        .replace('net.minecraft.advancements.CriteriaTriggers',
+                                'net.minecraft.advancements.triggers.CriteriaTriggers')
+                        .replace('net.minecraft.advancements.CriterionTrigger',
+                                'net.minecraft.advancements.triggers.CriterionTrigger')
+                        .replace('net.minecraft.advancements.Criterion',
+                                'net.minecraft.advancements.triggers.Criterion')
+                        .replace('EntityType.WANDERING_TRADER',
+                                'com.ancientkira.mca.util.McaRegistryCompat.<net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader>entityType("wandering_trader")')
+                        .replace('EntityType.LIGHTNING_BOLT',
+                                'com.ancientkira.mca.util.McaRegistryCompat.<net.minecraft.world.entity.LightningBolt>entityType("lightning_bolt")')
+                        .replace('EntityType.WITHER_SKELETON',
+                                'com.ancientkira.mca.util.McaRegistryCompat.<net.minecraft.world.entity.monster.skeleton.WitherSkeleton>entityType("wither_skeleton")')
+                        .replaceAll(/EntityType\.([A-Z_]+)\b/) { match, name ->
+                            "com.ancientkira.mca.util.McaRegistryCompat.entityType(\"${name.toLowerCase(Locale.ROOT)}\")"
+                        }
+                        .replaceAll(/Blocks\.([A-Z_]+_CARPET)\b/) { match, name ->
+                            "com.ancientkira.mca.util.McaRegistryCompat.block(\"${name.toLowerCase(Locale.ROOT)}\")"
+                        }
+                        .replace('Items.BLACK_BANNER',
+                                'com.ancientkira.mca.util.McaRegistryCompat.item("black_banner")')
+                        .replace('.setScreen(', '.gui.setScreen(')
+                        .replaceAll(/\.screen\b/, '.gui.screen()')
+                        .replace('.getToastManager()', '.gui.toastManager()')
+                        .replace('.getChatListener()', '.gui.chatListener()')
+                        .replace('.gui.getChat()', '.gui.hud.getChat()')
+                        .replace('.gui.setOverlayMessage(', '.gui.hud.setOverlayMessage(')
+                        .replace('this.minecraft.options.hideGui = restoreHideGui;',
+                                'com.ancientkira.mca.util.McaHudVisibility.setHidden(this.minecraft.gui.hud, restoreHideGui);')
+                        .replace('this.minecraft.options.hideGui = true;',
+                                'com.ancientkira.mca.util.McaHudVisibility.setHidden(this.minecraft.gui.hud, true);')
+                        .replace('restoreHideGui = minecraft.options.hideGui;',
+                                'restoreHideGui = com.ancientkira.mca.util.McaHudVisibility.isHidden(minecraft.gui.hud);')
+                        .replace('minecraft.options.hideGui = true;',
+                                'com.ancientkira.mca.util.McaHudVisibility.setHidden(minecraft.gui.hud, true);')
+                        .replace('minecraft.options.hideGui = restoreHideGui;',
+                                'com.ancientkira.mca.util.McaHudVisibility.setHidden(minecraft.gui.hud, restoreHideGui);')
+                        .replace('restoreHideGui = Objects.requireNonNull(this.minecraft).options.hideGui;',
+                                'restoreHideGui = com.ancientkira.mca.util.McaHudVisibility.isHidden(Objects.requireNonNull(this.minecraft).gui.hud);')
+                        .replace('Objects.requireNonNull(this.minecraft).options.hideGui = true;',
+                                'com.ancientkira.mca.util.McaHudVisibility.setHidden(Objects.requireNonNull(this.minecraft).gui.hud, true);')
+                if (compatibilityMinecraftVersion == '26.3') {
+                    compatibleLine = compatibleLine
+                            .replaceAll(/event\.button\(\) ([!=]=) ([01])\b/) { match, operator, button ->
+                                "event.button() ${operator} ${button == '0' ? '1' : '3'}"
+                            }
+                            .replace('import net.minecraft.advancements.predicates.ContextAwarePredicate;', '')
+                            .replace('ContextAwarePredicate', 'net.minecraft.core.Holder<net.minecraft.world.level.storage.loot.predicates.LootItemCondition>')
+                            .replace('EntityPredicate.ADVANCEMENT_CODEC', 'net.minecraft.world.level.storage.loot.predicates.LootItemCondition.CODEC')
+                            .replace('import org.lwjgl.glfw.GLFW;', 'import com.mojang.blaze3d.platform.InputConstants;')
+                            .replace('GLFW.GLFW_KEY_', 'InputConstants.KEY_')
+                            .replace('import net.minecraft.world.item.AxeItem;', '')
+                            .replace('import net.minecraft.world.item.HoeItem;', '')
+                            .replace('stack.getItem() instanceof AxeItem', 'stack.is(net.minecraft.tags.ItemTags.AXES)')
+                            .replace('stack.getItem() instanceof HoeItem', 'stack.is(net.minecraft.tags.ItemTags.HOES)')
+                            .replace('InventoryUtils.contains(villager.getInventory(), AxeItem.class)', 'InventoryUtils.stream(villager.getInventory()).anyMatch(stack -> stack.is(net.minecraft.tags.ItemTags.AXES))')
+                            .replace('InventoryUtils.contains(villager.getInventory(), HoeItem.class)', 'InventoryUtils.stream(villager.getInventory()).anyMatch(stack -> stack.is(net.minecraft.tags.ItemTags.HOES))')
+                            .replace('AxeItem.class', 'Item.class')
+                            .replace('HoeItem.class', 'Item.class')
+                            .replace('item instanceof AxeItem', 'stack.is(net.minecraft.tags.ItemTags.AXES)')
+                            .replace('item instanceof HoeItem', 'stack.is(net.minecraft.tags.ItemTags.HOES)')
+                            .replace('item instanceof ShovelItem', 'stack.is(net.minecraft.tags.ItemTags.SHOVELS)')
+                            .replace('updateSwingTime();', '')
+                            .replace('living.swingTime == -1', 'living.isSwinging() && living.getSwingAnimation(0.0F) == 0.0F')
+                            .replace('villager.hurtMarked', '(villager.hurtTime > 0)')
+                            .replace('.setInvulnerable(', '.setPermanentlyInvulnerable(')
+                            .replace('livingTarget.invulnerableTime = 0;', 'livingTarget.setInvulnerableTime(0);')
+                            .replace('new BlockPos(getCenter())', 'new BlockPos(getCenter().getX(), getCenter().getY(), getCenter().getZ())')
+                            .replace('new BlockPos(pos)', 'new BlockPos(pos.getX(), pos.getY(), pos.getZ())')
+                            .replace('BlockPos.withinManhattanStream(origin, xzDist, yDist, xzDist)', 'java.util.stream.StreamSupport.stream(BlockPos.withinBoxByManhattanDistance(origin, xzDist, yDist, xzDist).spliterator(), false)')
+                            .replace('BlockPos.withinManhattanStream(center, maxChunkRange, 0, maxChunkRange)', 'java.util.stream.StreamSupport.stream(BlockPos.withinBoxByManhattanDistance(center, maxChunkRange, 0, maxChunkRange).spliterator(), false)')
+                            .replaceAll(/\.swing\((\w+)\.getDominantHand\(\)\)/, '.swing($1.getDominantHand(), net.minecraft.world.item.component.SwingAnimation.DEFAULT)')
+                            .replace('.swing(InteractionHand.MAIN_HAND)', '.swing(InteractionHand.MAIN_HAND, net.minecraft.world.item.component.SwingAnimation.DEFAULT)')
+                            .replace('InputConstants.Type.KEYSYM', 'InputConstants.Type.KEYBOARD')
+                            .replace('poseStack.mulPose(Axis.', 'poseStack.rotate(Axis.')
+                            .replace('matrices.mulPose(Axis.', 'matrices.rotate(Axis.')
+                            .replace('state.outlineColor, null)', 'state.outlineColor)')
+                            .replace('.placeItemBackInInventory(data.getMail())', '.placeItemBackInInventory(data.getMail(), net.minecraft.util.Prediction.SERVER_ONLY)')
+                            .replace('color, null, state.outlineColor, null)', 'color, null, state.outlineColor)')
+                            .replace('color, null, renderState.outlineColor, null)', 'color, null, renderState.outlineColor)')
+                            .replace('null, color, null)', 'null, color, 0)')
+                            .replace('null, 0xFFFFFFFF, null)', 'null, 0xFFFFFFFF, 0)')
+                            .replace('WeighedSoundEvents resolve(SoundManager', 'WeighedSoundEvents getOrResolve(SoundManager')
+                            .replace('DefaultTooltipPositioner.INSTANCE, null);', 'DefaultTooltipPositioner.INSTANCE, null, false);')
+                    if (compatibleLine.contains('Util.getPlatform().openUri(')) {
+                        compatibleLine = compatibleLine.replace('Util.getPlatform().openUri(', 'org.lwjgl.sdl.SDLMisc.SDL_OpenURL(String.valueOf(').replace(');', '));')
+                    }
+                }
+                compatibleLine
+            }
+        }
+        into(compatibilitySourcesDirectory)
+    }
+    sourceSets.main.java.setSrcDirs([compatibilitySourcesDirectory])
+    tasks.named('compileJava').configure {
+        dependsOn compatibilitySourcesTask
+    }
+    tasks.named('sourcesJar').configure {
+        dependsOn compatibilitySourcesTask
+    }
+    tasks.named('javadoc').configure {
+        dependsOn compatibilitySourcesTask
+    }
+}
+
 tasks.register('generateAccessTransformer') {
     def awFile = file("src/main/resources/${mod_id}.classtweaker")
     def outputFile = layout.buildDirectory.file("generated/accesstransformer.cfg")
@@ -87,14 +330,88 @@ sourceSets.main.resources {
 
 def commonResourcesOutput = layout.buildDirectory.dir('commonResources')
 
+def compatibilityAdvancements = null
+if (compatibilityMinecraftVersion == '26.3') {
+    def advancementOutput = layout.buildDirectory.dir('generated/advancement-resources')
+    compatibilityAdvancements = tasks.register('prepareMinecraft263Advancements', Sync) {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        inputs.file('build.gradle')
+        from('src/main/resources') { include 'data/**/advancement/**/*.json' }
+        from('src/generated/resources') { include 'data/**/advancement/**/*.json' }
+        into advancementOutput
+        doLast {
+            advancementOutput.get().asFile.eachFileRecurse { file ->
+                if (file.isFile() && file.name.endsWith('.json')) {
+                    def advancement = new groovy.json.JsonSlurper().parse(file)
+                    advancement.criteria?.values()?.each { criterion ->
+                        def conditions = criterion.conditions
+                        if (conditions != null) {
+                            if (criterion.trigger == 'minecraft:recipe_unlocked' && conditions.containsKey('recipe')) {
+                                conditions.recipes = conditions.remove('recipe')
+                            }
+                            ['player', 'entity'].each { key ->
+                                def predicate = conditions[key]
+                                if (predicate instanceof List) {
+                                    predicate = predicate.collect { condition ->
+                                        def converted = new LinkedHashMap(condition)
+                                        converted.type = converted.remove('condition')
+                                        if (converted.predicate instanceof Map && converted.predicate.containsKey('type')) {
+                                            converted.predicate['minecraft:entity_type'] = converted.predicate.remove('type')
+                                        }
+                                        converted
+                                    }
+                                    conditions[key] = predicate.size() == 1 ? predicate[0]
+                                            : [type: 'minecraft:all_of', terms: predicate]
+                                } else if (predicate instanceof Map && !predicate.containsKey('type') && predicate.containsKey('location')) {
+                                    conditions[key] = [type: 'minecraft:entity_properties', entity: 'this',
+                                                       predicate: ['minecraft:location': predicate.location]]
+                                }
+                            }
+                        }
+                    }
+                    file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(advancement)) + '\n'
+                }
+            }
+        }
+    }
+    sourceSets.main.resources.exclude('data/**/advancement/**')
+}
+
 tasks.register('prepareCommonResources', Sync) {
     from(sourceSets.main.resources)
     into(commonResourcesOutput)
     duplicatesStrategy = DuplicatesStrategy.FAIL
 }
 
+if (minecraft_version in ['26.2', '26.3']) {
+    [tasks.named('processResources'), tasks.named('prepareCommonResources')].each { resourceTask ->
+        resourceTask.configure {
+            inputs.property('compatibilityMinecraftVersion', compatibilityMinecraftVersion)
+            inputs.file('build.gradle')
+            if (compatibilityAdvancements != null) {
+                from(compatibilityAdvancements)
+            }
+            if (compatibilityMinecraftVersion == '26.3') {
+                filesMatching('mca.classtweaker') {
+                    filter { String line -> line.replace('loot Ljava/util/List;', 'loot Lnet/minecraft/core/HolderSet;') }
+                }
+            }
+            filesMatching('mca.mixins.json') {
+                filter { String line ->
+                    line.replace('"client.MixinClientLanguage",',
+                            '"client.MixinClientLanguage",\n    "client.MixinHudAccessor",')
+                }
+            }
+        }
+    }
+}
+
 artifacts {
-    commonJava sourceSets.main.java.sourceDirectories.singleFile
+    commonJava(sourceSets.main.java.sourceDirectories.singleFile) {
+        if (compatibilitySourcesTask != null) {
+            builtBy compatibilitySourcesTask
+        }
+    }
     commonResources(commonResourcesOutput) {
         builtBy tasks.named('prepareCommonResources')
     }
@@ -128,4 +445,15 @@ tasks.named('sourcesJar') {
 
 tasks.named('prepareCommonResources') {
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+// Keep the setup version label synchronized with the release used by the build.
+def setupReleaseVersion = rootProject.mcaReleaseVersion.toString()
+[tasks.named('processResources'), tasks.named('prepareCommonResources')].each { resourceTask ->
+    resourceTask.configure {
+        inputs.property('mcaReleaseVersion', setupReleaseVersion)
+        filesMatching('assets/mca/lang/en_us.json') {
+            filter { line -> line.replace('@MCA_VERSION@', setupReleaseVersion) }
+        }
+    }
 }

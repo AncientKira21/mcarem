@@ -9,12 +9,14 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.resources.Identifier;
 
 public record SaveVillageMessage(
         int id,
         float taxes,
         float populationThreshold,
-        float marriageThreshold
+        float marriageThreshold,
+        String pathBlock
 ) implements HandleablePayload {
     public static final CustomPacketPayload.Type<SaveVillageMessage> TYPE = new CustomPacketPayload.Type<>(MCA.locate("save_village"));
     public static final StreamCodec<FriendlyByteBuf, SaveVillageMessage> STREAM_CODEC = StreamCodec.composite(
@@ -22,11 +24,12 @@ public record SaveVillageMessage(
             ByteBufCodecs.FLOAT, SaveVillageMessage::taxes,
             ByteBufCodecs.FLOAT, SaveVillageMessage::populationThreshold,
             ByteBufCodecs.FLOAT, SaveVillageMessage::marriageThreshold,
+            ByteBufCodecs.STRING_UTF8, SaveVillageMessage::pathBlock,
             SaveVillageMessage::new
     );
 
     public SaveVillageMessage(Village village) {
-        this(village.getId(), village.getTaxes(), village.getPopulationThreshold(), village.getMarriageThreshold());
+        this(village.getId(), village.getTaxes(), village.getPopulationThreshold(), village.getMarriageThreshold(), village.getPathBlockId().toString());
     }
 
     @Override
@@ -35,6 +38,10 @@ public record SaveVillageMessage(
             village.setTaxes(taxes);
             village.setPopulationThreshold(populationThreshold);
             village.setMarriageThreshold(marriageThreshold);
+            Identifier block = Identifier.tryParse(pathBlock);
+            if (block != null) {
+                village.setPathBlock(block);
+            }
         });
     }
 

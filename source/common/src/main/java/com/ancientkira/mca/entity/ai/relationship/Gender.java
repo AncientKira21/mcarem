@@ -52,11 +52,11 @@ public enum Gender {
     }
 
     public EntityType<VillagerEntityMCA> getVillagerType() {
-        return this == FEMALE ? EntitiesMCA.FEMALE_VILLAGER : EntitiesMCA.MALE_VILLAGER;
+        return EntitiesMCA.PERSON;
     }
 
     public EntityType<ZombieVillagerEntityMCA> getZombieType() {
-        return this == FEMALE ? EntitiesMCA.FEMALE_ZOMBIE_VILLAGER : EntitiesMCA.MALE_ZOMBIE_VILLAGER;
+        return EntitiesMCA.ZOMBIE_PERSON;
     }
 
     public int getColor() {

@@ -123,7 +123,7 @@ public class Pregnancy {
                 .forEach(CriterionMCA.FAMILY::trigger);
 
         // civil entry
-        mother.getResidency().getHomeVillage().flatMap(Village::getCivilRegistry).ifPresent(r -> r.addText(Component.translatable("events.baby", mother.getName(), partner.getName())));
+        mother.getResidency().getRegistryVillage().flatMap(Village::getCivilRegistry).ifPresent(r -> r.addText(Component.translatable("events.baby", mother.getName(), partner.getName())));
 
         return child;
     }

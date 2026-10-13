@@ -37,10 +37,7 @@ public record RoomScanPlan(
                 parent == null ? 0 : parent.getFloorNumber(), source, source);
     }
 
-    static RoomScanPlan attachment(int targetBuildingId, int floorNumber, BlockPos source) {
-        Village.RoomScanMode mode = floorNumber < 0
-                ? Village.RoomScanMode.ADD_BASEMENT
-                : Village.RoomScanMode.ADD_FLOOR;
+    static RoomScanPlan attachment(int targetBuildingId, int floorNumber, Village.RoomScanMode mode, BlockPos source) {
         return new RoomScanPlan(Optional.empty(), mode, targetBuildingId, floorNumber, source, source);
     }
 

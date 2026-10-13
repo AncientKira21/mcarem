@@ -22,12 +22,22 @@ public record CallToPlayerMessage(UUID uuid) implements HandleablePayload {
     @Override
     public void handleServer(ServerPlayer player) {
         Entity e = player.level().getEntity(uuid);
+        if (e == null) {
+            for (var world : player.level().getServer().getAllLevels()) {
+                e = world.getEntity(uuid);
+                if (e != null) break;
+            }
+        }
         if (e instanceof VillagerEntityMCA v) {
             if (v.isSleeping()) {
                 v.stopSleeping();
             }
             v.stopRiding();
-            v.setPos(player.getX(), player.getY(), player.getZ());
+            v.rescueFromKidnapping();
+            v.teleportTo(player.level(), player.getX(), player.getY(), player.getZ(),
+                    java.util.Set.of(), v.getYRot(), v.getXRot(), false);
+        } else {
+            com.ancientkira.mca.server.world.data.VillagerTrackerManager.get(player.level()).requestRescue(uuid, player);
         }
     }
 

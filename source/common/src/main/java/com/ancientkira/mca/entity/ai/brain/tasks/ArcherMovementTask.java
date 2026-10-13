@@ -103,6 +103,14 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
         updateSeeTime(visible);
 
         LivingEntity movementThreat = getNearestMovementThreat(entity, target);
+        if (com.ancientkira.mca.registry.ProfessionsMCA.isRaider(entity.getProfession())) {
+            enterState(entity, MovementState.HOLD);
+            entity.getArcherMoveControl().setEmergencyFleeing(false);
+            trackTarget(entity, target);
+            if (!visible || entity.distanceToSqr(target) > maximumRangeSquared) approach(entity, target);
+            else hold(entity);
+            return;
+        }
         double targetDistanceSquared = entity.distanceToSqr(target);
         double threatDistanceSquared = entity.distanceToSqr(movementThreat);
         double threatVerticalDistance = Math.abs(entity.getY() - movementThreat.getY());

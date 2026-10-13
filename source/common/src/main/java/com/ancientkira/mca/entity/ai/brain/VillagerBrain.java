@@ -195,10 +195,20 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
     }
 
     public boolean isPanicking() {
-        return entity.getTrackedValue(PANICKING);
+        return !(entity instanceof VillagerEntityMCA person && (com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())
+                    || com.ancientkira.mca.server.ClericAid.isHelping(person)
+                    || com.ancientkira.mca.server.CaptiveRescue.isHelping(person)))
+                && entity.getTrackedValue(PANICKING);
     }
 
     public void tickPanicAnimation() {
+        if (entity instanceof VillagerEntityMCA person && (com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())
+                || com.ancientkira.mca.server.ClericAid.isHelping(person)
+                    || com.ancientkira.mca.server.CaptiveRescue.isHelping(person))) {
+            panicAnimationHoldTicks = 0;
+            panicAnimationProgress = panicAnimationProgressO = 0.0F;
+            return;
+        }
         panicAnimationProgressO = panicAnimationProgress;
 
         if (isPanicking() || hasPanicStimulus()) {
@@ -311,6 +321,9 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
             return;
         }
 
+        if (entity instanceof VillagerEntityMCA person) {
+            com.ancientkira.mca.server.RaiderSocial.onInteraction(person, player, hearts);
+        }
         //spawn particles
         if (hearts > 0) {
             entity.level().broadcastEntityEvent(entity, Status.MCA_VILLAGER_POS_INTERACTION);

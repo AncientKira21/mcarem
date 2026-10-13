@@ -14,6 +14,9 @@ public class Memories {
     private final UUID playerUUID;
     private final VillagerBrain<?> brain;
     private int hearts;
+    private int raiderDisposition;
+    public int getRaiderDisposition() { return raiderDisposition; }
+    public void setRaiderDisposition(int value) { raiderDisposition = Integer.signum(value); brain.updateMemories(this); }
     private int interactionFatigue;
     private DialogueType dialogueType;
     private long lastSeen;
@@ -33,6 +36,7 @@ public class Memories {
         UUID playerUuid = tag.read("playerUUID", UUIDUtil.LENIENT_CODEC).orElse(new UUID(0L, 0L));
         Memories memories = new Memories(villager.getVillagerBrain(), villager.level().getOverworldClockTime(), playerUuid);
 
+        memories.raiderDisposition = tag.getIntOr("raiderDisposition", 0);
         memories.hearts = tag.getInt("hearts").orElse(0);
         memories.interactionFatigue = tag.getInt("interactionFatigue").orElse(0);
         memories.dialogueType = DialogueType.byId(tag.getInt("dialogueType").orElse(0));
@@ -95,6 +99,7 @@ public class Memories {
 
         nbt.putString("playerUUID", playerUUID.toString());
         nbt.putInt("hearts", hearts);
+        nbt.putInt("raiderDisposition", raiderDisposition);
         nbt.putInt("interactionFatigue", interactionFatigue);
         nbt.putInt("dialogueType", dialogueType.ordinal());
         nbt.putLong("lastSeen", lastSeen);

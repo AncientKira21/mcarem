@@ -35,7 +35,7 @@ final class BlueprintMapGeometry {
         List<Integer> floors = village.getFloorOrdinals();
 
         village.getBuildings().values().stream()
-                .filter(Building::isComplete)
+                .filter(building -> !building.getBuildingType().grouped() || building.isComplete())
                 .sorted(Comparator.comparingInt(Building::getId))
                 .forEach(building -> {
                     BlockPos min = building.getPos0();
@@ -54,7 +54,7 @@ final class BlueprintMapGeometry {
         if (selectedFloor == null) {
             return footprintLayers;
         }
-        return footprintLayers.stream().filter(layer -> layer.floorOrdinal() == selectedFloor).toList();
+        return footprintLayers.stream().filter(layer -> java.util.Objects.equals(layer.floorOrdinal(), selectedFloor)).toList();
     }
 
     List<MapFootprintLayer> allFootprintLayers() {

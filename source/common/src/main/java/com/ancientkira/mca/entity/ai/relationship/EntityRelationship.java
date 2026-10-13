@@ -92,13 +92,14 @@ public interface EntityRelationship {
             getRelationshipStream(getFamilyEntry().siblings().stream())
                     .forEach(r -> r.onTragedy(cause, burialSite, RelationshipType.SIBLING, victim));
 
-            getRelationshipStream(Stream.of(getFamilyEntry().partner()))
+            getRelationshipStream(Stream.of(getFamilyEntry().partner().equals(Util.NIL_UUID)
+                            ? getFamilyEntry().getWidowedPartner() : getFamilyEntry().partner()))
                     .forEach(r -> r.onTragedy(cause, burialSite, RelationshipType.SPOUSE, victim));
         }
 
         // end the marriage for both the deceased one and the spouse
         if (type == RelationshipType.SPOUSE || type == RelationshipType.SELF) {
-            if (getRelationshipState().isMarried()) {
+            if (getRelationshipState().isMarried() || getRelationshipState() == RelationshipState.WIDOW) {
                 endRelationShip(RelationshipState.WIDOW);
             } else {
                 endRelationShip(RelationshipState.SINGLE);

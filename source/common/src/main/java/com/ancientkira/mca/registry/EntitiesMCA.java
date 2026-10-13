@@ -23,20 +23,30 @@ public interface EntitiesMCA {
     Map<Identifier, EntityType<?>> ENTITIES = new HashMap<>();
     Map<EntityType<? extends LivingEntity>, Supplier<AttributeSupplier.Builder>> ATTRIBUTES = new HashMap<>();
 
+    EntityType<VillagerEntityMCA> PERSON = register("person", EntityType.Builder
+            .<VillagerEntityMCA>of((t, w) -> new VillagerEntityMCA(t, w, Gender.getRandom()), MobCategory.MISC)
+            .sized(0.6F, 2.0F), VillagerEntityMCA::createAttributes
+    );
+    // Compatibility IDs construct the canonical type, so old saves become mca:person on save.
     EntityType<VillagerEntityMCA> MALE_VILLAGER = register("male_villager", EntityType.Builder
-            .<VillagerEntityMCA>of((t, w) -> new VillagerEntityMCA(t, w, Gender.MALE), MobCategory.MISC)
+            .<VillagerEntityMCA>of((t, w) -> new VillagerEntityMCA(PERSON, w, Gender.MALE), MobCategory.MISC)
             .sized(0.6F, 2.0F), VillagerEntityMCA::createAttributes
     );
     EntityType<VillagerEntityMCA> FEMALE_VILLAGER = register("female_villager", EntityType.Builder
-            .<VillagerEntityMCA>of((t, w) -> new VillagerEntityMCA(t, w, Gender.FEMALE), MobCategory.MISC)
+            .<VillagerEntityMCA>of((t, w) -> new VillagerEntityMCA(PERSON, w, Gender.FEMALE), MobCategory.MISC)
             .sized(0.6F, 2.0F), VillagerEntityMCA::createAttributes
     );
+    EntityType<ZombieVillagerEntityMCA> ZOMBIE_PERSON = register("zombie_person", EntityType.Builder
+            .<ZombieVillagerEntityMCA>of((t, w) -> new ZombieVillagerEntityMCA(t, w, Gender.getRandom()), MobCategory.MONSTER)
+            .sized(0.6F, 2.0F), ZombieVillagerEntityMCA::createAttributes
+    );
+    // Preserve old zombie IDs while constructing the unified type.
     EntityType<ZombieVillagerEntityMCA> MALE_ZOMBIE_VILLAGER = register("male_zombie_villager", EntityType.Builder
-            .<ZombieVillagerEntityMCA>of((t, w) -> new ZombieVillagerEntityMCA(t, w, Gender.MALE), MobCategory.MONSTER)
+            .<ZombieVillagerEntityMCA>of((t, w) -> new ZombieVillagerEntityMCA(ZOMBIE_PERSON, w, Gender.MALE), MobCategory.MONSTER)
             .sized(0.6F, 2.0F), ZombieVillagerEntityMCA::createAttributes
     );
     EntityType<ZombieVillagerEntityMCA> FEMALE_ZOMBIE_VILLAGER = register("female_zombie_villager", EntityType.Builder
-            .<ZombieVillagerEntityMCA>of((t, w) -> new ZombieVillagerEntityMCA(t, w, Gender.FEMALE), MobCategory.MONSTER)
+            .<ZombieVillagerEntityMCA>of((t, w) -> new ZombieVillagerEntityMCA(ZOMBIE_PERSON, w, Gender.FEMALE), MobCategory.MONSTER)
             .sized(0.6F, 2.0F), ZombieVillagerEntityMCA::createAttributes
     );
     EntityType<GrimReaperEntity> GRIM_REAPER = register("grim_reaper", EntityType.Builder

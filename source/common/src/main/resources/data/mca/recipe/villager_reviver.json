@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "mca:book_supporters",
+    "mca:staff_of_life"
+  ],
+  "result": {
+    "id": "mca:villager_reviver",
+    "count": 1
+  }
+}

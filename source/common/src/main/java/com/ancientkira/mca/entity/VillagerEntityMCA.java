@@ -3,6 +3,7 @@ package com.ancientkira.mca.entity;
 import com.mojang.serialization.MapCodec;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.MCA;
+import com.ancientkira.mca.server.PillagerRaids;
 import com.ancientkira.mca.MCAClient;
 import com.ancientkira.mca.entity.ai.*;
 import com.ancientkira.mca.entity.ai.brain.VillagerBrain;
@@ -18,6 +19,8 @@ import com.ancientkira.mca.resources.Tasks;
 import com.ancientkira.mca.server.world.data.FamilyTree;
 import com.ancientkira.mca.server.world.data.FamilyTreeNode;
 import com.ancientkira.mca.server.world.data.Village;
+import com.ancientkira.mca.server.world.data.Building;
+import com.ancientkira.mca.server.world.data.VillageManager;
 import com.ancientkira.mca.server.world.data.VillagerTrackerManager;
 import com.ancientkira.mca.util.InventoryUtils;
 import com.ancientkira.mca.util.network.datasync.CDataManager;
@@ -33,6 +36,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -55,6 +59,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.behavior.BlockPosTracker;
+import net.minecraft.world.entity.ai.behavior.EntityTracker;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.memory.WalkTarget;
@@ -117,6 +122,12 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             VillagerEntityMCA.class,
             serializer -> SynchedEntityData.defineId(VillagerEntityMCA.class, serializer)
     )).build();
+    private static final EntityDataAccessor<Boolean> CASTING_SPELL = SynchedEntityData.defineId(VillagerEntityMCA.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> CAPTIVE = SynchedEntityData.defineId(VillagerEntityMCA.class, EntityDataSerializers.BOOLEAN);
+    private long shieldDisabledUntil;
+    private long kidnappedUntil;
+    private int traderLlamaCount;
+    private CompoundTag captivityState = new CompoundTag();
     private static final int RECALCULATE_DIMENSIONS_EVERY_N_TICKS = 100;
     public final ConversationManager conversationManager = new ConversationManager(this);
     private String chatAIPrompt = "";
@@ -262,6 +273,16 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         super.defineSynchedData(builder);
 
         getTypeDataManager().register(builder);
+        builder.define(CASTING_SPELL, false);
+        builder.define(CAPTIVE, false);
+    }
+
+    public void setCastingSpell(boolean casting) {
+        entityData.set(CASTING_SPELL, casting);
+    }
+
+    public boolean isCastingSpell() {
+        return entityData.get(CASTING_SPELL) && getProfession() == ProfessionsMCA.EVOKER && !isPeacefulRaider();
     }
 
     @Override
@@ -357,7 +378,25 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     public final void setProfession(VillagerProfession profession) {
+        if (profession == ProfessionsMCA.CULTIST) profession = ProfessionsMCA.WANDERING_TRADER;
+        boolean settlingTrader = getProfession() == ProfessionsMCA.WANDERING_TRADER && profession != ProfessionsMCA.WANDERING_TRADER;
+        if (ProfessionsMCA.isRaider(getProfession()) && !ProfessionsMCA.isRaider(profession)) {
+            com.ancientkira.mca.server.PillagerRaids.leaveProfession(this);
+            var speed = getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+            if (speed != null) speed.removeModifier(com.ancientkira.mca.MCA.locate("raider_pursuit_speed"));
+            if (level() instanceof ServerLevel world && world.getEntity(getUUID()) == this) {
+                getResidency().getRegistryVillage().flatMap(Village::getCivilRegistry)
+                        .ifPresent(registry -> registry.addText(Component.translatable("mca.raider.left", getName())));
+                world.getServer().getPlayerList().broadcastSystemMessage(
+                        Component.translatable("mca.raider.left", getName()), false);
+            }
+        }
         setVillagerData(getVillagerData().withProfession(BuiltInRegistries.VILLAGER_PROFESSION.wrapAsHolder(profession)));
+        if (settlingTrader) {
+            settleTraderLlamas();
+            forceRandomizeClothes();
+            offers = null;
+        }
         refreshBrain((ServerLevel) level());
     }
 
@@ -377,7 +416,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean requiresHome() {
-        return !ProfessionsMCA.NEEDS_NO_HOME.contains(getProfessionKey()) && getDespawnDelay() <= 0;
+        return (isPeacefulRaider() || !ProfessionsMCA.NEEDS_NO_HOME.contains(getProfessionKey())) && getDespawnDelay() <= 0;
     }
 
     @Override
@@ -388,16 +427,17 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public void setVillagerData(VillagerData data) {
         boolean hasChanged = !level().isClientSide() && getProfession() != data.profession().value() && data.profession().value() != ProfessionsMCA.OUTLAW;
+        boolean leavingRaiders = ProfessionsMCA.isRaider(getProfession()) && !ProfessionsMCA.isRaider(data.profession().value());
         super.setVillagerData(data);
         if (hasChanged) {
-            randomizeClothes();
+            if (!leavingRaiders) randomizeClothes();
             getRelationships().getFamilyEntry().setProfession(data.profession().value());
         }
     }
 
     @Override
-    public void setBaby(boolean isBaby) {
-        setAge(isBaby ? -AgeState.getMaxAge() : 0);
+    protected int getBabyStartAge() {
+        return -AgeState.getMaxAge();
     }
 
     @Override
@@ -422,6 +462,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean doHurtTarget(ServerLevel level, Entity target) {
+        if (target == this || target.getUUID().equals(getUUID())) return false;
         boolean hurt = super.doHurtTarget(level, target);
         if (hurt) {
             attackedEntity(target);
@@ -450,7 +491,9 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         int bounty = getSmallBounty();
         if (bounty <= amount) {
             getBrain().eraseMemory(MemoryModuleTypeMCA.SMALL_BOUNTY);
-            getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+            if (getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).filter(Player.class::isInstance).isPresent()) {
+                getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+            }
             getBrain().eraseMemory(MemoryModuleTypeMCA.HIT_BY_PLAYER);
         } else {
             getBrain().setMemory(MemoryModuleTypeMCA.SMALL_BOUNTY, bounty - amount);
@@ -461,7 +504,9 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         pardonPlayers();
         int bounty = getSmallBounty();
         if (bounty <= getMaxWarnings(attacker)) {
-            getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+            if (getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).filter(Player.class::isInstance).isPresent()) {
+                getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+            }
         }
     }
 
@@ -476,9 +521,17 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public InteractionResult interact(Player player, InteractionHand hand, Vec3 pos) {
         // This allows hitbox interactions to be ignored if the player is carrying a child villager.
+        if (isKidnapped()) {
+            if (!level().isClientSide()) rescueFromKidnapping();
+            return InteractionResult.SUCCESS;
+        }
         if (getVehicle() != null && getVehicle().equals(player)) return InteractionResult.PASS;
 
         ItemStack stack = player.getItemInHand(hand);
+        // Editor tools must take priority over dialogue and vanilla mob interactions.
+        if (stack.is(ItemsMCA.VILLAGER_EDITOR) && isAlive()) {
+            return stack.interactLivingEntity(player, this, hand);
+        }
         boolean isOnBlacklist = Config.getInstance().villagerInteractionItemBlacklist.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
         if (hand.equals(InteractionHand.MAIN_HAND) && !isOnBlacklist && !stack.is(TagsMCA.Items.VILLAGER_EGGS) && canInteractWithItemStackInHand(stack) && !getVillagerBrain().isPanicking()) {
             //make sure dialogueType is synced in case the client needs it
@@ -501,17 +554,25 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
         // This allows hitbox interactions to be ignored if the player is carrying a child villager.
+        if (isKidnapped()) {
+            if (!level().isClientSide()) rescueFromKidnapping();
+            return InteractionResult.SUCCESS;
+        }
         if (getVehicle() != null && getVehicle().equals(player)) return InteractionResult.PASS;
 
         ItemStack stack = player.getItemInHand(hand);
+        // Editor tools must take priority over dialogue and vanilla mob interactions.
+        if (stack.is(ItemsMCA.VILLAGER_EDITOR) && isAlive()) {
+            return stack.interactLivingEntity(player, this, hand);
+        }
         if (!stack.is(TagsMCA.Items.VILLAGER_EGGS) && isAlive() && !isTrading() && !isSleeping() && canInteractWithItemStackInHand(stack) && !getVillagerBrain().isPanicking()) {
             if (isBaby()) {
-                setUnhappy();
+                playNoTradeResponse();
             } else if (!level().isClientSide()) {
                 boolean hasOffers = hasTradeOffers();
                 if (hand == InteractionHand.MAIN_HAND) {
                     if (!hasOffers && !level().isClientSide()) {
-                        setUnhappy();
+                        playNoTradeResponse();
                     }
 
                     player.awardStat(Stats.TALKED_TO_VILLAGER);
@@ -526,6 +587,118 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         return InteractionResult.PASS;
     }
 
+    public void disableCombatShield(int ticks) {
+        if (ticks > 0) shieldDisabledUntil = Math.max(shieldDisabledUntil, level().getGameTime() + ticks);
+    }
+
+    public boolean usesCombatShield() {
+        return getProfession() == ProfessionsMCA.GUARD || getProfession() == ProfessionsMCA.VINDICATOR;
+    }
+
+    public boolean isUsingCombatShield() {
+        return isUsingItem() && getUseItem().has(DataComponents.BLOCKS_ATTACKS);
+    }
+
+    private void tickCombatShield() {
+        if (!usesCombatShield() || isPeacefulRaider() || isNoAi() || level().getGameTime() < shieldDisabledUntil) {
+            if (isUsingCombatShield()) stopUsingItem();
+            return;
+        }
+        if (!getMainHandItem().has(DataComponents.BLOCKS_ATTACKS) && !getOffhandItem().has(DataComponents.BLOCKS_ATTACKS)) return;
+        LivingEntity enemy = getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).orElse(null);
+        Entity arrow = level().getEntitiesOfClass(net.minecraft.world.entity.projectile.arrow.AbstractArrow.class,
+                        getBoundingBox().inflate(16), projectile -> projectile.getOwner() != this
+                                && incomingArrowTime(projectile.position(), projectile.getDeltaMovement(),
+                                    position().add(0, getBbHeight() * 0.5, 0), getBbWidth() * 0.5 + 0.8) >= 0
+                                && hasLineOfSight(projectile))
+                .stream().min(java.util.Comparator.comparingDouble(projectile ->
+                        incomingArrowTime(projectile.position(), projectile.getDeltaMovement(),
+                                position().add(0, getBbHeight() * 0.5, 0), getBbWidth() * 0.5 + 0.8))).orElse(null);
+        Entity threat = arrow != null ? arrow : enemy;
+        boolean defend = arrow != null || enemy != null && enemy.isAlive() && distanceToSqr(enemy) <= 144
+                && hasLineOfSight(enemy) && tickCount % 30 < 20;
+        if (!defend) {
+            if (isUsingCombatShield()) stopUsingItem();
+            return;
+        }
+        getLookControl().setLookAt(threat, 90.0F, 90.0F);
+        if (arrow != null) {
+            float facing = (float) (Math.atan2(arrow.getZ() - getZ(), arrow.getX() - getX()) * 180 / Math.PI) - 90;
+            setYRot(facing);
+            setYBodyRot(facing);
+            setYHeadRot(facing);
+            if (isUsingItem() && !isUsingCombatShield()) stopUsingItem();
+        }
+        if (isUsingItem()) return;
+        for (InteractionHand hand : InteractionHand.values()) {
+            if (getItemInHand(hand).has(DataComponents.BLOCKS_ATTACKS)) {
+                startUsingItem(hand);
+                return;
+            }
+        }
+    }
+
+    private static double incomingArrowTime(Vec3 arrow, Vec3 velocity, Vec3 target, double radius) {
+        double speedSquared = velocity.lengthSqr();
+        if (speedSquared < 0.01) return -1;
+        double time = target.subtract(arrow).dot(velocity) / speedSquared;
+        if (time < 0 || time > 12) return -1;
+        Vec3 predicted = arrow.add(velocity.scale(time)).add(0, -0.025 * time * time, 0);
+        return predicted.distanceToSqr(target) <= radius * radius ? time : -1;
+    }
+
+    private void prepareTotem() {
+        if (isKidnapped() || isNoAi() || getMainHandItem().has(DataComponents.DEATH_PROTECTION)
+                || getOffhandItem().has(DataComponents.DEATH_PROTECTION)) return;
+        var bag = getInventory();
+        for (int slot = 0; slot < bag.getContainerSize(); slot++) {
+            ItemStack supplied = bag.getItem(slot);
+            if (!supplied.has(DataComponents.DEATH_PROTECTION)) continue;
+            ItemStack replaced = getItemBySlot(getOpposingSlot());
+            boolean alreadyStored = false;
+            boolean hasRoom = supplied.getCount() == 1 || replaced.isEmpty();
+            for (int other = 0; other < bag.getContainerSize(); other++) {
+                if (bag.getItem(other) == replaced) alreadyStored = true;
+                if (bag.getItem(other).isEmpty()) hasRoom = true;
+            }
+            if (!hasRoom && !alreadyStored) continue;
+            if (isUsingCombatShield()) stopUsingItem();
+            ItemStack totem = bag.removeItem(slot, 1);
+            if (!replaced.isEmpty() && !alreadyStored) bag.addItem(replaced);
+            setItemSlot(getOpposingSlot(), totem);
+            return;
+        }
+    }
+
+    @Override
+    protected void blockUsingItem(ServerLevel level, LivingEntity attacker) {
+        super.blockUsingItem(level, attacker);
+        ItemStack shield = getItemBlockingWith();
+        var blocking = shield == null ? null : shield.get(DataComponents.BLOCKS_ATTACKS);
+        float seconds = attacker.getSecondsToDisableBlocking();
+        if (blocking != null && seconds > 0.0F) {
+            int ticks = Math.round(seconds * blocking.disableCooldownScale() * 20.0F);
+            if (ticks > 0) {
+                shieldDisabledUntil = Math.max(shieldDisabledUntil, level.getGameTime() + ticks);
+                blocking.disable(level, this, seconds, shield);
+            }
+        }
+    }
+
+    @Override
+    public float applyItemBlocking(ServerLevel level, DamageSource source, float damage) {
+        ItemStack shield = getItemBlockingWith();
+        var blocking = shield == null ? null : shield.get(DataComponents.BLOCKS_ATTACKS);
+        InteractionHand hand = getUsedItemHand();
+        float blocked = super.applyItemBlocking(level, source, damage);
+        if (blocking != null && blocked > 0) {
+            int wear = blocking.itemDamage().apply(blocked);
+            if (wear > 0) shield.hurtAndBreak(wear, this,
+                    hand == InteractionHand.MAIN_HAND ? EquipmentSlot.MAINHAND : EquipmentSlot.OFFHAND);
+        }
+        return blocked;
+    }
+
     public boolean hasTradeOffers() {
         return !getOffers().isEmpty();
     }
@@ -533,6 +706,13 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public MerchantOffers getOffers() {
         MerchantOffers offers = super.getOffers();
+        if (getProfession() == ProfessionsMCA.WANDERING_TRADER && offers.isEmpty() && !level().isClientSide()) {
+            var template = EntityType.WANDERING_TRADER.create(level(), EntitySpawnReason.EVENT);
+            if (template != null) {
+                offers = template.getOffers();
+                setOffers(offers);
+            }
+        }
         int previousSize = offers.size();
         offers.removeIf(offer -> offer.getResult().isEmpty());
 
@@ -581,6 +761,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean hurtServer(ServerLevel level, DamageSource source, float damageAmount) {
+        if (isKidnapped() || source.getEntity() == this) return false;
         // no baby squishes
         if (getVehicle() instanceof Player) {
             return super.hurtServer(level, source, 0.0f);
@@ -609,7 +790,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             if (source.getEntity() instanceof Player player) {
                 if (level().getGameTime() - lastHit > 40) {
                     lastHit = level().getGameTime();
-                    if (!isGuard() && requestCooldown()) {
+                    if (!isGuard() && !ProfessionsMCA.isRaider(getProfession()) && requestCooldown()) {
                         if (getHealth() < getMaxHealth() / 2) {
                             sendChatMessage(player, "villager.badly_hurt");
                         } else {
@@ -638,9 +819,27 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
         Entity attacker = source.getEntity();
 
+        // Golems pardon ordinary villagers, but must continue fighting raider professions.
+        if (attacker instanceof IronGolem golem && !ProfessionsMCA.isRaider(getProfession())) {
+            golem.stopBeingAngry();
+            damageAmount *= 0.0f;
+        }
+
+        if (damageAmount > 0 && (damageAmount >= getHealth() + getAbsorptionAmount()
+                || getHealth() <= getMaxHealth() * 0.25F)) prepareTotem();
+        boolean hurt = super.hurtServer(level, source, damageAmount);
+        if (hurt && attacker instanceof VillagerEntityMCA enemy
+                && com.ancientkira.mca.server.VillageWarfare.isEnemy(this, enemy)) {
+            if (isSleeping()) stopSleeping();
+            getBrain().setMemory(MemoryModuleType.ATTACK_TARGET, enemy);
+            getBrain().setMemory(MemoryModuleTypeMCA.NEAREST_GUARD_ENEMY, enemy);
+            setTarget(enemy);
+        }
+
         // Notify the surrounding guards when a villager is attacked. Yoinks!
-        if (!level().isClientSide() && attacker instanceof LivingEntity livingEntity && !isHostile() && !isFriend(attacker.getType())) {
-            int victimBountyBeforeHit = getSmallBounty();
+        if (hurt && !level().isClientSide() && attacker instanceof LivingEntity livingEntity && !isHostile() && !isFriend(attacker.getType())) {
+            int victimBountyBeforeHit = getBrain().getMemoryInternal(MemoryModuleTypeMCA.HIT_BY_PLAYER)
+                    .filter(previous -> previous == livingEntity).isPresent() ? getSmallBounty() : 0;
 
             // remember the specific attacker
             getBrain().setMemory(MemoryModuleTypeMCA.HIT_BY_PLAYER, Optional.of(livingEntity));
@@ -648,20 +847,29 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
             Vec3 pos = position();
             level().getEntitiesOfClass(VillagerEntityMCA.class, new AABB(pos, pos).inflate(32)).forEach(v -> {
-                if (this.distanceToSqr(v) <= (v.getTarget() == null ? 1024 : 64)) {
+                if (v.isAlive() && !v.isHostile() && this.distanceToSqr(v) <= 1024) {
                     if (attacker instanceof Player player) {
-                        int bounty = v == this ? victimBountyBeforeHit : v.getSmallBounty();
                         if (v.isGuard()) {
-                            int maxWarning = v.getMaxWarnings(player);
+                            int previousBounty = v == this ? victimBountyBeforeHit
+                                    : v.getBrain().getMemoryInternal(MemoryModuleTypeMCA.HIT_BY_PLAYER)
+                                            .filter(previous -> previous == livingEntity).isPresent() ? v.getSmallBounty() : 0;
+                            int bounty = isAlive() ? previousBounty + 1 : Math.max(3, previousBounty + 1);
+                            v.getBrain().setMemory(MemoryModuleTypeMCA.SMALL_BOUNTY, bounty);
+                            v.getBrain().setMemory(MemoryModuleTypeMCA.HIT_BY_PLAYER, livingEntity);
+                            int maxWarning = Math.max(0, v.getMaxWarnings(player));
                             if (bounty > maxWarning) {
                                 // ok, that was enough
                                 v.getBrain().setMemory(MemoryModuleType.ATTACK_TARGET, livingEntity);
-                            } else if (bounty == 0 || bounty == maxWarning) {
-                                // just a warning
-                                v.getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
-                                v.sendChatMessage(player, "villager.warning");
+                            } else {
+                                // Approach to warn the attacker without abandoning an active fight.
+                                if (!v.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)) {
+                                    v.getBrain().setMemory(MemoryModuleType.LOOK_TARGET, new EntityTracker(livingEntity, true));
+                                    v.getBrain().setMemory(MemoryModuleType.WALK_TARGET, new WalkTarget(new EntityTracker(livingEntity, false), 0.75F, 3));
+                                }
+                                if (bounty == 1 || bounty == maxWarning) {
+                                    v.sendChatMessage(player, bounty == 1 ? "villager.warning.first" : "villager.warning.last");
+                                }
                             }
-                            v.getBrain().setMemory(MemoryModuleTypeMCA.SMALL_BOUNTY, bounty + 1);
                         }
                     } else if (v.isGuard()) {
                         // non players get attacked straight away
@@ -671,13 +879,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             });
         }
 
-        // Iron Golem got his revenge, now chill
-        if (attacker instanceof IronGolem golem) {
-            golem.stopBeingAngry();
-            damageAmount *= 0.0f;
-        }
-
-        return super.hurtServer(level, source, damageAmount);
+        return hurt;
     }
 
     private boolean requestCooldown() {
@@ -687,6 +889,287 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         } else {
             return false;
         }
+    }
+
+    private void settleTraderLlamas() {
+        if (!(level() instanceof ServerLevel world)) return;
+        for (var llama : world.getEntitiesOfClass(net.minecraft.world.entity.animal.equine.TraderLlama.class,
+                getBoundingBox().inflate(64), companion -> companion.getLeashHolder() == this)) {
+            var output = net.minecraft.world.level.storage.TagValueOutput.createWithContext(ProblemReporter.DISCARDING, registryAccess());
+            llama.saveWithoutId(output);
+            var saved = output.buildResult();
+            saved.remove("UUID");
+            llama.convertTo(EntityType.LLAMA, ConversionParams.single(llama, true, true), converted -> {
+                converted.load(TagValueInput.create(ProblemReporter.DISCARDING, registryAccess(), saved));
+                converted.setPersistenceRequired();
+            });
+        }
+    }
+
+    @Override
+    public Vec3 getRopeHoldPosition(float partialTick) {
+        // Attach companions' leads to the person's hand at its interpolated world position.
+        return getPosition(partialTick).add(0.0, getBbHeight() * 0.55, 0.0);
+    }
+
+    @Override
+    protected void registerGoals() {
+        super.registerGoals();
+        goalSelector.addGoal(0, new TraderDrinkGoal(this,
+                net.minecraft.world.item.alchemy.PotionContents.createItemStack(Items.POTION,
+                        net.minecraft.world.item.alchemy.Potions.INVISIBILITY),
+                net.minecraft.sounds.SoundEvents.WANDERING_TRADER_DISAPPEARED,
+                person -> person.level().isDarkOutside() && !person.isInvisible()));
+        goalSelector.addGoal(0, new TraderDrinkGoal(this, new ItemStack(Items.MILK_BUCKET),
+                net.minecraft.sounds.SoundEvents.WANDERING_TRADER_REAPPEARED,
+                person -> person.level().isBrightOutside() && person.hasEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY)));
+    }
+
+    private static final class TraderDrinkGoal extends net.minecraft.world.entity.ai.goal.UseItemGoal<VillagerEntityMCA> {
+        private final VillagerEntityMCA person;
+        private ItemStack previousHand = ItemStack.EMPTY;
+        TraderDrinkGoal(VillagerEntityMCA person, ItemStack drink, net.minecraft.sounds.SoundEvent sound,
+                        java.util.function.Predicate<VillagerEntityMCA> condition) {
+            super(person, drink, sound, entity -> entity.getProfession() == ProfessionsMCA.WANDERING_TRADER
+                    && !entity.isKidnapped() && !entity.isTrading() && !entity.isUsingItem()
+                    && entity.getInteractions().getInteractingPlayer().isEmpty() && condition.test(entity));
+            this.person = person;
+        }
+        @Override public void start() {
+            previousHand = person.getMainHandItem().copy();
+            super.start();
+        }
+        @Override public void stop() {
+            if (person.isUsingItem()) person.stopUsingItem();
+            super.stop();
+            person.setItemSlot(EquipmentSlot.MAINHAND, previousHand);
+            previousHand = ItemStack.EMPTY;
+        }
+        @Override public boolean canContinueToUse() {
+            return person.getProfession() == ProfessionsMCA.WANDERING_TRADER && !person.isKidnapped()
+                    && super.canContinueToUse();
+        }
+    }
+
+    private void tickTraderLlamas() {
+        if (getProfession() == ProfessionsMCA.WANDERING_TRADER && tickCount % 20 == 0
+                && !isClothingLocked() && !getClothes().contains("/cultist/")
+                && level() instanceof ServerLevel clothingWorld && clothingWorld.getEntity(getUUID()) == this) {
+            forceRandomizeClothes();
+        }
+        if (getProfession() != ProfessionsMCA.WANDERING_TRADER
+                || tickCount > 1 && tickCount % 20 != 0 || !(level() instanceof ServerLevel world)
+                || world.getEntity(getUUID()) != this) return;
+        for (var companion : world.getEntitiesOfClass(net.minecraft.world.entity.animal.equine.TraderLlama.class,
+                getBoundingBox().inflate(32), llama -> llama.getLeashHolder() == this)) {
+            // Refresh the attachment after both entities have entered client tracking.
+            if (tickCount % 40 == 0) companion.setLeashedTo(this, true);
+            if (companion.distanceToSqr(this) > 4 * 4 && !companion.isVehicle()) {
+                companion.getNavigation().moveTo(this, 1.0);
+            }
+        }
+        if (traderLlamaCount >= 2) return;
+        for (int attempt = 0; attempt < 16 && traderLlamaCount < 2; attempt++) {
+            BlockPos pos = blockPosition().offset(random.nextInt(9) - 4, random.nextInt(3) - 1, random.nextInt(9) - 4);
+            if (!world.hasChunkAt(pos) || !world.getBlockState(pos.below()).isSolid()) continue;
+            var companion = EntityType.TRADER_LLAMA.create(world, EntitySpawnReason.EVENT);
+            if (!(companion instanceof net.minecraft.world.entity.animal.equine.TraderLlama llama)) return;
+            llama.snapTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+            if (!world.noCollision(llama)) continue;
+            llama.finalizeSpawn(world, world.getCurrentDifficultyAt(pos), EntitySpawnReason.EVENT, null);
+            llama.setDespawnDelay(getDespawnDelay() > 0 ? getDespawnDelay() : 48000);
+            if (world.addFreshEntity(llama)) {
+                llama.setLeashedTo(this, true);
+                traderLlamaCount++;
+            }
+        }
+    }
+
+    public boolean isKidnapped() { return level().isClientSide() ? entityData.get(CAPTIVE) : kidnappedUntil > 0; }
+
+    public boolean beginKidnapping(VillagerEntityMCA captor) {
+        if (level().isClientSide() || isKidnapped() || !isAlive() || ProfessionsMCA.isRaider(getProfession())
+                || !ProfessionsMCA.isRaider(captor.getProfession()) || captor.isPeacefulRaider()
+                || com.ancientkira.mca.server.RaiderSocial.isFamily(captor, this)) return false;
+        com.ancientkira.mca.server.ClericAid.onCaptured(this);
+        captivityState = new CompoundTag();
+        captivityState.putString("OriginalProfession", getProfessionId().toString());
+        getResidency().getRegistryVillage().ifPresent(village -> captivityState.putInt("RegistryVillage", village.getId()));
+        captivityState.putBoolean("NoAI", isNoAi());
+        captivityState.putBoolean("Invisible", isInvisible());
+        captivityState.putBoolean("Silent", isSilent());
+        captivityState.putBoolean("NoGravity", isNoGravity());
+        captivityState.putBoolean("NoPhysics", noPhysics);
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            captivityState.store("Equipment_" + slot.getName(), ItemStack.OPTIONAL_CODEC,
+                    registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), getItemBySlot(slot).copy());
+            setItemSlot(slot, ItemStack.EMPTY);
+        }
+        kidnappedUntil = level().getGameTime() + 2400;
+        entityData.set(CAPTIVE, true);
+        sendChatToAllAround("villager.scream");
+        setPersistenceRequired();
+        setNoAi(true);
+        setInvisible(true);
+        setSilent(true);
+        setNoGravity(true);
+        noPhysics = true;
+        setDeltaMovement(Vec3.ZERO);
+        getNavigation().stop();
+        getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+        getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+        getInteractions().stopInteracting();
+        announceKidnappingEvent(Component.translatable("mca.raider.kidnapped", getName(), captor.getName()));
+        placeCaptiveAtOutpost();
+        VillagerTrackerManager.get((ServerLevel) level()).recordCaptive(this);
+        return true;
+    }
+
+    private void placeCaptiveAtOutpost() {
+        captivityState.putBoolean("PlacementChecked", true);
+        findKidnapOutpostPosition().ifPresent(pos -> {
+            captivityState.putLong("HoldingPosition", pos.asLong());
+            stopRiding();
+            setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
+            setInvisible(false);
+            noPhysics = false;
+        });
+    }
+
+    private Optional<BlockPos> findKidnapOutpostPosition() {
+        if (!(level() instanceof ServerLevel world)) return Optional.empty();
+        var manager = VillageManager.get(world);
+        var outposts = manager.findVillages(village -> true)
+                .flatMap(village -> village.getBuildings().values().stream()
+                        .filter(building -> building.getType().equals("pillager_outpost")
+                                && village.canRegisterOutpost(building)))
+                .sorted(java.util.Comparator.comparingDouble(building -> building.getSourceBlock().distSqr(blockPosition())))
+                .toList();
+        for (Building outpost : outposts) {
+            var rooms = manager.findVillages(village -> village.getBuildings().containsValue(outpost))
+                    .flatMap(village -> village.getBuildings().values().stream())
+                    .filter(room -> room.getStructureId() == outpost.getStructureId())
+                    .sorted(java.util.Comparator.comparingInt(Building::getId)).toList();
+            var floors = new java.util.ArrayList<>(rooms.stream().map(Building::getFloorNumber).distinct().toList());
+            java.util.Collections.shuffle(floors, new java.util.Random(random.nextLong()));
+            for (int floor : floors) {
+                for (Building room : rooms) {
+                    if (room.getFloorNumber() != floor) continue;
+                    BlockPos min = room.getPos0();
+                    BlockPos max = room.getPos1();
+                    // Use a common two-block grid so adjacent rooms retain the same rows.
+                    int firstX = min.getX() + Math.floorMod(-min.getX(), 2);
+                    int firstZ = min.getZ() + Math.floorMod(-min.getZ(), 2);
+                    for (int z = firstZ; z <= max.getZ(); z += 2) {
+                        for (int x = firstX; x <= max.getX(); x += 2) {
+                            for (int dy = 0; dy <= 2; dy++) {
+                                int y = room.getSourceBlock().getY() + (dy == 0 ? 0 : dy == 1 ? -1 : 1);
+                                BlockPos pos = new BlockPos(x, y, z);
+                                if (!room.containsPos(pos)) continue;
+                                world.getChunk(x >> 4, z >> 4);
+                                if (!world.getBlockState(pos.below()).isFaceSturdy(world, pos.below(), net.minecraft.core.Direction.UP)) continue;
+                                var box = getBoundingBox().move(x + 0.5 - getX(), y - getY(), z + 0.5 - getZ());
+                                if (world.noCollision(this, box)
+                                        && world.getEntities(this, box.inflate(0.25), entity -> entity.isAlive() && !entity.isSpectator()).isEmpty()) {
+                                    return Optional.of(pos);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void announceKidnappingEvent(Component message) {
+        if (level() instanceof ServerLevel world && world.getEntity(getUUID()) == this) {
+            VillageManager.get(world).getOrEmpty(captivityState.getIntOr("RegistryVillage", -1))
+                    .or(() -> getResidency().getRegistryVillage()).flatMap(Village::getCivilRegistry)
+                    .ifPresent(registry -> registry.addText(message));
+            world.getServer().getPlayerList().broadcastSystemMessage(message, false);
+        }
+    }
+
+    private void restoreFromCaptivity() {
+        kidnappedUntil = 0;
+        entityData.set(CAPTIVE, false);
+        setNoAi(captivityState.getBooleanOr("NoAI", false));
+        setInvisible(captivityState.getBooleanOr("Invisible", false));
+        setSilent(captivityState.getBooleanOr("Silent", false));
+        setNoGravity(captivityState.getBooleanOr("NoGravity", false));
+        noPhysics = captivityState.getBooleanOr("NoPhysics", false);
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            setItemSlot(slot, captivityState.read("Equipment_" + slot.getName(), ItemStack.OPTIONAL_CODEC,
+                    registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE)).orElse(ItemStack.EMPTY));
+        }
+        clearCaptivityOrders();
+    }
+
+    private void clearCaptivityOrders() {
+        getVillagerBrain().setMoveState(com.ancientkira.mca.entity.ai.MoveState.MOVE, null);
+        getVillagerBrain().abandonJob();
+        getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+        getBrain().eraseMemory(MemoryModuleType.LOOK_TARGET);
+        getBrain().eraseMemory(MemoryModuleType.INTERACTION_TARGET);
+        getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+        getNavigation().stop();
+        stopRiding();
+    }
+
+    public boolean rescueFromKidnapping() {
+        if (!isKidnapped() || level().isClientSide()) return false;
+        restoreFromCaptivity();
+        com.ancientkira.mca.server.ClericAid.onRescued(this);
+        VillagerTrackerManager.get((ServerLevel) level()).clearCaptive(getUUID());
+        announceKidnappingEvent(Component.translatable("mca.raider.rescued", getName()));
+        captivityState = new CompoundTag();
+        getRelationships().getFamilyEntry().setAppearanceData(this);
+        return true;
+    }
+
+    private void tickKidnapping() {
+        if (!isKidnapped() || level().isClientSide()) return;
+        if (VillagerTrackerManager.get((ServerLevel) level()).fulfillRescue(this)) return;
+        if (level().getGameTime() < kidnappedUntil) {
+            if (tickCount % 100 == 0 && level() instanceof ServerLevel world) {
+                world.playSound(null, getX(), getY(), getZ(), getDeathSound(), getSoundSource(), getSoundVolume(), getVoicePitch());
+                if (tickCount % 200 == 0) world.players().stream()
+                        .filter(player -> !player.isSpectator() && distanceToSqr(player) <= 16 * 16)
+                        .forEach(player -> sendChatMessage(player, "villager.badly_hurt"));
+            }
+            if (!captivityState.getBooleanOr("PlacementChecked", false)) {
+                placeCaptiveAtOutpost();
+                VillagerTrackerManager.get((ServerLevel) level()).recordCaptive(this);
+            }
+            if (captivityState.contains("HoldingPosition")) {
+                BlockPos holding = BlockPos.of(captivityState.getLongOr("HoldingPosition", 0));
+                setPos(holding.getX() + 0.5, holding.getY(), holding.getZ() + 0.5);
+            }
+            setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+        restoreFromCaptivity();
+        String originalProfession = captivityState.getStringOr("OriginalProfession", getProfessionId().toString());
+        VillagerProfession raiderProfession = switch (originalProfession) {
+            case "minecraft:cleric" -> ProfessionsMCA.WITCH;
+            case "mca:guard" -> ProfessionsMCA.VINDICATOR;
+            case "mca:archer" -> ProfessionsMCA.PILLAGER;
+            default -> switch (random.nextInt(4)) {
+                case 0 -> ProfessionsMCA.PILLAGER;
+                case 1 -> ProfessionsMCA.VINDICATOR;
+                case 2 -> ProfessionsMCA.EVOKER;
+                default -> ProfessionsMCA.WITCH;
+            };
+        };
+        VillagerTrackerManager.get((ServerLevel) level()).clearCaptive(getUUID());
+        setProfession(raiderProfession);
+        clearCaptivityOrders();
+        getVillagerBrain().modifyMoodValue(-1000);
+        getRelationships().getFamilyEntry().setAppearanceData(this);
+        announceKidnappingEvent(Component.translatable("mca.raider.returned", getName(),
+                Component.translatable("entity.minecraft.villager." + getProfessionId().toString().replace(':', '.'))));
+        captivityState = new CompoundTag();
     }
 
     public boolean isGuard() {
@@ -702,7 +1185,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     private int getMaxWarnings(Player attacker) {
-        return getVillagerBrain().getMemoriesForPlayer(attacker).getHearts() / Math.max(1, Config.getInstance().heartsForPardonHit);
+        return 2;
     }
 
     @Override
@@ -711,6 +1194,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         updateSwingTime();
 
         super.aiStep();
+        tickKidnapping();
+        if (isKidnapped()) return;
 
         if (getTraits().hasTrait(Traits.NO_AGING)) {
             setAge(oldAge);
@@ -741,12 +1226,28 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
                 }
             }
 
+            if (tickCount % 5 == 0) {
+                com.ancientkira.mca.entity.ai.brain.tasks.CloseRememberedDoorsTask.tickDoors((ServerLevel) level(), this);
+            }
+            tickTraderLlamas();
             tickDespawnDelay();
 
             residency.tick();
 
             relations.tick(tickCount);
+            if (tickCount % 1200 == 0) {
+                com.ancientkira.mca.server.VillagerProposals.tick(this);
+                com.ancientkira.mca.server.FamilyRequests.tick(this);
+            }
+            if (tickCount % 100 == 0) {
+                com.ancientkira.mca.server.RaiderSocial.restoreKnownFriendships(this);
+            }
+            com.ancientkira.mca.server.PillagerRaids.tick(this);
+            com.ancientkira.mca.server.VillageWarfare.tickCombat(this);
 
+            com.ancientkira.mca.server.ClericAid.tick(this);
+            com.ancientkira.mca.server.CaptiveRescue.tick(this);
+            tickCombatShield();
             inventory.update(this);
 
             if (tickCount % Config.getInstance().pardonPlayerTicks == 0) {
@@ -973,7 +1474,54 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     @Override
+    protected boolean considersEntityAsAlly(Entity other) {
+        if (PillagerRaids.isJohnny(this) && other instanceof LivingEntity living) {
+            return PillagerRaids.isRaiderTarget(living);
+        }
+        if (ProfessionsMCA.isRaider(getProfession()) && other instanceof LivingEntity living
+                && com.ancientkira.mca.server.RaiderSocial.isFamily(this, living)) return true;
+        if (ProfessionsMCA.isRaider(getProfession()) && getTeam() == null && other.getTeam() == null) {
+            if (other instanceof VillagerEntityMCA person && ProfessionsMCA.isRaider(person.getProfession())) return true;
+            if (other instanceof net.minecraft.world.entity.raid.Raider) return true;
+            if (other instanceof net.minecraft.world.entity.monster.Vex vex && vex.getOwner() != null) {
+                return considersEntityAsAlly(vex.getOwner());
+            }
+        }
+        return super.considersEntityAsAlly(other);
+    }
+
+    @Override
+    protected float getDamageAfterMagicAbsorb(DamageSource source, float amount) {
+        float damage = super.getDamageAfterMagicAbsorb(source, amount);
+        if (getProfession() == ProfessionsMCA.WITCH) {
+            if (source.getEntity() == this) return 0;
+            if (source.is(net.minecraft.tags.DamageTypeTags.WITCH_RESISTANT_TO)) damage *= 0.15F;
+        }
+        return damage;
+    }
+
+    @Override
+    protected void dropCustomDeathLoot(ServerLevel world, DamageSource cause, boolean recentlyHit) {
+        super.dropCustomDeathLoot(world, cause, recentlyHit);
+        if (ProfessionsMCA.isRaider(getProfession())) {
+            com.ancientkira.mca.server.PillagerRaids.dropCaptainLoot(this, world);
+            if (getProfession() != ProfessionsMCA.PILLAGER) {
+                String role = getProfessionId().getPath();
+                dropFromLootTable(world, cause, recentlyHit,
+                        net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.LOOT_TABLE,
+                                Identifier.withDefaultNamespace("entities/" + role)));
+            }
+        }
+    }
+
+    @Override
+    protected int getBaseExperienceReward(ServerLevel world) {
+        return getProfession() == ProfessionsMCA.EVOKER ? 10 : ProfessionsMCA.isRaider(getProfession()) ? 5 : super.getBaseExperienceReward(world);
+    }
+
+    @Override
     public void die(DamageSource cause) {
+        com.ancientkira.mca.server.PillagerRaids.onDeath(this, cause);
         // deselect equipment as this messes with MobEntities equipment dropping
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             this.setItemSlot(slot, ItemStack.EMPTY);
@@ -981,7 +1529,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
         //death message
         if (!level().isClientSide()) {
-            getResidency().getHomeVillage().flatMap(Village::getCivilRegistry).ifPresent(r -> r.addText(getCombatTracker().getDeathMessage()));
+            getResidency().getRegistryVillage().flatMap(Village::getCivilRegistry).ifPresent(r -> r.addText(getCombatTracker().getDeathMessage()));
         }
 
         super.die(cause);
@@ -1015,7 +1563,18 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
 
     @Override
+    public boolean teleportTo(ServerLevel destination, double x, double y, double z,
+                              java.util.Set<net.minecraft.world.entity.Relative> relatives, float yaw, float pitch, boolean force) {
+        // Cross-dimension teleportation copies this entity's data to a new entity.
+        if (destination != level() && canTeleport(level(), destination)) rescueFromKidnapping();
+        boolean teleported = super.teleportTo(destination, x, y, z, relatives, yaw, pitch, force);
+        if (teleported) rescueFromKidnapping();
+        return teleported;
+    }
+
+    @Override
     public void teleportTo(double destX, double destY, double destZ) {
+        rescueFromKidnapping();
         if (isPassenger()) {
             Entity rootVehicle = getRootVehicle();
             if (rootVehicle instanceof Mob) {
@@ -1120,6 +1679,13 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             return super.getNotifyTradeSound();
         } else {
             return SoundsMCA.SILENT;
+        }
+    }
+
+    private void playNoTradeResponse() {
+        setUnhappyCounter(40);
+        if (!level().isClientSide()) {
+            playSound(getNoSound(), getSoundVolume(), getVoicePitch());
         }
     }
 
@@ -1322,7 +1888,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     @Nullable
     public <T extends Mob> T convertTo(EntityType<T> type, ConversionParams params, ConversionParams.AfterConversion<T> afterConversion) {
-        boolean convertingToZombieVillager = !isRemoved() && type == EntityType.ZOMBIE_VILLAGER;
+        boolean convertingToZombieVillager = !isRemoved() && type.equals(EntityType.ZOMBIE_VILLAGER);
         if (convertingToZombieVillager) {
             residency.leaveHome();
         }
@@ -1363,9 +1929,24 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         CompoundTag nbt = readMcaSaveData(input);
         super.readAdditionalSaveData(input);
 
-        getTypeDataManager().load(this, nbt);
+        // Profession eggs supply partial entity data after finalizeSpawn. Preserve generated
+        // appearance for missing keys, while honoring explicit saved/editor values.
+        CompoundTag trackedData = new CompoundTag();
+        getTypeDataManager().save(this, trackedData);
+        // An explicit Traits/Memories compound replaces the old value, including removals.
+        for (String key : nbt.keySet()) {
+            trackedData.put(key, java.util.Objects.requireNonNull(nbt.get(key)).copy());
+        }
+        getTypeDataManager().load(this, trackedData);
+        traderLlamaCount = Math.max(0, Math.min(2, nbt.getIntOr("TraderLlamaCount", 0)));
+        kidnappedUntil = nbt.getLongOr("KidnappedUntil", 0);
+        entityData.set(CAPTIVE, kidnappedUntil > 0);
+        captivityState = nbt.getCompound("CaptivityState").map(CompoundTag::copy).orElseGet(CompoundTag::new);
+        if (isKidnapped()) noPhysics = isInvisible();
+        shieldDisabledUntil = level().getGameTime() + Math.max(0, nbt.getIntOr("ShieldCooldown", 0));
         relations.readFromNbt(nbt);
         longTermMemory.readFromNbt(nbt);
+        com.ancientkira.mca.server.PillagerRaids.read(this, nbt);
         readNicknames(nbt);
         chatAIPrompt = nbt.getString(CHAT_AI_PROMPT_KEY).orElse("");
 
@@ -1388,6 +1969,11 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             validateClothes();
         }
 
+        if (getProfession() == ProfessionsMCA.CULTIST) {
+            setProfession(ProfessionsMCA.WANDERING_TRADER);
+            setOffers(new MerchantOffers());
+        }
+
         if (getVillagerBrain().getPersonality() == Personality.UNASSIGNED) {
             getVillagerBrain().randomize();
         }
@@ -1403,8 +1989,13 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         CompoundTag nbt = new CompoundTag();
         super.addAdditionalSaveData(output);
 
+        nbt.putInt("TraderLlamaCount", traderLlamaCount);
+        nbt.putLong("KidnappedUntil", kidnappedUntil);
+        nbt.put("CaptivityState", captivityState.copy());
+        nbt.putInt("ShieldCooldown", (int) Math.max(0, shieldDisabledUntil - level().getGameTime()));
         relations.writeToNbt(nbt);
         longTermMemory.writeToNbt(nbt);
+        com.ancientkira.mca.server.PillagerRaids.write(this, nbt);
         writeNicknames(nbt);
 
         getTypeDataManager().save(this, nbt);
@@ -1469,12 +2060,17 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean isHostile() {
-        return getProfession() == ProfessionsMCA.OUTLAW;
+        return getProfession() == ProfessionsMCA.OUTLAW
+                || ProfessionsMCA.isRaider(getProfession()) && !isPeacefulRaider();
+    }
+
+    public boolean isPeacefulRaider() {
+        return ProfessionsMCA.isRaider(getProfession()) && level().getDifficulty() == net.minecraft.world.Difficulty.PEACEFUL;
     }
 
     //friends will not get slapped in revenge
     public boolean isFriend(EntityType<?> type) {
-        return type == EntityType.IRON_GOLEM || type == EntitiesMCA.FEMALE_VILLAGER || type == EntitiesMCA.MALE_VILLAGER;
+        return type == EntityType.IRON_GOLEM || type == EntitiesMCA.PERSON;
     }
 
     public boolean canFireProjectileWeapon(ProjectileWeaponItem weapon) {
@@ -1499,6 +2095,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     @SuppressWarnings("deprecation")
     public void performRangedAttack(LivingEntity target, float pullProgress) {
+        if (target == this || target.getUUID().equals(getUUID())) return;
         if (this.level().isClientSide() || !(this.level() instanceof ServerLevel serverLevel)) {
             return;
         }

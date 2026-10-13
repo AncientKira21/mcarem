@@ -14,13 +14,13 @@ import com.ancientkira.mca.entity.ai.Relationship;
 import com.ancientkira.mca.entity.ai.chatAI.modules.*;
 import com.ancientkira.mca.entity.ai.relationship.AgeState;
 import com.ancientkira.mca.server.world.data.Village;
+import com.ancientkira.mca.util.McaPair;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.util.Tuple;
 import org.apache.commons.io.IOUtils;
 import org.jetbrains.annotations.Nullable;
 
@@ -36,7 +36,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private static final int MAX_MEMORY = 768;
     private static final int MAX_MEMORY_TIME = 20 * 60 * 45;
 
-    private static final Map<UUID, List<Tuple<String, String>>> memory = new HashMap<>();
+    private static final Map<UUID, List<McaPair<String, String>>> memory = new HashMap<>();
     private static final Map<UUID, Long> lastInteractions = new HashMap<>();
 
     public static String translate(String phrase) {
@@ -213,7 +213,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             lastInteractions.put(villager.getUUID(), time);
 
             // remember phrase
-            List<Tuple<String, String>> pastDialogue = memory.computeIfAbsent(villager.getUUID(), key -> new LinkedList<>());
+            List<McaPair<String, String>> pastDialogue = memory.computeIfAbsent(villager.getUUID(), key -> new LinkedList<>());
             while (pastDialogue.stream().mapToInt(v -> (v.getB().length() / 4)).sum() > MAX_MEMORY) {
                 pastDialogue.removeFirst();
             }
@@ -258,7 +258,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
                 sb.append("\n");
             } else if (!isInHouse) {
                 // when not using conczin.net, use some default prompt
-                String defaultPrompt = "You are a Minecraft villager, fully immersed in their virtual world, unaware of its artificial nature. You respond based on your description, your role, and your knowledge of the world. You have no knowledge of the real world, and do not realize that you are within Minecraft. You are no assistant! You can be sarcastic, funny, or even rude when appropriate.";
+                String defaultPrompt = "You are a Minecraft character with the current role described below, fully immersed in their virtual world, unaware of its artificial nature. You respond based on your description, your role, and your knowledge of the world. You have no knowledge of the real world, and do not realize that you are within Minecraft. You are no assistant! You can be sarcastic, funny, or even rude when appropriate.";
                 sb.append(defaultPrompt);
                 sb.append("\n");
 
@@ -318,7 +318,7 @@ public class OpenAIChatAI implements ChatAIStrategy {
             if (!config.villagerChatAIFuseSystemPrompt) {
                 body.append("{\"role\": \"system\", \"content\": ").append(jsonStringQuote(system)).append("},");
             }
-            for (Tuple<String, String> pair : pastDialogue) {
+            for (McaPair<String, String> pair : pastDialogue) {
                 String role = pair.getA();
                 String content = pair.getB();
                 String name = role.equals("user") ? playerName : villagerName;
@@ -345,8 +345,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
             if (message.error == null) {
                 if (message.answer != null) {
                     // remember
-                    pastDialogue.add(new Tuple<>("user", msg));
-                    pastDialogue.add(new Tuple<>("assistant", message.answer.message != null ? message.answer.message : "..."));
+                    pastDialogue.add(new McaPair<>("user", msg));
+                    pastDialogue.add(new McaPair<>("assistant", message.answer.message != null ? message.answer.message : "..."));
 
                     // act
                     if (message.answer.optionalCommand() != null && !message.answer.optionalCommand().isEmpty()) {

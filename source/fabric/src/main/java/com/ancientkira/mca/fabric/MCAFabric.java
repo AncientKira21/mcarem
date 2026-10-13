@@ -123,6 +123,9 @@ public final class MCAFabric implements ModInitializer {
                 .icon(() -> new ItemStack(ItemsMCA.ENGAGEMENT_RING))
                 .displayItems((params, output) -> {
                     for (Item item : ItemsMCA.ITEMS.values()) {
+                        if (!ItemsMCA.isVisibleInCreative(item)) {
+                            continue;
+                        }
                         output.accept(new ItemStack(item));
                     }
                 })

@@ -54,6 +54,11 @@ public class CivilRegistryManager extends SavedData {
         ));
     }
 
+    public void absorb(CivilRegistryManager other) {
+        if (other != this) entries.addAll(other.entries);
+        setDirty();
+    }
+
     public void addText(Component text) {
         entries.addFirst(text);
         setDirty();

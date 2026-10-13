@@ -3,6 +3,7 @@ package com.ancientkira.mca.entity.ai.navigation;
 import it.unimi.dsi.fastutil.longs.Long2BooleanMap;
 import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import com.ancientkira.mca.Config;
+import com.ancientkira.mca.server.world.data.Village;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
@@ -15,6 +16,7 @@ import net.minecraft.world.level.pathfinder.PathfindingContext;
 import net.minecraft.world.level.pathfinder.WalkNodeEvaluator;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
+import java.util.Set;
 
 public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
     private static final int MAX_CLIMBABLE_VERTICAL_OFFSET = 2;
@@ -24,11 +26,25 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
     private final Long2BooleanMap climbableCache = new Long2BooleanOpenHashMap();
     private final BlockPos.MutableBlockPos climbablePos = new BlockPos.MutableBlockPos();
     private final BlockPos.MutableBlockPos collisionPos = new BlockPos.MutableBlockPos();
+    private Village roadVillage;
+    private BlockPos roadStart;
+    private Set<BlockPos> roadTargets = Set.of();
+    private boolean roadsOnly;
+    private final Long2BooleanMap roadCache = new Long2BooleanOpenHashMap();
+
+    public void configureRoads(Village village, BlockPos start, Set<BlockPos> targets, boolean roadsOnly) {
+        this.roadVillage = village;
+        this.roadStart = start;
+        this.roadTargets = Set.copyOf(targets);
+        this.roadsOnly = roadsOnly;
+        roadCache.clear();
+    }
 
     @Override
     public void done() {
         this.clearanceCache.clear();
         this.climbableCache.clear();
+        this.roadCache.clear();
         super.done();
     }
 
@@ -90,7 +106,7 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
     public int getNeighbors(Node[] nodes, Node origin) {
         int nodeCount = super.getNeighbors(nodes, origin);
         if (!isClimbable(origin.x, origin.y, origin.z)) {
-            return nodeCount;
+            return filterRoadNeighbors(nodes, nodeCount);
         }
 
         nodeCount = removeLargeVerticalTransitions(nodes, nodeCount, origin);
@@ -108,7 +124,43 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
             nodeCount = addClimbableNode(nodes, nodeCount, below);
         }
 
-        return nodeCount;
+        return filterRoadNeighbors(nodes, nodeCount);
+    }
+
+    private int filterRoadNeighbors(Node[] nodes, int count) {
+        if (!roadsOnly || roadVillage == null) {
+            return count;
+        }
+        int kept = 0;
+        for (int i = 0; i < count; i++) {
+            Node node = nodes[i];
+            BlockPos pos = node.asBlockPos();
+            boolean road = currentContext.getBlockState(pos.below()).is(roadVillage.getPathBlock())
+                    || currentContext.getBlockState(pos).is(roadVillage.getPathBlock());
+            if (canUseRoadNode(pos, road)) {
+                if (!road && roadVillage.getBuildingAt(pos).isEmpty() && !isClimbable(pos)) {
+                    node.costMalus = Math.max(node.costMalus, 4.0F);
+                }
+                nodes[kept++] = node;
+            }
+        }
+        for (int i = kept; i < count; i++) {
+            nodes[i] = null;
+        }
+        return kept;
+    }
+
+    private boolean canUseRoadNode(BlockPos pos, boolean road) {
+        long key = pos.asLong();
+        if (roadCache.containsKey(key)) {
+            return roadCache.get(key);
+        }
+        // Buildings, ladders and short connections keep doors and indoor floors accessible.
+        boolean allowed = road || isClimbable(pos) || roadVillage.getBuildingAt(pos).isPresent()
+                || pos.distSqr(roadStart) <= 64
+                || roadTargets.stream().anyMatch(target -> pos.distSqr(target) <= 64);
+        roadCache.put(key, allowed);
+        return allowed;
     }
 
     private int removeLargeVerticalTransitions(Node[] nodes, int nodeCount, Node origin) {

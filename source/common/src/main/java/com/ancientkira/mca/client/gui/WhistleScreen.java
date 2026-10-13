@@ -34,6 +34,48 @@ public class WhistleScreen extends Screen {
     private ButtonWidget callButton;
     private int loadingAnimationTicks;
     private int selectedIndex;
+    private final List<Component> names = new ArrayList<>();
+    private final List<ButtonWidget> nameOptions = new ArrayList<>();
+    private boolean namesOpen;
+    private int nameOffset;
+
+    private void closeNames() {
+        namesOpen = false;
+        nameOptions.forEach(this::removeWidget);
+        nameOptions.clear();
+    }
+
+    private int visibleNameCount() {
+        return Math.min(keys.size(), Math.max(1, (height / 2 + 65 - 25) / 22));
+    }
+
+    private void showNames() {
+        closeNames();
+        namesOpen = true;
+        int count = visibleNameCount();
+        nameOffset = Math.clamp(nameOffset, 0, Math.max(0, keys.size() - count));
+        int top = height / 2 + 65 - count * 22;
+        for (int row = 0; row < count; row++) {
+            int index = nameOffset + row;
+            ButtonWidget option = new ButtonWidget(width / 2 - 100, top + row * 22, 200, 20,
+                    names.get(index), b -> {
+                        selectedIndex = index;
+                        closeNames();
+                        setVillagerData(index);
+                    });
+            nameOptions.add(addRenderableWidget(option));
+        }
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (namesOpen) {
+            nameOffset += scrollY > 0 ? -1 : scrollY < 0 ? 1 : 0;
+            showNames();
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
 
     public WhistleScreen() {
         super(Component.translatable("gui.whistle.title"));
@@ -54,9 +96,11 @@ public class WhistleScreen extends Screen {
 
     @Override
     public void init() {
+        closeNames();
         Network.sendToServer(new GetFamilyRequest());
 
         selectionLeftButton = addRenderableWidget(new ButtonWidget(width / 2 - 123, height / 2 + 65, 20, 20, Component.literal("<<"), b -> {
+            closeNames();
             if (selectedIndex == 0) {
                 selectedIndex = keys.size() - 1;
             } else {
@@ -65,6 +109,7 @@ public class WhistleScreen extends Screen {
             setVillagerData(selectedIndex);
         }));
         selectionRightButton = addRenderableWidget(new ButtonWidget(width / 2 + 103, height / 2 + 65, 20, 20, Component.literal(">>"), b -> {
+            closeNames();
             if (selectedIndex == keys.size() - 1) {
                 selectedIndex = 0;
             } else {
@@ -73,6 +118,19 @@ public class WhistleScreen extends Screen {
             setVillagerData(selectedIndex);
         }));
         villagerNameButton = addRenderableWidget(new ButtonWidget(width / 2 - 100, height / 2 + 65, 200, 20, Component.literal(""), b -> {
+            if (namesOpen) {
+                closeNames();
+            } else {
+                if (names.isEmpty()) {
+                    for (int index = 0; index < keys.size(); index++) {
+                        setVillagerData(index);
+                        names.add(dummy.getDisplayName());
+                    }
+                    setVillagerData(selectedIndex);
+                }
+                nameOffset = selectedIndex;
+                showNames();
+            }
         }));
 
         callButton = addRenderableWidget(new ButtonWidget(width / 2 - 100, height / 2 + 90, 60, 20, Component.translatable("gui.button.call"), (b) -> {
@@ -94,12 +152,12 @@ public class WhistleScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float offset) {
         super.extractRenderState(context, mouseX, mouseY, offset);
 
-        context.centeredText(font, Component.translatable("gui.whistle.title"), width / 2, height / 2 - 100, 0xffffff);
+        context.centeredText(font, Component.translatable("gui.whistle.title"), width / 2, namesOpen ? 10 : height / 2 - 100, 0xffffff);
 
         if (loadingAnimationTicks != -1) {
             String loadingMsg = new String(new char[(loadingAnimationTicks / 5) % 4]).replace("\0", ".");
             context.text(font, Component.translatable("gui.loading").append(Component.literal(loadingMsg)), width / 2 - 20, height / 2 - 10, 0xffffff);
-        } else {
+        } else if (!namesOpen) {
             if (keys.isEmpty()) {
                 context.centeredText(font, Component.translatable("gui.whistle.noFamily"), width / 2, height / 2 + 50, 0xffffff);
             } else {
@@ -107,7 +165,7 @@ public class WhistleScreen extends Screen {
             }
         }
 
-        if (dummy != null) {
+        if (dummy != null && !namesOpen) {
             int posX = width / 2;
             int posY = height / 2;
             InventoryScreen.extractEntityInInventoryFollowsMouse(context, posX - 30, posY - 70, posX + 30, posY + 45, 60, 0, mouseX, mouseY, dummy);
@@ -115,6 +173,8 @@ public class WhistleScreen extends Screen {
     }
 
     public void setVillagerData(@NotNull CompoundTag data) {
+        closeNames();
+        names.clear();
         villagerData = data;
         keys = new ArrayList<>(data.keySet());
         loadingAnimationTicks = -1;
@@ -127,7 +187,7 @@ public class WhistleScreen extends Screen {
         if (!keys.isEmpty()) {
             CompoundTag firstData = villagerData.getCompound(keys.get(index)).orElseGet(CompoundTag::new);
 
-            dummy = EntitiesMCA.MALE_VILLAGER.create(Minecraft.getInstance().level, EntitySpawnReason.LOAD);
+            dummy = EntitiesMCA.PERSON.create(Minecraft.getInstance().level, EntitySpawnReason.LOAD);
             dummy.load(TagValueInput.create(ProblemReporter.DISCARDING, dummy.registryAccess(), firstData));
 
             villagerNameButton.setMessage(dummy.getDisplayName());
@@ -139,6 +199,7 @@ public class WhistleScreen extends Screen {
     }
 
     private void toggleButtons(boolean enabled) {
+        villagerNameButton.active = enabled;
         selectionLeftButton.active = enabled;
         selectionRightButton.active = enabled;
         callButton.active = enabled;

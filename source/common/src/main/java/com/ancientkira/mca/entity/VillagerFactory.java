@@ -22,6 +22,7 @@ import java.util.OptionalInt;
 public class VillagerFactory {
     private final Level world;
 
+    private Optional<java.util.UUID> uuid = Optional.empty();
     private Optional<String> name = Optional.empty();
     private Optional<Gender> gender = Optional.empty();
 
@@ -39,6 +40,11 @@ public class VillagerFactory {
 
     public static VillagerFactory newVillager(Level world) {
         return new VillagerFactory(world);
+    }
+
+    public VillagerFactory withUUID(java.util.UUID uuid) {
+        this.uuid = Optional.ofNullable(uuid);
+        return this;
     }
 
     public VillagerFactory withGender(Gender gender) {
@@ -111,10 +117,10 @@ public class VillagerFactory {
         Gender gender = this.gender.orElseGet(Gender::getRandom);
         VillagerEntityMCA villager = gender.getVillagerType().create(world, reason);
         assert villager != null;
+        uuid.ifPresent(villager::setUUID);
         villager.getGenetics().setGender(gender);
         villager.setAge(age.orElseGet(() -> villager.getRandom().nextInt(AgeState.getMaxAge() * 3) - AgeState.getMaxAge()));
         position.ifPresent(pos -> villager.snapTo(pos.x(), pos.y(), pos.z()));
-        villager.setCustomName(Component.literal(name.orElseGet(() -> Names.pickCitizenName(gender, villager))));
         VillagerData data = villager.getVillagerData();
         villager.setVillagerData(new VillagerData(
                         type.map(BuiltInRegistries.VILLAGER_TYPE::wrapAsHolder).orElseGet(data::type),
@@ -122,6 +128,7 @@ public class VillagerFactory {
                         level.orElseGet(data::level)
                 )
         );
+        villager.setCustomName(Component.literal(name.orElseGet(() -> Names.pickCitizenName(gender, villager))));
         offers.ifPresent(villager::setOffers);
         return villager;
     }

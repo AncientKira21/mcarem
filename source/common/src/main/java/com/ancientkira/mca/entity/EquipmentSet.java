@@ -6,6 +6,11 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 
 public record EquipmentSet(String mainHand, String offHand, String head, String chest, String legs, String feet) {
+    public static final EquipmentSet VINDICATOR = new EquipmentSet("iron_axe", "air", "air", "air", "air", "air");
+    public static final EquipmentSet VINDICATOR_LEFT = new EquipmentSet("air", "iron_axe", "air", "air", "air", "air");
+    public static final EquipmentSet SPELLCASTER = new EquipmentSet("air", "air", "air", "air", "air", "air");
+    public static final EquipmentSet PILLAGER = new EquipmentSet("crossbow", "air", "air", "air", "air", "air");
+    public static final EquipmentSet PILLAGER_LEFT = new EquipmentSet("air", "crossbow", "air", "air", "air", "air");
     public static final EquipmentSet NAKED = new EquipmentSet("air", "air", "air", "air", "air", "air");
 
     public static final EquipmentSet GUARD_0 = new EquipmentSet("iron_sword", "air", "air", "iron_chestplate", "leather_leggings", "leather_boots");
@@ -19,6 +24,11 @@ public record EquipmentSet(String mainHand, String offHand, String head, String 
     public static final EquipmentSet ARCHER_1_LEFT = new EquipmentSet("air", "bow", "air", "iron_chestplate", "leather_leggings", "leather_boots");
     public static final EquipmentSet ARCHER_2 = new EquipmentSet("bow", "air", "air", "diamond_chestplate", "leather_leggings", "iron_boots");
     public static final EquipmentSet ARCHER_2_LEFT = new EquipmentSet("air", "bow", "air", "diamond_chestplate", "leather_leggings", "iron_boots");
+
+    public static final EquipmentSet GUARD_DIAMOND = new EquipmentSet("diamond_sword", "shield", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots");
+    public static final EquipmentSet GUARD_NETHERITE = new EquipmentSet("netherite_sword", "shield", "netherite_helmet", "netherite_chestplate", "netherite_leggings", "netherite_boots");
+    public static final EquipmentSet ARCHER_DIAMOND = new EquipmentSet("bow", "air", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots");
+    public static final EquipmentSet ARCHER_NETHERITE = new EquipmentSet("bow", "air", "netherite_helmet", "netherite_chestplate", "netherite_leggings", "netherite_boots");
 
     public static final EquipmentSet ELITE = new EquipmentSet("netherite_sword", "netherite_sword", "diamond_helmet", "netherite_chestplate", "golden_leggings", "netherite_boots");
     public static final EquipmentSet ROYAL = new EquipmentSet("trident", "diamond_axe", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots");

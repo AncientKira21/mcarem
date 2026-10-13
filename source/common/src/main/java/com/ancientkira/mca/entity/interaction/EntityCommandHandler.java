@@ -28,9 +28,19 @@ public abstract class EntityCommandHandler<T extends Entity & VillagerLike<?>> {
     }
 
     public void stopInteracting() {
+        stopInteracting(true);
+    }
+
+    public void stopInteracting(boolean closeContainer) {
+        if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && interactingPlayer != null) {
+            com.ancientkira.mca.server.RaiderSocial.onMenuClosed(person, interactingPlayer);
+        }
         if (!entity.level().isClientSide()) {
-            if (interactingPlayer instanceof ServerPlayer serverPlayer) {
-                serverPlayer.closeContainer();
+            if (closeContainer && interactingPlayer instanceof ServerPlayer serverPlayer) {
+                Network.sendToPlayer(new OpenGuiRequest(OpenGuiRequest.Type.CLOSE, entity), serverPlayer);
+                if (serverPlayer.containerMenu != serverPlayer.inventoryMenu) {
+                    serverPlayer.closeContainer();
+                }
             }
         }
         interactingPlayer = null;
@@ -41,6 +51,9 @@ public abstract class EntityCommandHandler<T extends Entity & VillagerLike<?>> {
             Network.sendToPlayer(new OpenGuiRequest(OpenGuiRequest.Type.INTERACT, entity), serverPlayer);
         }
         interactingPlayer = player;
+        if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) {
+            com.ancientkira.mca.server.RaiderSocial.onMenuOpened(person, player);
+        }
         return InteractionResult.SUCCESS;
     }
 

@@ -8,6 +8,7 @@ import com.ancientkira.mca.entity.ai.relationship.CompassionateEntity;
 import com.ancientkira.mca.entity.ai.relationship.EntityRelationship;
 import com.ancientkira.mca.entity.ai.relationship.Gender;
 import com.ancientkira.mca.registry.BlocksMCA;
+import com.ancientkira.mca.server.world.data.FamilyTree;
 import com.ancientkira.mca.server.world.data.GraveyardManager;
 import com.ancientkira.mca.util.VoxelShapeUtil;
 import com.ancientkira.mca.util.localization.FlowingText;
@@ -15,6 +16,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Direction.Axis;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
@@ -62,6 +64,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -327,6 +330,10 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         }
 
         public void startResurrecting(boolean cure) {
+            if (shouldDiscardStoredEntity()) {
+                setEntity(null);
+                return;
+            }
             resurrectionProgress = 1;
             this.cure = cure;
             generateLightning();
@@ -336,6 +343,11 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
 
         public void tick() {
             if (hasEntity() && resurrectionProgress > 0) {
+                if (shouldDiscardStoredEntity()) {
+                    resurrectionProgress = 0;
+                    setEntity(null);
+                    return;
+                }
                 resurrectionProgress++;
                 setChanged();
                 sync();
@@ -404,12 +416,21 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
             }
         }
 
+        public static void playInstantRevivalEffect(ServerLevel level, BlockPos pos) {
+            level.playSound(null, pos, SoundEvents.BELL_BLOCK, SoundSource.BLOCKS, 1, 1);
+            generateLightning(level, pos);
+        }
+
         private void generateLightning() {
+            generateLightning(level, worldPosition);
+        }
+
+        private static void generateLightning(Level level, BlockPos pos) {
             level.setSkyFlashTime(10);
             LightningBolt bolt = EntityType.LIGHTNING_BOLT.create(level, EntitySpawnReason.EVENT);
             if (bolt != null) {
                 bolt.setVisualOnly(true);
-                bolt.snapTo(worldPosition.getX() + 0.5F, worldPosition.getY(), worldPosition.getZ() + 0.5F);
+                bolt.snapTo(pos.getX() + 0.5F, pos.getY(), pos.getZ() + 0.5F);
                 level.addFreshEntity(bolt);
             }
         }
@@ -440,6 +461,10 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
 
         public boolean hasEntity() {
             return entityData.isPresent();
+        }
+
+        public boolean storesEntity(UUID uuid) {
+            return entityData.flatMap(EntityData::getUuid).filter(uuid::equals).isPresent();
         }
 
         public Gender getGender() {
@@ -482,7 +507,19 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
             entity.saveWithoutId(output);
             CompoundTag nbt = output.buildResult();
             nbt.putString("id", EntityType.getKey(entity.getType()).toString());
+            nbt.store("MCAEntityUUID", UUIDUtil.CODEC, entity.getUUID());
             return nbt;
+        }
+
+        private boolean shouldDiscardStoredEntity() {
+            if (!(level instanceof ServerLevel serverLevel)) {
+                return false;
+            }
+            return entityData.flatMap(EntityData::getUuid).map(uuid -> {
+                FamilyTree tree = FamilyTree.get(serverLevel);
+                return tree.isPermanentlyDeleted(uuid)
+                        || tree.getOrEmpty(uuid).map(node -> !node.isDeceased()).orElse(false);
+            }).orElse(false);
         }
 
         protected void sync() {
@@ -553,6 +590,11 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                         nbt.getString("EntityName").orElse(""),
                         Gender.byId(nbt.getInt("EntityGender").orElse(0))
                 );
+            }
+
+            Optional<java.util.UUID> getUuid() {
+                return nbt.read("MCAEntityUUID", UUIDUtil.CODEC)
+                        .or(() -> nbt.read("UUID", UUIDUtil.CODEC));
             }
 
             void writeNbt(CompoundTag nbt) {

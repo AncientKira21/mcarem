@@ -38,6 +38,7 @@ final class BlueprintMapRenderer implements AutoCloseable {
         List<BlueprintMapRenderer.HoverTarget> hoverTargets = new ArrayList<>();
         List<BlueprintMapGeometry.MapFootprintLayer> layers = geometry.footprintLayers(selectedFloor);
         Matrix3x2fStack matrices = context.pose();
+        java.util.Set<Integer> drawnOutposts = new java.util.HashSet<>();
         matrices.pushMatrix();
         for (BlueprintMapGeometry.MapFootprintLayer layer : layers) {
             Building building = layer.building();
@@ -51,7 +52,8 @@ final class BlueprintMapRenderer implements AutoCloseable {
                 int color = withAlpha(type.getColor(), fillAlpha);
                 drawSpans(context, viewport, layer.fillSpans(), color);
                 drawEdges(context, viewport, layer.outlineEdges(), withAlpha(type.getColor(), 255));
-                if (showBuildingIcons && type.visible() && type.hasIcon()) {
+                if (showBuildingIcons && type.visible() && type.hasIcon()
+                        && (!type.name().equals("pillager_outpost") || drawnOutposts.add(layer.logicalBuildingId()))) {
                     drawBuildingIcon(context, viewport, building.getCenter(), type);
                 }
             }
@@ -72,7 +74,11 @@ final class BlueprintMapRenderer implements AutoCloseable {
         }
         context.disableScissor();
 
-        hoverTargets.sort(Comparator.comparingInt(HoverTarget::anchorY).reversed());
+        if (selectedFloor == null && player != null) {
+            hoverTargets.sort(Comparator.comparingDouble(target -> Math.abs(target.anchorY() - player.getY())));
+        } else {
+            hoverTargets.sort(Comparator.comparingInt(HoverTarget::anchorY).reversed());
+        }
         return new RenderResult(List.copyOf(hoverTargets));
     }
 
@@ -80,7 +86,8 @@ final class BlueprintMapRenderer implements AutoCloseable {
                                          BlockPos center, BuildingType type) {
         int x = (int) Math.round(viewport.screenX(center.getX() + 0.5));
         int y = (int) Math.round(viewport.screenY(center.getZ() + 0.5));
-        WidgetUtils.drawBuildingIcon(context, ICON_TEXTURES, x, y, type.iconU(), type.iconV());
+        WidgetUtils.drawBuildingIcon(context, ICON_TEXTURES, x, y, type.iconU(), type.iconV(),
+                type.name().equals("pillager_outpost") ? 0xffff4545 : 0xffffffff);
     }
 
     private static void drawSpans(GuiGraphicsExtractor context, BlueprintMapViewport viewport,

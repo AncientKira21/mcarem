@@ -101,9 +101,30 @@ public class VillagerEntityBaseModelMCA extends HumanoidModel<VillagerRenderStat
             this.rightArm.zRot = Mth.lerp(panicAnimationProgress, this.rightArm.zRot, waveSideways);
         }
 
+        if (state.isCastingSpell) {
+            // Match the vanilla evoker's raised, gently waving casting arms.
+            rightArm.xRot = Mth.cos(state.ageInTicks * 0.6662F) * 0.25F;
+            leftArm.xRot = rightArm.xRot;
+            rightArm.yRot = leftArm.yRot = 0.0F;
+            rightArm.zRot = 2.3561945F;
+            leftArm.zRot = -2.3561945F;
+        }
+
         applyVillagerDimensions(visuals);
         if (receivesDeferredAnimationPose && state instanceof VillagerStateHolder holder && holder.mca$getHumanoidModelPose() != null) {
             holder.mca$getHumanoidModelPose().applyTo(this);
+        }
+        if (state.isKidnapped) {
+            // Reapply the regular panic animation after the deferred humanoid pose.
+            float toRadians = (float) Math.PI / 180;
+            float armRaise = (((float) Math.sin(state.ageInTicks / 5) * 30 - 180)
+                    + ((float) Math.sin(state.ageInTicks / 3) * 3)) * toRadians;
+            float waveSideways = ((float) Math.sin(state.ageInTicks / 2) * 12 - 17) * toRadians;
+            leftArm.xRot = armRaise;
+            rightArm.xRot = -armRaise;
+            leftArm.yRot = rightArm.yRot = 0.0F;
+            leftArm.zRot = -waveSideways;
+            rightArm.zRot = waveSideways;
         }
     }
 

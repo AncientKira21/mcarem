@@ -3,6 +3,8 @@ package com.ancientkira.mca.entity.ai.brain.sensor;
 import com.google.common.collect.ImmutableSet;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
+import com.ancientkira.mca.entity.ZombieVillagerEntityMCA;
+import com.ancientkira.mca.entity.ai.relationship.Gender;
 import com.ancientkira.mca.entity.ai.MemoryModuleTypeMCA;
 import com.ancientkira.mca.util.RegistryHelper;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -51,6 +53,20 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
 
         if (!(entity instanceof VillagerEntityMCA villager)) {
             return;
+        }
+
+        // Vanilla's villager-hostiles sensor recognizes vanilla pillagers by class only.
+        // Supply converted hostile people too, so civilians still flee and defend themselves.
+        if (!villager.isHostile()) {
+            Optional<LivingEntity> hostilePerson = getVisibleMobs(villager).flatMap(visible -> visible
+                    .find(target -> target instanceof VillagerEntityMCA person && person.isHostile() && person.isAlive())
+                    .min((a, b) -> compareDistances(villager, a, b)));
+            Optional<LivingEntity> existing = villager.getBrain().getMemoryInternal(MemoryModuleType.NEAREST_HOSTILE);
+            if (hostilePerson.isPresent() && (existing.isEmpty()
+                    || !existing.get().isAlive()
+                    || compareDistances(villager, hostilePerson.get(), existing.get()) < 0)) {
+                villager.getBrain().setMemory(MemoryModuleType.NEAREST_HOSTILE, hostilePerson.get());
+            }
         }
 
         // Performance optimization: only scan if the villager is a guard,
@@ -119,7 +135,8 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
 
     private static int getPriority(LivingEntity entity, LivingEntity guard, LivingEntity followedPlayer) {
         if (entity instanceof VillagerEntityMCA villager) {
-            return villager.isHostile() ? 10 : -1;
+            return guard instanceof VillagerEntityMCA defender
+                    && com.ancientkira.mca.server.VillageWarfare.isEnemy(defender, villager) ? 12 : villager.isHostile() ? 10 : -1;
         } else if (guard != null && entity instanceof Mob mob && (mob.getTarget() == guard || followedPlayer != null && mob.getTarget() == followedPlayer)) {
             //priority is irrelevant if this entity is currently an active threat
             return 9;
@@ -130,6 +147,14 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
             if (Config.getInstance().guardsTargetEntities.containsKey(id.toString())) {
                 return Config.getInstance().guardsTargetEntities.get(id.toString());
             } else {
+                if (entity instanceof ZombieVillagerEntityMCA zombie) {
+                    String legacyId = zombie.getGenetics().getGender() == Gender.FEMALE
+                            ? "mca:female_zombie_villager" : "mca:male_zombie_villager";
+                    Integer legacyPriority = Config.getInstance().guardsTargetEntities.get(legacyId);
+                    if (legacyPriority != null) {
+                        return legacyPriority;
+                    }
+                }
                 Optional<Integer> tagPriority = getTagPriority(entity.getType());
                 if (tagPriority.isPresent()) {
                     return tagPriority.get();

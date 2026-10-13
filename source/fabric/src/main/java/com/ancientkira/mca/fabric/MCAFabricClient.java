@@ -42,15 +42,19 @@ public final class MCAFabricClient extends ClientProxyAbstractImpl implements Cl
         Network.registerClientSender(ClientPlayNetworking::send);
 
         if (Config.getInstance().useSquidwardModels) {
+            EntityRenderers.register(EntitiesMCA.PERSON, VillagerRenderer::new);
             EntityRenderers.register(EntitiesMCA.MALE_VILLAGER, VillagerRenderer::new);
             EntityRenderers.register(EntitiesMCA.FEMALE_VILLAGER, VillagerRenderer::new);
 
+            EntityRenderers.register(EntitiesMCA.ZOMBIE_PERSON, ZombieVillagerRenderer::new);
             EntityRenderers.register(EntitiesMCA.MALE_ZOMBIE_VILLAGER, ZombieVillagerRenderer::new);
             EntityRenderers.register(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerRenderer::new);
         } else {
+            EntityRenderers.register(EntitiesMCA.PERSON, VillagerEntityMCARenderer::new);
             EntityRenderers.register(EntitiesMCA.MALE_VILLAGER, VillagerEntityMCARenderer::new);
             EntityRenderers.register(EntitiesMCA.FEMALE_VILLAGER, VillagerEntityMCARenderer::new);
 
+            EntityRenderers.register(EntitiesMCA.ZOMBIE_PERSON, ZombieVillagerEntityMCARenderer::new);
             EntityRenderers.register(EntitiesMCA.MALE_ZOMBIE_VILLAGER, ZombieVillagerEntityMCARenderer::new);
             EntityRenderers.register(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerEntityMCARenderer::new);
         }

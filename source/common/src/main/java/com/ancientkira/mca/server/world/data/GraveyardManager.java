@@ -117,6 +117,18 @@ public class GraveyardManager extends SavedData {
         return positions;
     }
 
+    public List<BlockPos> findAll(TombstoneState state) {
+        synchronized (tombstones) {
+            Long2ObjectMap<ChunkBase> chunks = tombstones.get(state);
+            if (chunks == null) {
+                return List.of();
+            }
+            List<BlockPos> positions = new ArrayList<>();
+            chunks.values().forEach(chunk -> chunk.appendPositions(positions));
+            return List.copyOf(positions);
+        }
+    }
+
     public Optional<BlockPos> findNearest(BlockPos pos, TombstoneState state, int maxChunkRange) {
         synchronized (tombstones) {
             BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
@@ -195,6 +207,9 @@ public class GraveyardManager extends SavedData {
         public void appendAll(AABB box, BlockPos.MutableBlockPos mutable, List<BlockPos> positions) {
 
         }
+
+        public void appendPositions(List<BlockPos> positions) {
+        }
     }
 
     private static class Chunk extends ChunkBase {
@@ -230,6 +245,11 @@ public class GraveyardManager extends SavedData {
         }
 
         @Override
+        public void appendPositions(List<BlockPos> positions) {
+            tombstones.forEach(packedPos -> positions.add(BlockPos.of(packedPos)));
+        }
+
+        @Override
         public Optional<BlockPos> findNearest(BlockPos pos, BlockPos.MutableBlockPos mutable) {
             double distance = Double.MAX_VALUE;
             long nearest = -1;
@@ -260,4 +280,3 @@ public class GraveyardManager extends SavedData {
         }
     }
 }
-

@@ -173,6 +173,25 @@ public final class Config extends CommonConfig {
      */
     public int marriageHeartsRequirement = 100;
 
+    /** Chance per Minecraft day for an eligible nearby person to propose by mail. */
+    public float villagerMarriageProposalChance = 0.25f;
+    public boolean enableVillagerMarriageProposals = true;
+    /** Daily chance for an idle raider near a village to choose redemption; zero disables it. */
+    public double raiderSelfRedemptionChancePerDay = 0.1;
+    public boolean enableAutomaticVillageWars = true;
+    public boolean enableAutomaticVillageRaids = true;
+    public double automaticVillageWarChancePerDay = 0.2;
+    public double automaticVillageRaidChancePerDay = 0.15;
+    public boolean enableFamilyRequestLetters = true;
+    public int villagerDivorceRequestHearts = -25;
+    public double familyRequestChancePerDay = 0.25;
+    public double orphanLocalAdoptionChancePerDay = 0.25;
+    public boolean enableRaiderKidnapping = true;
+    public boolean overwriteOriginalPillagers = true;
+    public boolean overwriteOriginalVindicators = true;
+    public boolean overwriteOriginalEvokers = true;
+    public boolean overwriteOriginalWitches = true;
+
     /**
      * Number of hearts required to get engaged to a villager.
      */
@@ -258,7 +277,8 @@ public final class Config extends CommonConfig {
     public boolean allowAnyNightOwl = false;
 
     /**
-     * For every X hearts, players may hit a villager once without guards attacking them.
+     * Legacy friendship allowance retained for existing configuration files.
+     * Guards now give two explicit warnings before attacking; a fatal hit skips both warnings.
      */
     public int heartsForPardonHit = 30;
 
@@ -809,6 +829,7 @@ public final class Config extends CommonConfig {
             .put("minecraft:cave_spider", 0)
             .put("minecraft:slime", 0)
             .put("#minecraft:undead", 0)
+            .put(MCA.MOD_ID + ":zombie_person", 3)
             .put(MCA.MOD_ID + ":female_zombie_villager", 3)
             .put(MCA.MOD_ID + ":male_zombie_villager", 3)
             .build();

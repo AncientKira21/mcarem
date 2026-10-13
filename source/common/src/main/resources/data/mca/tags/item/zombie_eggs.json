@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
+    "mca:zombie_person_spawn_egg",
     "mca:male_zombie_villager_spawn_egg",
     "mca:female_zombie_villager_spawn_egg"
   ]

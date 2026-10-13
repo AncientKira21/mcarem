@@ -32,6 +32,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Block;
 import org.joml.Matrix3x2fStack;
 
 import java.util.*;
@@ -58,8 +59,16 @@ public class BlueprintScreen extends ExtendedScreen {
     private ButtonWidget[] buttonTaxes;
     private ButtonWidget[] buttonBirths;
     private ButtonWidget[] buttonMarriage;
+    private EditBox pathBlockSearch;
+    private final List<ButtonWidget> pathBlockOptions = new ArrayList<>();
+    private ButtonWidget pathBlockPrevious;
+    private ButtonWidget pathBlockNext;
+    private ButtonWidget pathBlockPageLabel;
+    private int pathBlockPage;
     private ButtonWidget buttonPage;
     private int pageNumber = 0;
+    private int warDelayMinutes;
+    private int warPage;
     private BuildingType selectedBuilding;
     private UUID selectedVillager;
     private Integer selectedFloorOrdinal = rememberedFloorOrdinal;
@@ -71,6 +80,9 @@ public class BlueprintScreen extends ExtendedScreen {
     private ButtonWidget floorPreviousButton;
     private ButtonWidget floorButton;
     private ButtonWidget floorNextButton;
+    private final List<ButtonWidget> floorOptionButtons = new ArrayList<>();
+    private boolean floorDropdownOpen;
+    private int floorDropdownOffset;
     private ButtonWidget iconsButton;
     private ButtonWidget terrainButton;
     private ButtonWidget mapScaleButton;
@@ -141,9 +153,8 @@ public class BlueprintScreen extends ExtendedScreen {
 
     private List<Integer> getFloorNavigationOrder() {
         List<Integer> floors = new ArrayList<>();
-        floorOrdinals.stream().filter(floor -> floor < 0).forEach(floors::add);
         floors.add(null);
-        floorOrdinals.stream().filter(floor -> floor >= 0).forEach(floors::add);
+        floorOrdinals.stream().sorted().forEach(floors::add);
         return floors;
     }
 
@@ -154,6 +165,8 @@ public class BlueprintScreen extends ExtendedScreen {
         if (nextIndex >= 0 && nextIndex < floors.size()) {
             selectedFloorOrdinal = floors.get(nextIndex);
             rememberedFloorOrdinal = selectedFloorOrdinal;
+            floorDropdownOpen = false;
+            floorDropdownOffset = 0;
         }
         updateFloorControls();
     }
@@ -161,6 +174,14 @@ public class BlueprintScreen extends ExtendedScreen {
     private void selectFloor(Integer floorOrdinal) {
         selectedFloorOrdinal = floorOrdinal;
         rememberedFloorOrdinal = floorOrdinal;
+        floorDropdownOpen = false;
+        floorDropdownOffset = 0;
+        updateFloorControls();
+    }
+
+    private void toggleFloorDropdown() {
+        floorDropdownOpen = !floorDropdownOpen;
+        floorDropdownOffset = 0;
         updateFloorControls();
     }
 
@@ -172,7 +193,7 @@ public class BlueprintScreen extends ExtendedScreen {
             return Component.translatable("gui.blueprint.floor.ground");
         }
         return floorOrdinal > 0
-                ? Component.translatable("gui.blueprint.floor.upper", floorOrdinal)
+                ? Component.translatable("gui.blueprint.floor.upper", floorOrdinal + 1)
                 : Component.translatable("gui.blueprint.floor.basement", -floorOrdinal);
     }
 
@@ -199,8 +220,28 @@ public class BlueprintScreen extends ExtendedScreen {
         if (floorButton != null) {
             floorButton.setMessage(getFloorLabel(selectedFloorOrdinal));
             floorButton.setTooltip(Tooltip.create(Component.translatable("gui.blueprint.floor.tooltip")));
-            floorButton.active = floorOrdinals.size() > 1 && selectedFloorOrdinal != null;
+            floorButton.active = !floorOrdinals.isEmpty();
         }
+        List<Integer> options = getFloorNavigationOrder();
+        int maxOffset = Math.max(0, options.size() - floorOptionButtons.size());
+        floorDropdownOffset = Math.min(floorDropdownOffset, maxOffset);
+        for (int i = 0; i < floorOptionButtons.size(); i++) {
+            ButtonWidget option = floorOptionButtons.get(i);
+            option.setY(floorButton.getY() - 20 * Math.min(floorOptionButtons.size(), options.size()) + 20 * i);
+            int optionIndex = floorDropdownOffset + i;
+            boolean visible = floorDropdownOpen && optionIndex < options.size();
+            option.visible = visible;
+            option.active = visible && !Objects.equals(options.get(optionIndex), selectedFloorOrdinal);
+            if (optionIndex < options.size()) {
+                option.setMessage(getFloorLabel(options.get(optionIndex)));
+            }
+        }
+    }
+
+    private void scrollFloorDropdown(int direction) {
+        int maxOffset = Math.max(0, getFloorNavigationOrder().size() - floorOptionButtons.size());
+        floorDropdownOffset = Math.max(0, Math.min(maxOffset, floorDropdownOffset + direction));
+        updateFloorControls();
     }
 
     private float getMapScale() {
@@ -270,7 +311,7 @@ public class BlueprintScreen extends ExtendedScreen {
 
     private void updateMapActionControls(RoomScanPlan plan) {
         Village.RoomScanMode mode = plan.mode();
-        Village.RoomScanMode primaryMode = mode.isAttachment() ? Village.RoomScanMode.ADD_BUILDING : mode;
+        Village.RoomScanMode primaryMode = mode;
         if (structureScanButton != null) {
             structureScanButton.setMessage(scanTranslationKey(primaryMode));
         }
@@ -279,7 +320,7 @@ public class BlueprintScreen extends ExtendedScreen {
             attachmentScanButton.visible = mode.isAttachment();
             attachmentScanButton.active = mode.isAttachment();
             if (mode.isAttachment()) {
-                attachmentScanButton.setMessage(scanTranslationKey(mode));
+                attachmentScanButton.setMessage(scanTranslationKey(Village.RoomScanMode.ADD_BUILDING));
             }
         }
         if (removeRoomButton != null) {
@@ -396,6 +437,9 @@ public class BlueprintScreen extends ExtendedScreen {
         this.page = page;
 
         clearWidgets();
+        floorDropdownOpen = false;
+        floorDropdownOffset = 0;
+        floorOptionButtons.clear();
         floorPreviousButton = null;
         floorButton = null;
         floorNextButton = null;
@@ -416,9 +460,9 @@ public class BlueprintScreen extends ExtendedScreen {
 
         //page selection
         int bx = width / 2 - 180;
-        int by = height / 2 - 56;
+        int by = height / 2 - 78;
         if (!page.equals("rename") && (!page.equals("empty") && !page.equals("waiting"))) {
-            for (String p : new String[]{"map", "rank", "catalog", "villagers", "rules", "refresh"}) {
+            for (String p : new String[]{"map", "rank", "catalog", "villagers", "rules", "refresh", "war"}) {
                 ButtonWidget widget = new ButtonWidget(bx, by, 80, 20, Component.translatable("gui.blueprint." + p), b -> setPage(p));
                 addRenderableWidget(widget);
                 if (page.equals(p) || page.equals("advanced") && p.equals("map")) {
@@ -456,10 +500,24 @@ public class BlueprintScreen extends ExtendedScreen {
                 floorPreviousButton = addRenderableWidget(new ButtonWidget(floorControlX, floorControlY, 24, 20,
                         Component.literal("<"), b -> changeSelectedFloor(-1)));
                 floorButton = addRenderableWidget(new ButtonWidget(floorControlX + 26, floorControlY, 98, 20,
-                        getFloorLabel(selectedFloorOrdinal), b -> selectFloor(null),
+                        getFloorLabel(selectedFloorOrdinal), b -> toggleFloorDropdown(),
                         Component.translatable("gui.blueprint.floor.tooltip")));
                 floorNextButton = addRenderableWidget(new ButtonWidget(floorControlX + 126, floorControlY, 24, 20,
                         Component.literal(">"), b -> changeSelectedFloor(1)));
+                int floorOptionCount = Math.max(1, Math.min(8, (height - 120) / 20));
+                for (int row = 0; row < floorOptionCount; row++) {
+                    final int optionRow = row;
+                    ButtonWidget option = new ButtonWidget(floorControlX + 26,
+                            floorControlY - 20 * (row + 1), 98, 20, Component.empty(), b -> {
+                        int index = floorDropdownOffset + optionRow;
+                        List<Integer> options = getFloorNavigationOrder();
+                        if (index < options.size()) {
+                            selectFloor(options.get(index));
+                        }
+                    });
+                    option.visible = false;
+                    floorOptionButtons.add(addRenderableWidget(option));
+                }
 
                 int mapFiltersX = width / 2 - 190;
                 int mapFiltersY = height / 2 + 76;
@@ -518,6 +576,17 @@ public class BlueprintScreen extends ExtendedScreen {
                         Network.sendToServer(new ReportBuildingMessage(ReportBuildingMessage.Action.SET_MAIN_ROOM));
                     }));
                     by += 22;
+                    RoomScanPlan outpostPlan = getPlayerRoomScanPlan();
+                    Building outpostRoom = outpostPlan.building().orElse(null);
+                    if (outpostRoom != null && village.canRegisterOutpost(outpostRoom)) {
+                        Building root = village.getBuilding(outpostRoom.getStructureId()).orElse(outpostRoom);
+                        boolean outpost = root.getType().equals("pillager_outpost");
+                        addRenderableWidget(new ButtonWidget(bx, by, 132, 20,
+                                Component.translatable(outpost ? "gui.blueprint.normalHouse" : "gui.blueprint.pillagerOutpost"), b ->
+                                Network.sendToServer(new ReportBuildingMessage(ReportBuildingMessage.Action.FORCE_TYPE,
+                                        outpost ? "house" : "pillager_outpost"))));
+                        by += 22;
+                    }
                     if (isVillage) {
                         addRenderableWidget(new ButtonWidget(bx, by, 132, 20,
                                 Component.translatable("gui.blueprint.renameVillage"), b -> setPage("rename")));
@@ -529,8 +598,7 @@ public class BlueprintScreen extends ExtendedScreen {
                     structureScanButton = addRenderableWidget(new TooltipButtonWidget(bx, by, 132, 20,
                             "gui.blueprint.addBuilding", b -> {
                         RoomScanPlan plan = getPlayerRoomScanPlan();
-                        Village.RoomScanMode mode = plan.mode().isAttachment()
-                                ? Village.RoomScanMode.ADD_BUILDING : plan.mode();
+                        Village.RoomScanMode mode = plan.mode();
                         requestStructureScan(mode, mode == Village.RoomScanMode.ADD_BUILDING ? -1 : plan.targetBuildingId());
                     }));
                     by += 22;
@@ -538,7 +606,7 @@ public class BlueprintScreen extends ExtendedScreen {
                             "gui.blueprint.addFloor", b -> {
                         RoomScanPlan plan = getPlayerRoomScanPlan();
                         if (plan.mode().isAttachment()) {
-                            requestStructureScan(plan.mode(), plan.targetBuildingId());
+                            requestStructureScan(Village.RoomScanMode.ADD_BUILDING, -1);
                         }
                     }));
                     removeRoomButton = addRenderableWidget(new TooltipButtonWidget(bx, by, 132, 20,
@@ -556,6 +624,44 @@ public class BlueprintScreen extends ExtendedScreen {
                 break;
             case "rank":
                 break;
+            case "war": {
+                var opponents = village.getWarCandidates();
+                int center = width / 2 + 20;
+                int top = height / 2 - 78;
+                addRenderableWidget(new ButtonWidget(center - 110, top, 25, 20, Component.literal("−"), b -> {
+                    warDelayMinutes = Math.max(0, warDelayMinutes - 1); setPage("war");
+                }));
+                ButtonWidget delay = new ButtonWidget(center - 80, top, 160, 20,
+                        Component.translatable("gui.blueprint.warDelay", warDelayMinutes), b -> {});
+                delay.active = false; addRenderableWidget(delay);
+                addRenderableWidget(new ButtonWidget(center + 85, top, 25, 20, Component.literal("+"), b -> {
+                    warDelayMinutes = Math.min(20, warDelayMinutes + 1); setPage("war");
+                }));
+                int pages = Math.max(1, (opponents.size() + 4) / 5);
+                warPage = Math.min(warPage, pages - 1);
+                for (int row = 0; row < 5 && warPage * 5 + row < opponents.size(); row++) {
+                    var opponent = opponents.getCompound(warPage * 5 + row).orElseThrow();
+                    int target = opponent.getIntOr("Id", -1);
+                    boolean atWar = opponent.getBooleanOr("AtWar", false);
+                    String name = opponent.getStringOr("Name", "Village");
+                    if (name.length() > 24) name = name.substring(0, 24) + "…";
+                    Component label = atWar ? Component.translatable("gui.blueprint.warPeace", name)
+                            : Component.translatable("gui.blueprint.warDeclare", name);
+                    addRenderableWidget(new ButtonWidget(center - 110, top + 28 + row * 24, 220, 20, label, b -> {
+                        Network.sendToServer(new ReportBuildingMessage(atWar ? ReportBuildingMessage.Action.CANCEL_WAR
+                                : ReportBuildingMessage.Action.DECLARE_WAR, village.getId() + ":" + target + ":" + warDelayMinutes));
+                    }));
+                }
+                if (pages > 1) {
+                    addRenderableWidget(new ButtonWidget(center - 110, top + 152, 105, 20, Component.literal("‹"), b -> {
+                        warPage = Math.floorMod(warPage - 1, pages); setPage("war");
+                    }));
+                    addRenderableWidget(new ButtonWidget(center + 5, top + 152, 105, 20, Component.literal("›"), b -> {
+                        warPage = (warPage + 1) % pages; setPage("war");
+                    }));
+                }
+                break;
+            }
             case "catalog":
                 //list catalog button
                 int row = 0;
@@ -598,7 +704,7 @@ public class BlueprintScreen extends ExtendedScreen {
                     }
                 }));
                 addRenderableWidget(new ButtonWidget(width / 2 + 24, height / 2 + 54, 20, 20, Component.literal(">"), b -> {
-                    if (pageNumber < Math.ceil(village.getPopulation() / 9.0) - 1) {
+                    if (pageNumber < Math.max(1, Math.ceil(village.getBlueprintResidentNames().size() / 9.0)) - 1) {
                         pageNumber++;
                     }
                 }));
@@ -617,6 +723,28 @@ public class BlueprintScreen extends ExtendedScreen {
                 //marriage threshold
                 buttonMarriage = createValueChanger(width / 2, height / 2 + POSITION_MARRIAGE + 10, 80, 20, b -> changeMarriageThreshold(b ? 0.125f : -0.125f), Component.translatable("gui.blueprint.tooltip.marriage"));
                 toggleButtons(buttonMarriage, false);
+                addRenderableWidget(new ButtonWidget(width / 2 - 100, height / 2 + 80, 200, 20,
+                        Component.translatable("gui.blueprint.pathBlock", village.getPathBlock().getName()), b -> {
+                            pathBlockPage = 0;
+                            setPage("pathBlocks");
+                        }));
+                break;
+            case "pathBlocks":
+                pathBlockOptions.clear();
+                pathBlockSearch = addRenderableWidget(new EditBox(font, width / 2 - 100, height / 2 - 70, 200, 20,
+                        Component.translatable("gui.blueprint.searchBlocks")));
+                pathBlockSearch.setHint(Component.translatable("gui.blueprint.searchBlocks"));
+                pathBlockPrevious = addRenderableWidget(new ButtonWidget(width / 2 - 100, height / 2 + 72, 30, 20,
+                        Component.literal("<"), b -> { pathBlockPage--; updatePathBlockOptions(); }));
+                pathBlockPageLabel = addRenderableWidget(new ButtonWidget(width / 2 - 65, height / 2 + 72, 70, 20,
+                        Component.literal(""), b -> {}));
+                pathBlockPageLabel.active = false;
+                pathBlockNext = addRenderableWidget(new ButtonWidget(width / 2 + 10, height / 2 + 72, 30, 20,
+                        Component.literal(">"), b -> { pathBlockPage++; updatePathBlockOptions(); }));
+                addRenderableWidget(new ButtonWidget(width / 2 + 45, height / 2 + 72, 55, 20,
+                        Component.translatable("gui.blueprint.cancel"), b -> setPage("rules")));
+                pathBlockSearch.setResponder(query -> { pathBlockPage = 0; updatePathBlockOptions(); });
+                updatePathBlockOptions();
                 break;
             case "rename":
                 EditBox field = addRenderableWidget(new EditBox(font, width / 2 - 65, height / 2 - 16, 130, 20, Component.translatable("gui.blueprint.renameVillage")));
@@ -639,6 +767,34 @@ public class BlueprintScreen extends ExtendedScreen {
         selectedBuilding = b;
     }
 
+    private void updatePathBlockOptions() {
+        pathBlockOptions.forEach(this::removeWidget);
+        pathBlockOptions.clear();
+        String query = pathBlockSearch.getValue().toLowerCase(Locale.ROOT).trim();
+        List<Block> blocks = BuiltInRegistries.BLOCK.stream()
+                .filter(block -> Village.isValidPathBlock(BuiltInRegistries.BLOCK.getKey(block)))
+                .filter(block -> block.getName().getString().toLowerCase(Locale.ROOT).contains(query)
+                        || BuiltInRegistries.BLOCK.getKey(block).toString().contains(query))
+                .sorted(Comparator.comparing((Block block) -> block.getName().getString(), String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(block -> BuiltInRegistries.BLOCK.getKey(block).toString()))
+                .toList();
+        int pages = Math.max(1, (blocks.size() + 4) / 5);
+        pathBlockPage = Math.clamp(pathBlockPage, 0, pages - 1);
+        pathBlockPrevious.active = pathBlockPage > 0;
+        pathBlockNext.active = pathBlockPage + 1 < pages;
+        pathBlockPageLabel.setMessage(Component.literal((pathBlockPage + 1) + " / " + pages));
+        for (int row = 0; row < 5 && pathBlockPage * 5 + row < blocks.size(); row++) {
+            Block block = blocks.get(pathBlockPage * 5 + row);
+            ButtonWidget option = new ButtonWidget(width / 2 - 100, height / 2 - 40 + row * 22, 200, 20,
+                    block.getName(), b -> {
+                        village.setPathBlock(BuiltInRegistries.BLOCK.getKey(block));
+                        saveVillage();
+                        setPage("rules");
+                    }, Component.literal(BuiltInRegistries.BLOCK.getKey(block).toString()));
+            pathBlockOptions.add(addRenderableWidget(option));
+        }
+    }
+
     @Override
     public boolean isPauseScreen() {
         return false;
@@ -646,13 +802,17 @@ public class BlueprintScreen extends ExtendedScreen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float offset) {
-        if (village != null && (page.equals("map") || page.equals("advanced"))) {
-            updateMapControls();
-        }
-        super.extractRenderState(context, mouseX, mouseY, offset);
-
         this.mouseX = mouseX;
         this.mouseY = mouseY;
+        if (village != null && (page.equals("map") || page.equals("advanced"))) {
+            updateMapControls();
+            renderMap(context);
+        }
+        super.extractRenderState(context, mouseX, mouseY, offset);
+        if (village != null && (page.equals("map") || page.equals("advanced"))) {
+            assert minecraft != null;
+            renderPlayerHeadButtonIcon(context, minecraft.player);
+        }
 
         switch (page) {
             case "waiting" ->
@@ -662,19 +822,21 @@ public class BlueprintScreen extends ExtendedScreen {
             case "map" -> {
                 renderStats(context);
                 renderName(context);
-                renderMap(context);
             }
             case "advanced" -> {
                 renderName(context);
-                renderMap(context);
             }
             case "rank" -> {
                 renderTasks(context);
                 renderStats(context);
             }
+            case "war" -> context.centeredText(font, Component.translatable(village.getWarCandidates().isEmpty()
+                    ? "gui.blueprint.warEmpty" : "gui.blueprint.warTitle"), width / 2 + 20, height / 2 - 98, 0xffffffff);
             case "catalog" -> renderCatalog(context);
             case "villagers" -> renderVillagers(context);
             case "rules" -> renderRules(context);
+            case "pathBlocks" -> context.centeredText(font, Component.translatable("gui.blueprint.choosePathBlock"),
+                    width / 2, height / 2 - 90, 0xffffffff);
         }
     }
 
@@ -720,7 +882,6 @@ public class BlueprintScreen extends ExtendedScreen {
         BlueprintMapRenderer.RenderResult result = mapRenderer.render(
                 context, viewport, mapGeometry, selectedFloorOrdinal, showTerrain, showIcons, showPlayerHead,
                 player, playerX, playerZ, mouseX, mouseY);
-        renderPlayerHeadButtonIcon(context, player);
 
         LinkedHashMap<Integer, BlueprintMapRenderer.HoverTarget> uniqueTargets = new LinkedHashMap<>();
         for (BlueprintMapRenderer.HoverTarget target : result.hoverTargets()) {
@@ -806,10 +967,11 @@ public class BlueprintScreen extends ExtendedScreen {
     }
 
     private void renderVillagers(GuiGraphicsExtractor context) {
-        int maxPages = (int) Math.ceil(village.getPopulation() / 9.0);
+        int maxPages = (int) Math.max(1, Math.ceil(village.getBlueprintResidentNames().size() / 9.0));
+        pageNumber = Math.min(pageNumber, maxPages - 1);
         buttonPage.setMessage(Component.literal((pageNumber + 1) + "/" + maxPages));
 
-        List<Map.Entry<UUID, String>> villager = village.getResidentNames().entrySet().stream()
+        List<Map.Entry<UUID, String>> villager = village.getBlueprintResidentNames().entrySet().stream()
                 .sorted(Map.Entry.comparingByValue()).toList();
 
         selectedVillager = null;
@@ -876,8 +1038,37 @@ public class BlueprintScreen extends ExtendedScreen {
         }
     }
 
+    public boolean handleFloorDropdownClick(MouseButtonEvent event) {
+        if (event.button() != 0) {
+            return false;
+        }
+        if (floorDropdownOpen) {
+            for (ButtonWidget option : floorOptionButtons) {
+                if (option.visible && event.x() >= option.getX()
+                        && event.x() < option.getX() + option.getWidth()
+                        && event.y() >= option.getY()
+                        && event.y() < option.getY() + option.getHeight()) {
+                    int index = floorDropdownOffset + floorOptionButtons.indexOf(option);
+                    List<Integer> options = getFloorNavigationOrder();
+                    if (index < options.size()) {
+                        selectFloor(options.get(index));
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (handleFloorDropdownClick(event)) {
+            return true;
+        }
+        if (floorDropdownOpen && !isWithinFloorDropdown(event.x(), event.y())) {
+            floorDropdownOpen = false;
+            updateFloorControls();
+        }
         if (page.equals("villagers") && selectedVillager != null) {
             assert minecraft != null;
             minecraft.setScreen(new FamilyTreeScreen(selectedVillager));
@@ -888,6 +1079,10 @@ public class BlueprintScreen extends ExtendedScreen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (floorDropdownOpen && isWithinFloorDropdown(mouseX, mouseY) && scrollY != 0) {
+            scrollFloorDropdown(scrollY > 0 ? -1 : 1);
+            return true;
+        }
         if ((page.equals("map") || page.equals("advanced"))
                 && mouseX >= width / 2.0 - 75 && mouseX <= width / 2.0 + 75
                 && mouseY >= height / 2.0 + 8 - 75 && mouseY <= height / 2.0 + 8 + 75
@@ -898,11 +1093,26 @@ public class BlueprintScreen extends ExtendedScreen {
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
+    private boolean isWithinFloorDropdown(double x, double y) {
+        if (floorOptionButtons.isEmpty()) {
+            return false;
+        }
+        double left = floorButton.getX();
+        double right = left + 98;
+        double bottom = floorButton.getY() + floorButton.getHeight();
+        int visibleRows = Math.min(floorOptionButtons.size(), getFloorNavigationOrder().size());
+        double top = floorButton.getY() - visibleRows * 20.0;
+        return x >= left && x < right && y >= top && y < bottom;
+    }
+
     protected boolean isMouseWithin(int x, int y, int w, int h) {
         return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
     }
 
     public void setVillage(Village village) {
+        if (village != null) {
+            village.normalizeFloorNumbers();
+        }
         this.village = village;
         roomTypeResolver = BlueprintRoomTypeResolver.create(village);
         mapGeometry = BlueprintMapGeometry.build(village, roomTypeResolver);
@@ -921,7 +1131,7 @@ public class BlueprintScreen extends ExtendedScreen {
             setPage("empty");
         } else if (page.equals("waiting")) {
             setPage("map");
-        } else if (page.equals("map") || page.equals("advanced")) {
+        } else if (page.equals("map") || page.equals("advanced") || page.equals("war")) {
             setPage(page);
         }
     }

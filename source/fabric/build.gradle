@@ -21,7 +21,10 @@ def devJvmArgs = ['--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memor
 
 loom {
     def aw = project(':common').file("src/main/resources/${mod_id}.classtweaker")
-    if (aw.exists()) {
+    if (minecraft_version == '26.3') {
+        aw = project(':common').file("compatibility/26.3/${mod_id}.classtweaker")
+    }
+    if (aw.exists() || minecraft_version == '26.3') {
         accessWidenerPath.set(aw)
     }
 

@@ -45,10 +45,43 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class PlayerSaveData extends SavedData implements EntityRelationship {
+    private final Map<String, Long> familyRequests = new HashMap<>();
+    public Map<String, Long> getFamilyRequests() { return familyRequests; }
+    public void updateFamilyRequest(String key, Long expires) {
+        if (expires == null) familyRequests.remove(key); else familyRequests.put(key, expires);
+        setDirty();
+    }
+    private boolean welcome820Shown;
+    public boolean markWelcome820Shown() {
+        if (welcome820Shown) return false;
+        welcome820Shown = true;
+        setDirty();
+        return true;
+    }
+    private boolean befriendedVillager;
+    private boolean raiderTruce;
+    private final Set<UUID> contactedRaiders = new HashSet<>();
+
+    public boolean hasBefriendedVillager() { return befriendedVillager; }
+    public boolean hasContactedRaider(UUID raider) { return raiderTruce || contactedRaiders.contains(raider); }
+    public void recordVillagerFriendship() { befriendedVillager = true; setDirty(); }
+    public void recordRaiderContact(UUID raider) { raiderTruce = true; contactedRaiders.add(raider); setDirty(); }
+    public boolean hasRaiderTruce() { return raiderTruce; }
+
     private ServerLevel world;
     private final UUID uuid;
     private final List<Letter> inbox = new LinkedList<>();
+    private final Map<UUID, Long> marriageProposals = new HashMap<>();
+
+    public Map<UUID, Long> getMarriageProposals() { return marriageProposals; }
+    public void updateMarriageProposal(UUID sender, Long expires) {
+        if (expires == null) marriageProposals.remove(sender);
+        else marriageProposals.put(sender, expires);
+        setDirty();
+    }
     private @Nullable Integer lastSeenVillageId;
+    private @Nullable Integer registryVillageId;
+    private String registryDimension = "minecraft:overworld";
     private boolean entityDataSet;
     private boolean overrideVillageRequirements = false;
     private String chatAIPrompt = "";
@@ -66,7 +99,19 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
         this.world = world;
         this.uuid = uuid;
 
+        CompoundTag requests = nbt.getCompound("familyRequests").orElseGet(CompoundTag::new);
+        requests.keySet().forEach(key -> familyRequests.put(key, requests.getLongOr(key, 0)));
+        welcome820Shown = nbt.getBooleanOr("welcome820Shown", false);
+        befriendedVillager = nbt.getBooleanOr("befriendedVillager", false);
+        CompoundTag contacts = nbt.getCompound("contactedRaiders").orElseGet(CompoundTag::new);
+        for (String key : contacts.keySet()) {
+            try { contactedRaiders.add(UUID.fromString(key)); }
+            catch (IllegalArgumentException ignored) { }
+        }
+        raiderTruce = nbt.getBooleanOr("raiderTruce", !contactedRaiders.isEmpty());
         lastSeenVillageId = nbt.getInt("lastSeenVillage").orElse(null);
+        registryVillageId = nbt.getInt("registryVillage").orElse(lastSeenVillageId);
+        registryDimension = nbt.getStringOr("registryDimension", "minecraft:overworld");
         entityDataSet = nbt.contains("entityDataSet") && nbt.getBoolean("entityDataSet").orElse(false);
         overrideVillageRequirements = nbt.contains("overrideVillageRequirements") && nbt.getBoolean("overrideVillageRequirements").orElse(false);
         chatAIPrompt = nbt.getString("chatAIPrompt").orElse("");
@@ -82,6 +127,11 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
             resetEntityData();
         }
 
+        CompoundTag proposals = nbt.getCompound("marriageProposals").orElseGet(CompoundTag::new);
+        for (String key : proposals.keySet()) {
+            try { marriageProposals.put(UUID.fromString(key), proposals.getLongOr(key, 0L)); }
+            catch (IllegalArgumentException ignored) { }
+        }
         ListTag inbox = nbt.getList("inbox").orElseGet(ListTag::new);
         this.inbox.addAll(NbtHelper.toList(inbox, e -> new Letter((CompoundTag) e, world.registryAccess())));
     }
@@ -114,7 +164,7 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
     private void resetEntityData() {
         entityData = new CompoundTag();
 
-        VillagerEntityMCA villager = EntitiesMCA.MALE_VILLAGER.create(world, EntitySpawnReason.LOAD);
+        VillagerEntityMCA villager = EntitiesMCA.PERSON.create(world, EntitySpawnReason.LOAD);
         assert villager != null;
         villager.initializeSkin(true);
         villager.getGenetics().randomize();
@@ -198,6 +248,10 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
 
     public void setLastSeenVillage(ServerPlayer self, Village oldVillage, @Nullable Village newVillage) {
         lastSeenVillageId = newVillage != null ? newVillage.getId() : null;
+        if (newVillage != null) {
+            registryVillageId = newVillage.getId();
+            registryDimension = self.level().dimension().identifier().toString();
+        }
         setDirty();
 
         if (oldVillage != newVillage) {
@@ -212,6 +266,26 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
 
     public Optional<Village> getLastSeenVillage(VillageManager manager) {
         return Optional.ofNullable(lastSeenVillageId).flatMap(manager::getOrEmpty);
+    }
+
+    public Optional<Village> getRegistryVillage(ServerLevel currentWorld) {
+        var dimension = net.minecraft.resources.Identifier.tryParse(registryDimension);
+        ServerLevel registryWorld = dimension == null ? currentWorld : currentWorld.getServer().getLevel(
+                net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimension));
+        Optional<Village> remembered = registryWorld == null ? Optional.empty()
+                : Optional.ofNullable(registryVillageId).flatMap(VillageManager.get(registryWorld)::getOrEmpty);
+        return remembered.or(() -> getLastSeenVillage(VillageManager.get(currentWorld))).or(() -> {
+            var player = currentWorld.getServer().getPlayerList().getPlayer(uuid);
+            Optional<Village> nearest = VillageManager.get(currentWorld).findVillages(village -> true)
+                    .min(java.util.Comparator.comparingDouble(village -> player == null ? village.getId()
+                            : village.getCenter().distSqr(player.blockPosition())));
+            nearest.ifPresent(village -> {
+                registryVillageId = village.getId();
+                registryDimension = currentWorld.dimension().identifier().toString();
+                setDirty();
+            });
+            return nearest;
+        });
     }
 
     public Optional<Integer> getLastSeenVillageId() {
@@ -282,6 +356,17 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
         if (lastSeenVillageId != null) {
             nbt.putInt("lastSeenVillage", lastSeenVillageId);
         }
+        if (registryVillageId != null) nbt.putInt("registryVillage", registryVillageId);
+        nbt.putString("registryDimension", registryDimension);
+        CompoundTag requests = new CompoundTag();
+        familyRequests.forEach(requests::putLong);
+        nbt.put("familyRequests", requests);
+        nbt.putBoolean("welcome820Shown", welcome820Shown);
+        nbt.putBoolean("befriendedVillager", befriendedVillager);
+        nbt.putBoolean("raiderTruce", raiderTruce);
+        CompoundTag contacts = new CompoundTag();
+        contactedRaiders.forEach(id -> contacts.putBoolean(id.toString(), true));
+        nbt.put("contactedRaiders", contacts);
         CompoundTag storedEntityData = entityData.copy();
         McaDataFixers.stampCurrentVersion(storedEntityData);
         nbt.put("entityData", storedEntityData);
@@ -289,6 +374,9 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
         nbt.putBoolean("overrideVillageRequirements", overrideVillageRequirements);
         nbt.putString("chatAIPrompt", chatAIPrompt);
         nbt.put("inbox", NbtHelper.fromList(inbox, v -> v.toTag(provider)));
+        CompoundTag proposals = new CompoundTag();
+        marriageProposals.forEach((sender, expires) -> proposals.putLong(sender.toString(), expires));
+        nbt.put("marriageProposals", proposals);
         return nbt;
     }
 
@@ -313,6 +401,7 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
     public ItemStack getMail() {
         if (hasMail()) {
             Letter letter = inbox.removeFirst();
+            setDirty();
             ItemStack stack = new ItemStack(ItemsMCA.LETTER, 1);
             stack.set(DataComponentsMCA.BOOK_PAGES, letter.pages());
             return stack;

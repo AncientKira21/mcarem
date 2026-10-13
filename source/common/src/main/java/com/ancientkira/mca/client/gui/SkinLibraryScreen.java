@@ -72,7 +72,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     private static final Identifier EMPTY_IDENTIFIER = MCA.locate("skins/empty.png");
     private static final Identifier CANVAS_IDENTIFIER = MCA.locate("temp");
     private static final float CANVAS_SCALE = 2.35f;
-    protected final VillagerEntityMCA villagerVisualization = Objects.requireNonNull(EntitiesMCA.MALE_VILLAGER.create(Objects.requireNonNull(Minecraft.getInstance().level), EntitySpawnReason.LOAD));
+    protected final VillagerEntityMCA villagerVisualization = Objects.requireNonNull(EntitiesMCA.PERSON.create(Objects.requireNonNull(Minecraft.getInstance().level), EntitySpawnReason.LOAD));
     private final List<LiteContent> serverContent = new ArrayList<>();
     private final ColorSelector color = new ColorSelector();
     private final VillagerEditorScreen previousScreen;

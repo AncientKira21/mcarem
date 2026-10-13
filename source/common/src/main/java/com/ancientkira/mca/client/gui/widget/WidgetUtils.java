@@ -18,11 +18,15 @@ import java.util.List;
 // FIXME: 1.20 loses the DrawableHelper attachment, determine if DrawContext can replace this
 public class WidgetUtils {
     public static void drawBuildingIcon(GuiGraphicsExtractor context, Identifier texture, int x, int y, int u, int v) {
+        drawBuildingIcon(context, texture, x, y, u, v, 0xffffffff);
+    }
+
+    public static void drawBuildingIcon(GuiGraphicsExtractor context, Identifier texture, int x, int y, int u, int v, int color) {
         Matrix3x2fStack matrices = context.pose();
         matrices.pushMatrix();
         matrices.translate(x - 6.6f, y - 6.6f);
         matrices.scale(0.66f, 0.66f);
-        context.blit(RenderPipelines.GUI_TEXTURED, texture, 0, 0, u, v, 20, 20, 256, 256);
+        context.blit(RenderPipelines.GUI_TEXTURED, texture, 0, 0, u, v, 20, 20, 256, 256, color);
         matrices.popMatrix();
     }
 

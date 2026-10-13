@@ -59,6 +59,6 @@ public interface MixinTypedInstance {
         Identifier id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         return id != null
                 && "mca".equals(id.getNamespace())
-                && ("male_villager".equals(id.getPath()) || "female_villager".equals(id.getPath()));
+                && ("person".equals(id.getPath()) || "male_villager".equals(id.getPath()) || "female_villager".equals(id.getPath()));
     }
 }

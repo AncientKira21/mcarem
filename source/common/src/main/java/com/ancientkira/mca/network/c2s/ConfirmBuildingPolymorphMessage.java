@@ -53,6 +53,9 @@ public record ConfirmBuildingPolymorphMessage(BlockPos source, ReportBuildingMes
                 case ADD_BASEMENT -> villages.commitRoomAddition(
                         villages.analyzeAttachedRoom(source, Village.RoomScanMode.ADD_BASEMENT, targetBuildingId),
                         chosenType, Village.RoomScanMode.ADD_BASEMENT, targetBuildingId);
+                case FORCE_TYPE -> (chosenType.equals("house") || chosenType.equals("pillager_outpost"))
+                        && villages.setStructureOutpost(source, chosenType.equals("pillager_outpost"))
+                        ? Building.validationResult.SUCCESS : Building.validationResult.INVALID_TYPE;
                 default -> Building.validationResult.INVALID_TYPE;
             };
             String successKey = switch (action) {
@@ -61,6 +64,7 @@ public record ConfirmBuildingPolymorphMessage(BlockPos source, ReportBuildingMes
                 case UPDATE_ROOM -> "blueprint.roomUpdated";
                 case ADD_FLOOR -> "blueprint.floorAdded";
                 case ADD_BASEMENT -> "blueprint.basementAdded";
+                case FORCE_TYPE -> "blueprint.buildingAdded";
                 default -> null;
             };
             String key = result == Building.validationResult.SUCCESS && successKey != null

@@ -199,6 +199,55 @@ if "$cygwin" || "$msys" ; then
 fi
 
 
+# MCA's named wrapper entry point selects Minecraft targets before invoking Gradle.
+if [ "$APP_BASE_NAME" = "buildmca" ]; then
+    mca_version=
+    mca_args_left=$#
+    while [ "$mca_args_left" -gt 0 ]; do
+        mca_arg=$1
+        shift
+        mca_args_left=$((mca_args_left - 1))
+        case "$mca_arg" in
+            --version)
+                [ -z "$mca_version" ] || die "Specify --version only once."
+                [ "$mca_args_left" -gt 0 ] || die "--version requires 26.1.2, 26.2 or 26.3."
+                mca_version=$1
+                shift
+                mca_args_left=$((mca_args_left - 1))
+                ;;
+            --version=*)
+                [ -z "$mca_version" ] || die "Specify --version only once."
+                mca_version=${mca_arg#--version=}
+                [ -n "$mca_version" ] || die "--version requires 26.1.2, 26.2 or 26.3."
+                ;;
+            --help|-h)
+                printf '%s\n' 'Usage: ./buildmca [--version 26.1.2|26.2|26.3] [Gradle options]' \
+                    'Without --version, builds all three versions for Fabric and NeoForge.'
+                exit 0
+                ;;
+            *) set -- "$@" "$mca_arg" ;;
+        esac
+    done
+    case "$mca_version" in
+        '') ;;
+        26.1.2)
+            set -- "$@" '-Pminecraft_version=26.1.2'
+            ;;
+        26.2)
+            set -- "$@" '-Pmca_single_version=true' '-Pminecraft_version=26.2' \
+                '-Pminecraft_version_range=[26.2,)' '-Pneo_form_version=26.2-2' \
+                '-Ploader_version=0.19.5' '-Pfabric_api_version=0.161.0+26.2' '-Pneoforge_version=26.2.0.88'
+            ;;
+        26.3)
+            set -- "$@" '-Pmca_single_version=true' '-Pminecraft_version=26.3' \
+                '-Pminecraft_version_range=[26.3,)' '-Pneo_form_version=26.3-1' \
+                '-Ploader_version=0.19.5' '-Pfabric_api_version=0.162.0+26.3' '-Pneoforge_version=26.3.0.69-beta'
+            ;;
+        *) die "Unsupported Minecraft version: $mca_version. Use 26.1.2, 26.2 or 26.3." ;;
+    esac
+    set -- --project-dir "$APP_HOME" build "$@"
+fi
+
 # Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
 
