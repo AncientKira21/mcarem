@@ -17,49 +17,16 @@ Bring life to those boring villages but with some tweaks!
 *   Use Villager Editor in Creative mode to edit villagers or cheat!
 
 ## Interact with villagers!
-
 ![Interaction](https://media.forgecdn.net/attachments/1945/204/b4264769-jpg.jpg)
 
 ## Manage entire villages!
-![Management](https://media.forgecdn.net/attachments/2011/931/2026-10-04_20-45-38-png.png)
-
-With Auto Scan enabled, villagers report nearby beds and workstations and the
-rooms they occupy every 600 game ticks (about 30 seconds). The door-containing
-ground room anchors the building (the lowest valid door-containing room when
-there are entrances on multiple levels): discovered rooms below it become Basement 1,
-Basement 2, and so on; rooms above become Floor 2, Floor 3, and so on. Upper rooms
-and basements do not require doors. Rooms still need to pass the normal enclosure,
-size, and building-type checks. Discovery is gradual as villagers explore.
-Add Building searches the connected interior immediately and registers valid
-rooms on the discovered levels using the same floor rules.
-
-Blueprint → Rules → Path Block lets you search for and choose the village's road
-material. Dirt Path is the default. Residents first try a route along that block,
-with access to buildings, ladders, and short connections at either end. If no
-road route reaches their destination, they fall back to ordinary travel. Guards
-and archers can leave the roads to patrol and respond to threats.
-
-Guards give a first warning and a final warning before attacking on the third
-hit. A hit that kills a villager triggers immediate retaliation, even before
-either warning. Alerts reach nearby guards within 32 blocks.
+![Management](https://media.forgecdn.net/attachments/1945/203/a1f01b56-jpg.jpg)
 
 ## Edit villagers!
 ![Editor](https://media.forgecdn.net/attachments/1945/205/e53a5a5-jpg.jpg)
 
 
 ## Building
-
-Use the named Gradle wrapper from this repository or the `source` folder:
-
-```sh
-./buildmca                    # Fabric + NeoForge for all three versions
-./buildmca --version 26.1.2   # Only Minecraft 26.1.2
-./buildmca --version 26.2     # Only Minecraft 26.2
-./buildmca --version 26.3     # Only Minecraft 26.3
-```
-
-Additional Gradle options are forwarded, for example `./buildmca --version 26.3 --refresh-dependencies`. Jars are published to `source/fabric/build/libs` and `source/neoforge/build/libs`. `gradlew` remains available for normal Gradle tasks.
-
 To build MCA Remastered, a recommended machine is a Mac or a Linux machine (For Solaris users, I do not know, but it might work depending on your setup). This guide is targeted at UNIX and UNIX-like setups.
 ### Modifying
 Modifying the assets and logic requires you to go to these following paths:
@@ -72,30 +39,14 @@ Once you have finished modifying, go to the `source` folder and type:
 ```zsh
 ./buildmca
 ```
-And the build will start. Alternatively, use `./buildmca --version <version>` to build for specificversions.
-This builds Fabric and NeoForge for Minecraft 26.1.2, 26.2, and 26.3. All three versions
-are kept together in each loader's `build/libs/` folder.
-
-The 26.3 target uses Fabric Loader 0.19.5, Fabric API 0.162.0+26.3, NeoForm
-26.3-1, and NeoForge 26.3.0.69-beta. Its generated compatibility sources keep
-Minecraft API changes separate from the shared gameplay code.
-
-If Fabric compilation reports a missing `EntityFluidExtension` after changing
-Minecraft or Fabric API versions, refresh Loom's cached dependencies from `source/`:
-```zsh
-./gradlew build --refresh-dependencies
-```
-Then use the normal build command again. See [Fabric's cache troubleshooting guide](https://docs.fabricmc.net/develop/loom/).
-
+And the build will start. You can also use `./buildmca --version <version>` to build for a specific MC version.
 ### Output
 The outputs are in the following directory:
-* NeoForge: `source/neoforge/build/libs/`
-* Fabric: `source/fabric/build/libs/`
-* Common: `source/common/build/libs/`
+* NeoForge: `/neoforge/builds/libs/`
+* Fabric: `/fabric/builds/libs/`
+* Common: `/commomn/builds/libs/`
 
 Pick the base file to distribute. The `sources` (source code) and `javadoc` (documentation) files are optional.
-
-The multi-version build is built into Gradle; no separate script is needed.
 
 **Enjoy your build!**
 
