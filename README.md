@@ -17,18 +17,6 @@ Bring life to those boring villages but with some tweaks!
 *   Use Villager Editor in Creative mode to edit villagers or cheat!
 
 ## Interact with villagers!
-Villagers share the entity ID `mca:person`; gender remains part of each person's
-saved data. The creative menu has one **Person Spawn Egg** (`mca:person_spawn_egg`).
-The old male/female entity IDs remain compatible with existing saves and commands,
-but construct a Person and save under the new ID. Existing male/female spawn eggs
-remain usable and are hidden from the creative menu. Zombie villagers likewise
-share `mca:zombie_person`, with one **Zombie Person Spawn Egg**
-(`mca:zombie_person_spawn_egg`) and compatible legacy IDs. Infection and curing
-preserve gender while using the unified entity types.
-
-People keep processing remembered doors after their walking path finishes or is
-cancelled. Doors wait for the doorway to clear before closing, and powered doors
-are left open. This works with both the standard and smarter door-opening modes.
 
 ![Interaction](https://media.forgecdn.net/attachments/1945/204/b4264769-jpg.jpg)
 
