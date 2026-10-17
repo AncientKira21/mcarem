@@ -51,7 +51,7 @@ Pick the base file to distribute. The `sources` (source code) and `javadoc` (doc
 **Enjoy your build!**
 
 ## Patreon
-Donations coming out soon! Stay tuned!
+[Click here](https://www.patreon.com/cw/AncientKira/membership) to donate! Donations are welcome!
 
 ## Credits
 *   Open-Source Base: [MCA Reborn](https://www.curseforge.com/minecraft/mc-mods/minecraft-comes-alive-reborn)
