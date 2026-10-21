@@ -36,6 +36,8 @@ public final class Config extends CommonConfig {
      * If set to false, original villagers will remain unchanged.
      */
     public boolean overwriteOriginalVillagers = true;
+    public boolean enableSilvernaturalPack = true;
+    public boolean showOwnLibrarySubmissions = true;
 
     /**
      * A whitelist of modded villagers to be converted into MCA villagers.
@@ -187,6 +189,7 @@ public final class Config extends CommonConfig {
     public double familyRequestChancePerDay = 0.25;
     public double orphanLocalAdoptionChancePerDay = 0.25;
     public boolean enableRaiderKidnapping = true;
+    public boolean overwriteOriginalWanderingTraders = true;
     public boolean overwriteOriginalPillagers = true;
     public boolean overwriteOriginalVindicators = true;
     public boolean overwriteOriginalEvokers = true;
@@ -493,6 +496,9 @@ public final class Config extends CommonConfig {
      */
     public boolean enableOnlineTTS = false;
 
+    /** Apply installed CPA animation resources to humanoid villagers on this client. */
+    public boolean usePlayerAnimationsForVillagers = false;
+
     /**
      * Online TTS model to use.
      */
@@ -513,30 +519,13 @@ public final class Config extends CommonConfig {
      */
     public String elevenlabsPrivateAPIkey = "";
 
+    /** Local Voicebox desktop API address. */
+    public String voiceboxUrl = "http://127.0.0.1:17493";
+
     /**
      * ElevenLabs TTS model to use.
      */
     public String elevenlabsModel = "eleven_turbo_v2_5";
-
-    /**
-     * List of male voice IDs for ElevenLabs TTS.
-     */
-    public List<String> elevenlabsMaleVoices = List.of(
-            "ErXwobaYiN019PkySvjV",
-            "VR6AewLTigWG4xSOukaG",
-            "onwK4e9ZLuTAKqWW03F9",
-            "onwK4e9ZLuTAKqWW03F9"
-    );
-
-    /**
-     * List of female voice IDs for ElevenLabs TTS.
-     */
-    public List<String> elevenlabsFemaleVoices = List.of(
-            "MF3mGyEYCl7XYWbV9V6O",
-            "AZnzlk1XvdvUeBnXmlld",
-            "pMsXgVXv3BLzUgSXRplE",
-            "AZnzlk1XvdvUeBnXmlld"
-    );
 
     //////////////////////
     // Village behavior //
@@ -666,6 +655,9 @@ public final class Config extends CommonConfig {
      * URL for the immersive skin library.
      */
     public String immersiveLibraryUrl = "https://mca.conczin.net";
+    public boolean automaticOnlineClothing = true;
+    public String preferredOnlineClothingAuthor = "Silvernatural";
+    public float preferredOnlineClothingWeight = 5.0F;
 
     /**
      * Number of entries in the gift desaturation queue.

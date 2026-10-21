@@ -68,7 +68,15 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
                             ? Village.RoomScanMode.ADD_FLOOR : Village.RoomScanMode.ADD_BASEMENT;
                     handleRoomScan(villages, player, villages.analyzeAttachedRoom(source, mode, targetId), action, targetId);
                 }
-                case DECLARE_WAR, CANCEL_WAR -> handleWar(villages, player, action == Action.CANCEL_WAR);
+                case DECLARE_WAR, CANCEL_WAR, RELEASE_VILLAGE, TOGGLE_FRIENDLY, START_INDEPENDENCE, MERGE_VILLAGE -> handleWar(villages, player, action == Action.CANCEL_WAR);
+                case SET_POLICY -> {
+                    String[] fields=data==null?new String[0]:data.split(":");
+                    if(fields.length!=3)return;
+                    Village village=villages.findNearestVillage(player).orElse(null);
+                    if(village==null||village.getId()!=Integer.parseInt(fields[0]))return;
+                    if(!canEditPolicy(player,village,fields[1]))return;
+                    village.setPolicy(fields[1],Boolean.parseBoolean(fields[2]));
+                }
                 case AUTO_SCAN -> villages.findNearestVillage(player).ifPresent(Village::toggleAutoScan);
                 case FULL_SCAN -> {
                     Village village = villages.findNearestVillage(player).orElse(null);
@@ -108,6 +116,13 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
         }
     }
 
+    private static boolean canEditPolicy(ServerPlayer player,Village village,String key){
+        if(!java.util.Set.of("beds","graves","taxes").contains(key))return false;
+        boolean privileged=player.isCreative() && player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+        return privileged || key.equals("beds") && com.ancientkira.mca.resources.Tasks.getRank(village,player)
+                .isAtLeast(com.ancientkira.mca.resources.Rank.MAYOR);
+    }
+
     private void handleWar(VillageManager manager, ServerPlayer player, boolean cancel) {
         try {
             String[] parts = data == null ? new String[0] : data.split(":");
@@ -116,7 +131,27 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
             Village origin = manager.findNearestVillage(player).orElse(null);
             if (origin == null || origin.getId() != sourceId) { display(player, "mca.war.invalid"); return; }
             var warfare = com.ancientkira.mca.server.VillageWarfare.get(player.level());
-            boolean success = cancel ? warfare.cancel(origin, targetId) : warfare.declare(origin, targetId, minutes);
+            if (action == Action.TOGGLE_FRIENDLY) {
+                if (!com.ancientkira.mca.resources.Tasks.getRank(origin, player).isAtLeast(com.ancientkira.mca.resources.Rank.MAYOR)
+                        || !warfare.toggleFriendly(origin, targetId)) display(player, "mca.war.invalid");
+                return;
+            }
+            if(action==Action.START_INDEPENDENCE){
+                if(com.ancientkira.mca.resources.Tasks.getRank(origin,player).isAtLeast(com.ancientkira.mca.resources.Rank.MAYOR))
+                    warfare.startIndependence(origin,targetId,minutes);
+                return;
+            }
+            if(action==Action.MERGE_VILLAGE){
+                Village target=manager.getOrEmpty(targetId).orElse(null);
+                boolean privileged=player.isCreative()&&player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+                if(target!=null && target!=origin && !warfare.isBusy(origin.getId())&&!warfare.isBusy(targetId)
+                        && origin.getCenter().distSqr(target.getCenter())<=512*512
+                        && (privileged || com.ancientkira.mca.resources.Tasks.getRank(origin,player).isAtLeast(com.ancientkira.mca.resources.Rank.MAYOR)
+                            && com.ancientkira.mca.resources.Tasks.getRank(target,player).isAtLeast(com.ancientkira.mca.resources.Rank.MAYOR)))manager.merge(origin,target);
+                return;
+            }
+            boolean success = action == Action.RELEASE_VILLAGE ? manager.releaseVillage(origin, targetId)
+                    : cancel ? warfare.cancel(origin, targetId) : warfare.declare(origin, targetId, minutes);
             if (!success) display(player, "mca.war.invalid");
         } catch (NumberFormatException exception) { display(player, "mca.war.invalid"); }
     }
@@ -238,6 +273,11 @@ public record ReportBuildingMessage(Action action, String data) implements Handl
         ADD_FLOOR,
         ADD_BASEMENT,
         DECLARE_WAR,
-        CANCEL_WAR
+        CANCEL_WAR,
+        RELEASE_VILLAGE,
+        TOGGLE_FRIENDLY,
+        SET_POLICY,
+        START_INDEPENDENCE,
+        MERGE_VILLAGE
     }
 }

@@ -8,13 +8,14 @@ import net.minecraft.world.entity.ai.behavior.Behavior;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 
 public class StayTask extends Behavior<VillagerEntityMCA> {
+    private net.minecraft.core.BlockPos waitingPosition;
     public StayTask() {
         super(ImmutableMap.of());
     }
 
     @Override
     protected boolean checkExtraStartConditions(ServerLevel world, VillagerEntityMCA villager) {
-        return villager.getMCABrain().getMemoryInternal(MemoryModuleTypeMCA.STAYING).isPresent() && !villager.getVillagerBrain().isPanicking();
+        return villager.getMCABrain().getMemoryInternal(MemoryModuleTypeMCA.STAYING).isPresent() && (villager.isGuard() || !villager.getVillagerBrain().isPanicking());
     }
 
     @Override
@@ -24,11 +25,18 @@ public class StayTask extends Behavior<VillagerEntityMCA> {
 
     @Override
     protected void start(ServerLevel world, VillagerEntityMCA villager, long time) {
+        if (waitingPosition == null) waitingPosition = villager.blockPosition();
         villager.getNavigation().stop();
     }
 
     @Override
     protected void tick(ServerLevel world, VillagerEntityMCA villager, long time) {
+        if (villager.isGuard() && waitingPosition != null
+                && villager.distanceToSqr(net.minecraft.world.phys.Vec3.atBottomCenterOf(waitingPosition)) > 2.25) {
+            villager.getBrain().setMemory(MemoryModuleType.WALK_TARGET,
+                    new net.minecraft.world.entity.ai.memory.WalkTarget(waitingPosition, 0.6F, 0));
+            return;
+        }
         villager.getNavigation().stop();
         villager.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
     }

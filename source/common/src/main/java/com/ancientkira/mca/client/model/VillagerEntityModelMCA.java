@@ -86,6 +86,15 @@ public class VillagerEntityModelMCA extends VillagerEntityBaseModelMCA {
 
     public void setupAnim(VillagerRenderState state) {
         super.setupAnim(state);
+        if (state.isVillageDancing && !state.isKidnapped && state.panicAnimationProgress <= 0) {
+            float beat = (float)Math.sin(state.ageInTicks * 0.35F);
+            head.zRot += beat * 0.15F;
+            body.zRot += beat * 0.08F;
+            leftArm.zRot = -0.8F + beat * 0.35F;
+            rightArm.zRot = 0.8F + beat * 0.35F;
+            leftLeg.xRot = beat * 0.3F;
+            rightLeg.xRot = -beat * 0.3F;
+        }
         syncWearParts();
     }
 

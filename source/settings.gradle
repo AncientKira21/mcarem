@@ -49,13 +49,16 @@ enableFeaturePreview("NO_IMPLICIT_LOOKUP_IN_PARENT_PROJECTS")
 rootProject.name = 'minecraft-comes-alive'
 include('common')
 def buildLoader = gradle.startParameter.projectProperties.get('mca_build_loader')
-if (buildLoader == null || buildLoader == 'fabric') {
+if (buildLoader == null || buildLoader in ['fabric', 'quilt']) {
     include('fabric')
 }
 if (buildLoader == null || buildLoader == 'neoforge') {
     include('neoforge')
 }
-if (buildLoader != null && buildLoader != 'fabric' && buildLoader != 'neoforge') {
+if (buildLoader == null || buildLoader == 'quilt') {
+    include('quilt')
+}
+if (buildLoader != null && !(buildLoader in ['fabric', 'neoforge', 'quilt'])) {
     throw new GradleException("Unsupported mca_build_loader: ${buildLoader}")
 }
 

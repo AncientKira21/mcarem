@@ -25,7 +25,7 @@
     },
     {
       "name": "stay",
-      "constraints": "traveling_guest",
+      "constraints": "stay_candidate",
       "results": [
         {
           "baseChance": 10,

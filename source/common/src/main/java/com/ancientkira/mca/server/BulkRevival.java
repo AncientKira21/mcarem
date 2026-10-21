@@ -1,6 +1,7 @@
 package com.ancientkira.mca.server;
 
 import com.ancientkira.mca.entity.VillagerEntityMCA;
+import com.ancientkira.mca.registry.ProfessionsMCA;
 import com.ancientkira.mca.network.c2s.VillagerReviverActionMessage;
 import com.ancientkira.mca.server.world.data.FamilyTree;
 import com.ancientkira.mca.server.world.data.FamilyTreeNode;
@@ -25,7 +26,8 @@ public final class BulkRevival {
         }
         var tree = FamilyTree.get(player.level());
         List<UUID> ids = tree.getAllEntries().filter(node -> !node.isPlayer() && node.isDeceased())
-                .filter(node -> !villageOnly || belongsToVillage(node, village.getId(), player.level().dimension().identifier().toString()))
+                .filter(node -> !villageOnly || (!ProfessionsMCA.isRaider(node.getProfession())
+                        && belongsToVillage(node, village.getId(), player.level().dimension().identifier().toString())))
                 .map(FamilyTreeNode::id).toList();
         queue.add(new Job(player.getUUID(), new ArrayDeque<>(ids)));
     }

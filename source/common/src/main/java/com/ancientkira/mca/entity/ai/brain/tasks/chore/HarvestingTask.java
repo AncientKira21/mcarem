@@ -44,10 +44,7 @@ public class HarvestingTask extends AbstractChoreTask {
     private BlockPos currentPos;
 
     public HarvestingTask() {
-        super(ImmutableMap.of(
-                MemoryModuleType.LOOK_TARGET, MemoryStatus.VALUE_ABSENT,
-                MemoryModuleType.WALK_TARGET, MemoryStatus.VALUE_ABSENT
-        ));
+        super(java.util.Map.of());
     }
 
     @Override
@@ -57,7 +54,9 @@ public class HarvestingTask extends AbstractChoreTask {
 
     @Override
     protected boolean canStillUse(ServerLevel world, VillagerEntityMCA villager, long time) {
-        return currentPos != null && checkExtraStartConditions(world, villager);
+        return currentPos != null && villager.getVillagerBrain().getCurrentJob() == Chore.HARVEST
+                && !villager.getVillagerBrain().isPanicking()
+                && !villager.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET);
     }
 
     @Override
@@ -100,28 +99,27 @@ public class HarvestingTask extends AbstractChoreTask {
         }
 
         // search for farmland
-        if (plantable.isEmpty() && villager.tickCount - lastLandScan > 1200) {
+        if (plantable.isEmpty() && villager.tickCount - lastLandScan > 100) {
             searchUnusedFarmLand(32, 8);
             lastLandScan = villager.tickCount;
         }
 
         // search for crops
-        if ((harvestable.isEmpty() || bonemealable.isEmpty()) && villager.tickCount - lastCropScan > 1207) {
+        if ((harvestable.isEmpty() || bonemealable.isEmpty()) && villager.tickCount - lastCropScan > 100) {
             searchCrop(32, 8);
             lastCropScan = villager.tickCount;
         }
 
-        //try to find a planting task
-        currentPos = TaskUtils.getNearestPoint(villager.blockPosition(), plantable);
-        if (currentPos == null) {
-            currentPos = TaskUtils.getNearestPoint(villager.blockPosition(), harvestable);
-            if (currentPos == null) {
-                currentPos = TaskUtils.getNearestPoint(villager.blockPosition(), bonemealable);
-                if (currentPos != null) {
-                    swapItem(stack -> stack.getItem() instanceof BoneMealItem);
-                }
-            }
-        }
+        plantable.removeIf(pos -> !isValidFarmland(pos));
+        harvestable.removeIf(pos -> !isValidMature(pos));
+        bonemealable.removeIf(pos -> !isValidImmature(pos));
+        // Harvest first so mature crops also supply seeds for empty farmland.
+        currentPos = TaskUtils.getNearestPoint(villager.blockPosition(), harvestable);
+        boolean hasSeeds = InventoryUtils.stream(villager.getInventory()).anyMatch(stack -> !stack.isEmpty()
+                && stack.getItem() instanceof BlockItem item && item.getBlock() instanceof CropBlock);
+        if (currentPos == null && hasSeeds) currentPos = TaskUtils.getNearestPoint(villager.blockPosition(), plantable);
+        if (currentPos == null && hasBoneMeal()) currentPos = TaskUtils.getNearestPoint(villager.blockPosition(), bonemealable);
+        workingTick = walkingTicks = 0;
     }
 
     private boolean isValidFarmland(BlockPos pos) {
@@ -134,7 +132,7 @@ public class HarvestingTask extends AbstractChoreTask {
     private boolean isValidMature(BlockPos pos) {
         BlockState state = villager.level().getBlockState(pos);
         return (state.getBlock() instanceof CropBlock crop && crop.isMaxAge(state))
-               || state.getBlock() instanceof StemBlock;
+               || state.is(Blocks.MELON) || state.is(Blocks.PUMPKIN);
     }
 
     private boolean isValidImmature(BlockPos pos) {
@@ -144,7 +142,7 @@ public class HarvestingTask extends AbstractChoreTask {
 
     private void searchCrop(int rangeX, int rangeY) {
         List<BlockPos> nearbyCrops = TaskUtils.getNearbyBlocks(villager.blockPosition(), villager.level(),
-                blockState -> blockState.getBlock() instanceof CropBlock || blockState.getBlock() instanceof StemBlock, rangeX, rangeY);
+                blockState -> blockState.getBlock() instanceof CropBlock || blockState.is(Blocks.MELON) || blockState.is(Blocks.PUMPKIN), rangeX, rangeY);
 
         harvestable.addAll(nearbyCrops.stream().filter(this::isValidMature).toList());
 
@@ -169,7 +167,13 @@ public class HarvestingTask extends AbstractChoreTask {
 
     @Override
     protected void tick(ServerLevel world, VillagerEntityMCA villager, long time) {
-        villager.moveTowards(currentPos);
+        if (!world.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.MOB_GRIEFING)) return;
+        if (currentPos == null) return;
+        villager.moveTowards(isValidFarmland(currentPos) ? currentPos.above() : currentPos);
+        if (++walkingTicks > 200) {
+            plantable.remove(currentPos); harvestable.remove(currentPos); bonemealable.remove(currentPos);
+            currentPos = null; return;
+        }
 
         // work
         if (villager.distanceToSqr(Vec3.atBottomCenterOf(currentPos)) <= 6) {
@@ -186,7 +190,7 @@ public class HarvestingTask extends AbstractChoreTask {
                     plantSeeds(world, villager, currentPos.above(), null);
                 } else if (isValidMature(currentPos)) {
                     BlockState state = world.getBlockState(currentPos);
-                    if (state.getBlock() instanceof StemBlock) {
+                    if (state.is(Blocks.MELON) || state.is(Blocks.PUMPKIN)) {
                         harvestCrops(world, currentPos);
                     } else {
                         harvestCrops(world, currentPos);

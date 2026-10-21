@@ -73,6 +73,7 @@ public class MCAClient {
     }
 
     public static void tickClient(Minecraft client) {
+        com.ancientkira.mca.client.DiscCordPlaybackMonitor.tick(client);
         destinyManager.tick(client);
 
         if (KeyBindings.SKIN_LIBRARY.consumeClick()) {

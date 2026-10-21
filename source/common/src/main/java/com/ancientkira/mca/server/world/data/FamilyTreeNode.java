@@ -55,6 +55,9 @@ public final class FamilyTreeNode {
     private boolean deceased;
     private CompoundTag revivalData;
     private CompoundTag appearanceData;
+    private UUID lastRevivalRescuer;
+    private String pendingSurname;
+    private net.minecraft.nbt.ListTag revivalThanks = new net.minecraft.nbt.ListTag();
 
     public FamilyTreeNode(FamilyTree rootNode, UUID id, String name, boolean isPlayer, Gender gender, UUID father, UUID mother) {
         this.rootNode = rootNode;
@@ -79,6 +82,8 @@ public final class FamilyTreeNode {
         nbt.getList("children").ifPresent(listTag -> children.addAll(
                 NbtHelper.toList(listTag, c -> ((CompoundTag) c).read("uuid", UUIDUtil.CODEC).orElse(Util.NIL_UUID))
         ));
+        pendingSurname = nbt.getString("pendingSurname").orElse(null);
+        lastRevivalRescuer = nbt.read("lastRevivalRescuer", UUIDUtil.CODEC).orElse(null);
         profession = nbt.getString("profession").orElse(profession);
         deceased = nbt.getBoolean("isDeceased").orElse(false);
         partner = nbt.read("spouse", UUIDUtil.CODEC).orElse(Util.NIL_UUID);
@@ -86,6 +91,7 @@ public final class FamilyTreeNode {
         relationshipState = RelationshipState.byId(nbt.getInt("marriageState").orElse(0));
         revivalData = nbt.getCompound("revivalData").orElse(null);
         appearanceData = nbt.getCompound("appearanceData").orElse(null);
+        revivalThanks = nbt.getList("revivalThanks").map(net.minecraft.nbt.ListTag::copy).orElseGet(net.minecraft.nbt.ListTag::new);
     }
 
     public static boolean isValid(@Nullable UUID uuid) {
@@ -132,7 +138,7 @@ public final class FamilyTreeNode {
         boolean changed = this.deceased != deceased;
         if (changed && deceased) rememberWidowedMarriage();
         this.deceased = deceased;
-        if (changed && !deceased) restoreWidowedMarriage();
+        if (!deceased) restoreWidowedMarriage();
         markDirty();
     }
 
@@ -153,11 +159,20 @@ public final class FamilyTreeNode {
     }
 
     private void restoreWidowedMarriage() {
+        if (widowedPartner.equals(Util.NIL_UUID) && revivalData != null) {
+            widowedPartner = revivalData.read("MCAWidowedPartner", UUIDUtil.CODEC).orElse(Util.NIL_UUID);
+        }
+        if (widowedPartner.equals(Util.NIL_UUID) && relationshipState == RelationshipState.WIDOW) {
+            var matches = rootNode.getAllEntries().filter(candidate -> !candidate.id.equals(id)
+                    && candidate.widowedPartner.equals(id) && candidate.relationshipState == RelationshipState.WIDOW).limit(2).toList();
+            if (matches.size() == 1) widowedPartner = matches.getFirst().id;
+        }
         if (widowedPartner.equals(Util.NIL_UUID) || !partner.equals(Util.NIL_UUID)
                 || relationshipState != RelationshipState.WIDOW) return;
         rootNode.getOrEmpty(widowedPartner).ifPresent(spouse -> {
             if (!spouse.deceased && spouse.partner.equals(Util.NIL_UUID)
-                    && spouse.relationshipState == RelationshipState.WIDOW && spouse.widowedPartner.equals(id)) {
+                    && spouse.relationshipState == RelationshipState.WIDOW
+                    && (spouse.widowedPartner.equals(id) || spouse.widowedPartner.equals(Util.NIL_UUID))) {
                 updatePartner(spouse);
                 spouse.updatePartner(this);
             }
@@ -177,6 +192,8 @@ public final class FamilyTreeNode {
         revivalData = output.buildResult();
         revivalData.putString("id", BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString());
         revivalData.store("MCAEntityUUID", UUIDUtil.CODEC, entity.getUUID());
+        UUID spouse = relationshipState.isMarried() ? partner : widowedPartner;
+        if (!spouse.equals(Util.NIL_UUID)) revivalData.store("MCAWidowedPartner", UUIDUtil.CODEC, spouse);
         if (entity instanceof VillagerEntityMCA person) {
             person.getResidency().getRegistryVillage().ifPresent(village -> {
                 revivalData.putInt("MCARevivalVillage", village.getId());
@@ -298,6 +315,7 @@ public final class FamilyTreeNode {
     }
 
     public void updatePartner(@Nullable Entity newPartner, @Nullable RelationshipState state) {
+        if (newPartner == null && state == RelationshipState.WIDOW) rememberWidowedMarriage();
         if (newPartner != null || state != RelationshipState.WIDOW) widowedPartner = Util.NIL_UUID;
         //cancel relationship with previous partner
         if (!this.partner.equals(Util.NIL_UUID) && (newPartner == null || !this.partner.equals(newPartner.getUUID()))) {
@@ -330,7 +348,8 @@ public final class FamilyTreeNode {
     }
 
     public Stream<UUID> streamChildren() {
-        return children.stream().filter(FamilyTreeNode::isValid);
+        return children.stream().filter(FamilyTreeNode::isValid)
+                .filter(child -> rootNode.getOrEmpty(child).map(node -> node.isParent(id)).orElse(false));
     }
 
     public Stream<UUID> streamParents() {
@@ -394,6 +413,28 @@ public final class FamilyTreeNode {
         family.remove(id);
 
         return family.stream();
+    }
+
+    /** Family access includes spouses of relatives and the spouse's relatives. */
+    public Stream<UUID> getFamilyMembers(int depth) {
+        Set<UUID> family = new HashSet<>();
+        family.add(id);
+        getAllRelatives(depth).forEach(family::add);
+        rootNode.getOrEmpty(partner).ifPresent(spouse -> {
+            family.add(spouse.id());
+            spouse.getAllRelatives(depth).forEach(family::add);
+        });
+        for (UUID relative : new HashSet<>(family)) {
+            rootNode.getOrEmpty(relative).ifPresent(node -> {
+                if (node.relationshipState.isMarried() && !node.partner.equals(Util.NIL_UUID)) family.add(node.partner);
+            });
+        }
+        family.remove(id);
+        return family.stream();
+    }
+
+    public boolean isFamilyMember(UUID with) {
+        return with != null && (isRelative(with) || getFamilyMembers(6).anyMatch(with::equals));
     }
 
     public boolean isRelative(UUID with) {
@@ -504,7 +545,24 @@ public final class FamilyTreeNode {
         return removeFather() | removeMother();
     }
 
+    private boolean canAssignParent(FamilyTreeNode parent) {
+        if (parent.getRoot() != rootNode || parent.id().equals(id)) return false;
+        var pending = new java.util.ArrayDeque<UUID>();
+        var visited = new java.util.HashSet<UUID>();
+        pending.add(parent.id());
+        while (!pending.isEmpty()) {
+            UUID ancestor = pending.removeFirst();
+            if (ancestor.equals(id)) return false;
+            if (visited.add(ancestor)) rootNode.getOrEmpty(ancestor)
+                    .ifPresent(node -> node.streamParents().forEach(pending::addLast));
+        }
+        return true;
+    }
+
     public boolean setFather(FamilyTreeNode parent) {
+        if (!canAssignParent(parent) || parent.id().equals(mother)) return false;
+        if (father.equals(parent.id())) { parent.children.add(id); markDirty(); return true; }
+        removeFather();
         father = parent.id();
         parent.children().add(id);
         markDirty();
@@ -512,6 +570,9 @@ public final class FamilyTreeNode {
     }
 
     public boolean setMother(FamilyTreeNode parent) {
+        if (!canAssignParent(parent) || parent.id().equals(father)) return false;
+        if (mother.equals(parent.id())) { parent.children.add(id); markDirty(); return true; }
+        removeMother();
         mother = parent.id();
         parent.children().add(id);
         markDirty();
@@ -561,8 +622,38 @@ public final class FamilyTreeNode {
         return !getParents().allMatch(FamilyTreeNode::probablyGenerated);
     }
 
+    public void queueSurname(String surname) {
+        pendingSurname = surname;
+        setName(com.ancientkira.mca.entity.FamilyNames.fullName(
+                com.ancientkira.mca.entity.FamilyNames.firstName(name), surname));
+    }
+
+    public String takePendingSurname() {
+        String surname = pendingSurname;
+        if (surname != null) { pendingSurname = null; markDirty(); }
+        return surname;
+    }
+
+    public UUID lastRevivalRescuer() { return lastRevivalRescuer; }
+
+    public void recordReviver(UUID rescuer) { lastRevivalRescuer = rescuer; markDirty(); }
+
+    public net.minecraft.nbt.ListTag revivalThanks() { return revivalThanks; }
+
+    public void queueRevivalThanks(UUID victim, UUID rescuer, int hearts) {
+        CompoundTag event = new CompoundTag();
+        event.store("victim", UUIDUtil.CODEC, victim);
+        event.store("rescuer", UUIDUtil.CODEC, rescuer);
+        event.putInt("hearts", hearts);
+        revivalThanks.add(event);
+        markDirty();
+    }
+
     public CompoundTag save() {
         CompoundTag nbt = new CompoundTag();
+        if (pendingSurname != null) nbt.putString("pendingSurname", pendingSurname);
+        if (lastRevivalRescuer != null) nbt.store("lastRevivalRescuer", UUIDUtil.CODEC, lastRevivalRescuer);
+        nbt.put("revivalThanks", revivalThanks.copy());
         nbt.putString("name", name);
         nbt.store("id", UUIDUtil.CODEC, id);
         nbt.putBoolean("isPlayer", isPlayer);

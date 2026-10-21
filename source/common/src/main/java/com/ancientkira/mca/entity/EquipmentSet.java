@@ -20,15 +20,15 @@ public record EquipmentSet(String mainHand, String offHand, String head, String 
 
     public static final EquipmentSet ARCHER_0 = new EquipmentSet("bow", "air", "air", "leather_chestplate", "air", "air");
     public static final EquipmentSet ARCHER_0_LEFT = new EquipmentSet("air", "bow", "air", "leather_chestplate", "air", "air");
-    public static final EquipmentSet ARCHER_1 = new EquipmentSet("bow", "air", "air", "iron_chestplate", "leather_leggings", "leather_boots");
-    public static final EquipmentSet ARCHER_1_LEFT = new EquipmentSet("air", "bow", "air", "iron_chestplate", "leather_leggings", "leather_boots");
-    public static final EquipmentSet ARCHER_2 = new EquipmentSet("bow", "air", "air", "diamond_chestplate", "leather_leggings", "iron_boots");
-    public static final EquipmentSet ARCHER_2_LEFT = new EquipmentSet("air", "bow", "air", "diamond_chestplate", "leather_leggings", "iron_boots");
+    public static final EquipmentSet ARCHER_1 = new EquipmentSet("bow", "shield", "air", "iron_chestplate", "leather_leggings", "leather_boots");
+    public static final EquipmentSet ARCHER_1_LEFT = new EquipmentSet("shield", "bow", "air", "iron_chestplate", "leather_leggings", "leather_boots");
+    public static final EquipmentSet ARCHER_2 = new EquipmentSet("bow", "shield", "air", "diamond_chestplate", "leather_leggings", "iron_boots");
+    public static final EquipmentSet ARCHER_2_LEFT = new EquipmentSet("shield", "bow", "air", "diamond_chestplate", "leather_leggings", "iron_boots");
 
     public static final EquipmentSet GUARD_DIAMOND = new EquipmentSet("diamond_sword", "shield", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots");
     public static final EquipmentSet GUARD_NETHERITE = new EquipmentSet("netherite_sword", "shield", "netherite_helmet", "netherite_chestplate", "netherite_leggings", "netherite_boots");
-    public static final EquipmentSet ARCHER_DIAMOND = new EquipmentSet("bow", "air", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots");
-    public static final EquipmentSet ARCHER_NETHERITE = new EquipmentSet("bow", "air", "netherite_helmet", "netherite_chestplate", "netherite_leggings", "netherite_boots");
+    public static final EquipmentSet ARCHER_DIAMOND = new EquipmentSet("bow", "shield", "diamond_helmet", "diamond_chestplate", "diamond_leggings", "diamond_boots");
+    public static final EquipmentSet ARCHER_NETHERITE = new EquipmentSet("bow", "shield", "netherite_helmet", "netherite_chestplate", "netherite_leggings", "netherite_boots");
 
     public static final EquipmentSet ELITE = new EquipmentSet("netherite_sword", "netherite_sword", "diamond_helmet", "netherite_chestplate", "golden_leggings", "netherite_boots");
     public static final EquipmentSet ROYAL = new EquipmentSet("trident", "diamond_axe", "golden_helmet", "golden_chestplate", "golden_leggings", "golden_boots");

@@ -46,10 +46,23 @@ public class Command {
                 .then(register("procreate", Command::procreate))
                 .then(register("separate", Command::separate))
                 .then(register("reject").then(Commands.argument("target", EntityArgument.player()).executes(Command::reject)))
-                .then(register("editor", Command::editor))
+                .then(register("editor", Command::editor).requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)))
                 .then(register("destiny", Command::destiny))
                 .then(register("mail", Command::mail))
-                .then(register("raid").then(Commands.literal("start").executes(Command::startRaid)))
+                .then(register("hangout")
+                        .then(Commands.literal("yes").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c -> com.ancientkira.mca.server.VillagerHangouts.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "sender"), true))))
+                        .then(Commands.literal("no").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c -> com.ancientkira.mca.server.VillagerHangouts.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "sender"), false)))))
+                .then(register("raid").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .then(Commands.literal("start").executes(Command::startRaid))
+                        .then(Commands.literal("end").executes(Command::endRaid)))
+                .then(register("danceparty").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .then(Commands.literal("start").executes(context -> danceParty(context, true)))
+                        .then(Commands.literal("end").executes(context -> danceParty(context, false))))
+                .then(register("warDecision")
+                        .then(warDecision("yes", true))
+                        .then(warDecision("no", false)))
                 .then(register("familyRequest")
                         .then(familyRequest("divorce"))
                         .then(familyRequest("adopt")))
@@ -94,7 +107,12 @@ public class Command {
                 .then(register("tts")
                         .requires(Command::isSingleplayer)
                         .then(Commands.literal("default").executes(ctx -> ttsEnable(ctx, "default")))
-                        .then(Commands.literal("elevenlabs").executes(ctx -> ttsEnable(ctx, "elevenlabs")))
+                        .then(Commands.literal("elevenlabs").executes(ctx -> ttsEnable(ctx, "elevenlabs"))
+                                .then(Commands.argument("api_key", StringArgumentType.string()).executes(ctx -> {
+                                    Config.getInstance().elevenlabsPrivateAPIkey = StringArgumentType.getString(ctx, "api_key").strip();
+                                    return ttsEnable(ctx, "elevenlabs");
+                                })))
+                        .then(Commands.literal("voicebox").executes(ctx -> ttsEnable(ctx, "voicebox")))
                         .then(Commands.literal("realtime").executes(ctx -> ttsEnable(ctx, "realtime")))
                         .then(Commands.literal("disable").executes(Command::ttsDisable))
                 )
@@ -109,6 +127,55 @@ public class Command {
                 .then(Commands.literal("no").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
                         .executes(context -> com.ancientkira.mca.server.FamilyRequests.respond(context.getSource().getPlayerOrException(), type,
                                 net.minecraft.commands.arguments.UuidArgument.getUuid(context, "sender"), false))));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> warDecision(String name, boolean accept) {
+        return Commands.literal(name).then(Commands.argument("proposal", net.minecraft.commands.arguments.UuidArgument.uuid())
+                .executes(context -> com.ancientkira.mca.server.VillageDiplomacy.respond(context.getSource().getPlayerOrException(),
+                        net.minecraft.commands.arguments.UuidArgument.getUuid(context, "proposal"), accept)));
+    }
+
+    private static int endRaid(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ServerPlayer player = context.getSource().getPlayerOrException();
+        var world = player.level();
+        Village village = VillageManager.get(world).findNearestVillage(player).orElse(null);
+        var raid = world.getRaids().getNearbyRaid(player.blockPosition(), 128 * 128);
+        if (village != null) {
+            com.ancientkira.mca.server.AutomaticVillageConflicts.get(world).cancelRaidWarning(village.getId());
+            if (raid == null) {
+                for (var building : village.getBuildings().values()) {
+                    raid = world.getRaids().getNearbyRaid(building.getSourceBlock(), 128 * 128);
+                    if (raid != null) break;
+                }
+            }
+        }
+        if (raid == null) {
+            player.sendSystemMessage(Component.translatable("command.mca.raid.none"));
+            return 0;
+        }
+        raid.stop();
+        com.ancientkira.mca.server.PillagerRaids.update(raid, world);
+        world.getRaids().setDirty();
+        if (village != null) village.getCivilRegistry().ifPresent(registry -> registry.addText(
+                Component.translatable("command.mca.raid.ended")));
+        player.sendSystemMessage(Component.translatable("command.mca.raid.ended"));
+        return 1;
+    }
+
+    private static int danceParty(CommandContext<CommandSourceStack> context, boolean start) throws CommandSyntaxException {
+        ServerPlayer player = context.getSource().getPlayerOrException();
+        Village village = VillageManager.get((net.minecraft.server.level.ServerLevel) player.level())
+                .findNearestVillage(player).orElse(null);
+        if (village == null) {
+            player.sendSystemMessage(Component.translatable("command.mca.danceparty.no_village"));
+            return 0;
+        }
+        net.minecraft.world.item.ItemStack disc = player.getMainHandItem();
+        if (!com.ancientkira.mca.compat.DiscCordMusic.playable(disc)) disc = player.getOffhandItem();
+        boolean success = start ? village.getMusic().start(player.blockPosition(), disc) : village.getMusic().end(player.blockPosition());
+        player.sendSystemMessage(Component.translatable("command.mca.danceparty." +
+                (start ? (success ? "started" : village.getMusic().getStartFailure()) : (success ? "ended" : "not_active"))));
+        return success ? 1 : 0;
     }
 
     private static int startRaid(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -129,14 +196,11 @@ public class Command {
             player.sendSystemMessage(Component.translatable("command.mca.raid.already_active"));
             return 0;
         }
-        var raid = world.getRaids().createOrExtendRaid(player, center);
+        var raid = com.ancientkira.mca.server.RaidStarter.start(player, village);
         if (raid == null) {
             player.sendSystemMessage(Component.translatable("command.mca.raid.disabled"));
             return 0;
         }
-        raid.setRaidOmenLevel(Math.max(1, raid.getRaidOmenLevel()));
-        ((com.ancientkira.mca.mixin.RaidCountdownAccessor) (Object) raid).mca$setRaidCooldownTicks(0);
-        world.getRaids().setDirty();
         if (village != null) {
             com.ancientkira.mca.server.AutomaticVillageConflicts.get(world).cancelRaidWarning(village.getId());
             village.getCivilRegistry().ifPresent(registry -> registry.addText(
@@ -293,7 +357,8 @@ public class Command {
         }
         PlayerSaveData data = PlayerSaveData.get(player);
         if (data.hasMail()) {
-            while (data.hasMail()) {
+            int collected = 0;
+            while (data.hasMail() && collected++ < 3 && player.getInventory().getFreeSlot() >= 0) {
                 player.getInventory().placeItemBackInInventory(data.getMail());
             }
         } else {

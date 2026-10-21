@@ -202,6 +202,7 @@ fi
 # MCA's named wrapper entry point selects Minecraft targets before invoking Gradle.
 if [ "$APP_BASE_NAME" = "buildmca" ]; then
     mca_version=
+    mca_loader=
     mca_args_left=$#
     while [ "$mca_args_left" -gt 0 ]; do
         mca_arg=$1
@@ -220,9 +221,16 @@ if [ "$APP_BASE_NAME" = "buildmca" ]; then
                 mca_version=${mca_arg#--version=}
                 [ -n "$mca_version" ] || die "--version requires 26.1.2, 26.2 or 26.3."
                 ;;
+            --loader)
+                [ "$mca_args_left" -gt 0 ] || die "--loader requires fabric, neoforge or quilt."
+                mca_loader=$1
+                shift
+                mca_args_left=$((mca_args_left - 1))
+                ;;
+            --loader=*) mca_loader=${mca_arg#--loader=} ;;
             --help|-h)
-                printf '%s\n' 'Usage: ./buildmca [--version 26.1.2|26.2|26.3] [Gradle options]' \
-                    'Without --version, builds all three versions for Fabric and NeoForge.'
+                printf '%s\n' 'Usage: ./buildmca [--version 26.1.2|26.2|26.3] [--loader fabric|neoforge|quilt] [Gradle options]' \
+                    'Without --version, builds all three versions for Fabric, NeoForge and Quilt.'
                 exit 0
                 ;;
             *) set -- "$@" "$mca_arg" ;;
@@ -244,6 +252,11 @@ if [ "$APP_BASE_NAME" = "buildmca" ]; then
                 '-Ploader_version=0.19.5' '-Pfabric_api_version=0.162.0+26.3' '-Pneoforge_version=26.3.0.69-beta'
             ;;
         *) die "Unsupported Minecraft version: $mca_version. Use 26.1.2, 26.2 or 26.3." ;;
+    esac
+    case "$mca_loader" in
+        '') ;;
+        fabric|neoforge|quilt) set -- "$@" "-Pmca_build_loader=$mca_loader" ;;
+        *) die "Unsupported loader: $mca_loader. Use fabric, neoforge or quilt." ;;
     esac
     set -- --project-dir "$APP_HOME" build "$@"
 fi

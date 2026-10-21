@@ -8,6 +8,9 @@ public interface Status {
     byte MCA_VILLAGER_NEG_INTERACTION = 15;
     byte MCA_VILLAGER_POS_INTERACTION = 16;
     byte MCA_VILLAGER_TRAGEDY = 17;
+    byte MCA_VILLAGER_GREETING = -121;
+    byte MCA_VILLAGER_HURT = -122;
+    byte MCA_VILLAGER_SCREAM = -123;
 
     byte VILLAGER_POTION_SPLASH = 42;
     byte PLAYER_CLOUD_EFFECT = 43;

@@ -23,14 +23,22 @@ import java.util.*;
 public final class VillageWarfare extends SavedData {
     public static final int NEARBY_RANGE = 512;
     private final List<War> wars = new ArrayList<>();
+    private final Map<Integer,Long> rebellionChecks=new HashMap<>();
+    private final Set<Long> friendly = new HashSet<>();
     private final ServerLevel world;
     private VillageWarfare(ServerLevel world) { this.world = world; }
     private VillageWarfare(ServerLevel world, CompoundTag saved) {
         this(world);
+        for(var tag:saved.getListOrEmpty("RebellionChecks"))if(tag instanceof CompoundTag entry)
+            rebellionChecks.put(entry.getIntOr("Village",-1),entry.getLongOr("Next",0));
+        for (var tag : saved.getListOrEmpty("Friendly")) {
+            if (tag instanceof CompoundTag pair) friendly.add(pairKey(pair.getIntOr("First", -1), pair.getIntOr("Second", -1)));
+        }
         for (var tag : saved.getListOrEmpty("Wars")) {
             if (!(tag instanceof CompoundTag data)) continue;
             War war = new War(data.getIntOr("First", -1), data.getIntOr("Second", -1), data.getLongOr("Starts", 0));
             war.started = data.getBooleanOr("Started", false);
+            war.independence=data.getBooleanOr("Independence",false);
             readRoster(data, "FirstDefenders", war.firstDefenders);
             readRoster(data, "SecondDefenders", war.secondDefenders);
             wars.add(war);
@@ -48,24 +56,78 @@ public final class VillageWarfare extends SavedData {
         return result;
     }
     public CompoundTag save(CompoundTag saved, HolderLookup.Provider provider) {
+        ListTag checks=new ListTag();rebellionChecks.forEach((id,next)->{CompoundTag tag=new CompoundTag();tag.putInt("Village",id);tag.putLong("Next",next);checks.add(tag);});saved.put("RebellionChecks",checks);
         ListTag list = new ListTag();
         for (War war : wars) {
             CompoundTag data = new CompoundTag();
             data.putInt("First", war.first); data.putInt("Second", war.second);
             data.putLong("Starts", war.starts); data.putBoolean("Started", war.started);
+            data.putBoolean("Independence",war.independence);
             data.put("FirstDefenders", writeRoster(war.firstDefenders));
             data.put("SecondDefenders", writeRoster(war.secondDefenders));
             list.add(data);
         }
         saved.put("Wars", list);
+        ListTag friendships = new ListTag();
+        for (long pair : friendly) {
+            CompoundTag entry = new CompoundTag(); entry.putInt("First", (int) (pair >> 32)); entry.putInt("Second", (int) pair);
+            friendships.add(entry);
+        }
+        saved.put("Friendly", friendships);
         return saved;
     }
+    public static long pairKey(int first, int second) {
+        return ((long) Math.min(first, second) << 32) | (Math.max(first, second) & 0xffffffffL);
+    }
+    public boolean isFriendly(int first, int second) { return friendly.contains(pairKey(first, second)); }
+    public boolean toggleFriendly(Village first, int otherId) {
+        Village second = VillageManager.get(world).getOrEmpty(otherId).orElse(null);
+        if (second == null || first == second || first.getCenter().distSqr(second.getCenter()) > NEARBY_RANGE * NEARBY_RANGE) return false;
+        long pair = pairKey(first.getId(), otherId);
+        boolean added = !friendly.remove(pair);
+        if (added) { friendly.add(pair); cancel(first, otherId); }
+        setDirty();
+        announce(first, second, Component.translatable(added ? "mca.war.friendly" : "mca.war.neutral", first.getName(), second.getName()));
+        return true;
+    }
+
     public boolean isBusy(int village) {
         return wars.stream().anyMatch(war -> war.involves(village));
     }
+    private long districtGuards(Village parent,int district){
+        CompoundTag snapshot=parent.releaseRecords().get(district);
+        if(snapshot==null)return 0;
+        return snapshot.getCompoundOrEmpty("residentNames").keySet().stream().filter(id->{
+            try{return world.getEntity(UUID.fromString(id)) instanceof VillagerEntityMCA person && person.isAlive() && person.isGuard();}
+            catch(IllegalArgumentException e){return false;}
+        }).count();
+    }
+    public boolean startIndependence(Village parent,int district,int minutes){
+        if(district<0||minutes<0||minutes>20||isBusy(parent.getId())||districtGuards(parent,district)<1)return false;
+        Village rebels=VillageManager.get(world).detachForIndependence(parent,district);
+        if(rebels==null)return false;
+        War war=new War(rebels.getId(),parent.getId(),world.getGameTime()+minutes*1200L);war.independence=true;
+        wars.add(war);rebellionChecks.put(parent.getId(),world.getGameTime()+3*24000L);setDirty();
+        Component warning=Component.translatable("mca.independence.warning",rebels.getName(),parent.getName(),minutes);
+        announce(rebels,parent,warning);
+        for(var player:world.players())if(com.ancientkira.mca.resources.Tasks.getRank(parent,player).isAtLeast(com.ancientkira.mca.resources.Rank.MAYOR))
+            com.ancientkira.mca.server.world.data.PlayerSaveData.get(player).sendLetter(warning);
+        if(minutes==0)tick();
+        return true;
+    }
+    private void automaticIndependence(){
+        long now=world.getGameTime();if(now%24000!=0)return;
+        for(Village parent:java.util.stream.StreamSupport.stream(VillageManager.get(world).spliterator(),false).toList()){
+            if(isBusy(parent.getId())||now<rebellionChecks.getOrDefault(parent.getId(),0L))continue;
+            rebellionChecks.put(parent.getId(),now+24000);setDirty();
+            if(world.getRandom().nextInt(10)!=0)continue;
+            for(int district:parent.releaseRecords().keySet())if(district>=0 && districtGuards(parent,district)>=2){startIndependence(parent,district,3);break;}
+        }
+    }
+
     public boolean declare(Village first, int targetId, int minutes) {
         Village second = VillageManager.get(world).getOrEmpty(targetId).orElse(null);
-        if (minutes < 0 || minutes > 20 || second == null || first == second
+        if (minutes < 0 || minutes > 20 || second == null || first == second || isFriendly(first.getId(), targetId)
                 || first.getCenter().distSqr(second.getCenter()) > NEARBY_RANGE * NEARBY_RANGE
                 || wars.stream().anyMatch(war -> war.involves(first.getId()) || war.involves(targetId))) return false;
         War war = new War(first.getId(), targetId, world.getGameTime() + minutes * 1200L);
@@ -90,6 +152,7 @@ public final class VillageWarfare extends SavedData {
                 .forEach(other -> {
                     CompoundTag entry = new CompoundTag(); entry.putInt("Id", other.getId()); entry.putString("Name", other.getName());
                     War war = wars.stream().filter(w -> w.involves(village.getId()) && w.involves(other.getId())).findFirst().orElse(null);
+                    entry.putBoolean("Friendly", isFriendly(village.getId(), other.getId()));
                     entry.putBoolean("AtWar", war != null);
                     entry.putBoolean("Started", war != null && war.started);
                     entry.putInt("Minutes", war == null ? 0 : (int) Math.max(0, (war.starts - world.getGameTime() + 1199) / 1200));
@@ -123,11 +186,13 @@ public final class VillageWarfare extends SavedData {
                 && (node.getProfession() == ProfessionsMCA.GUARD || node.getProfession() == ProfessionsMCA.ARCHER)).orElse(true);
     }
     public void tick() {
+        automaticIndependence();
         if (world.getGameTime() % 20 != 0 && wars.stream().noneMatch(w -> !w.started && world.getGameTime() >= w.starts)) return;
         var manager = VillageManager.get(world);
         for (War war : List.copyOf(wars)) {
             Village first = manager.getOrEmpty(war.first).orElse(null), second = manager.getOrEmpty(war.second).orElse(null);
             if (first == null || second == null) { clearOrders(war); wars.remove(war); setDirty(); continue; }
+            if (isFriendly(war.first, war.second)) { cancel(first, war.second); continue; }
             if (!war.started && world.getGameTime() < war.starts) continue;
             if (!war.started) {
                 war.started = true;
@@ -148,11 +213,23 @@ public final class VillageWarfare extends SavedData {
                 if (firstAlive || secondAlive) {
                     Village winner = firstAlive ? first : second, loser = firstAlive ? second : first;
                     announce(winner, loser, Component.translatable("mca.war.won", winner.getName(), loser.getName()));
-                    winner.absorbConqueredVillage(loser);
-                    manager.removeVillage(loser.getId()); manager.setDirty();
-                    winner.getResidents(world).forEach(person -> person.getResidency().seekHome());
+                    boolean wonIndependence=war.independence && winner==first;
+                    if(wonIndependence){
+                        announce(winner,loser,Component.translatable("mca.independence.won",winner.getName(),loser.getName()));
+                        winner.keepSeparateFrom(loser.getId());loser.keepSeparateFrom(winner.getId());
+                    }else{
+                        winner.absorbConqueredVillage(loser);
+                        manager.removeVillage(loser.getId());manager.setDirty();
+                        winner.getResidents(world).forEach(person -> person.getResidency().remapVillage(loser.getId(),winner.getId()));
+                    }
                     celebrateConquest(firstAlive ? war.firstDefenders : war.secondDefenders, winner, loser);
-                } else announce(first, second, Component.translatable("mca.war.draw", first.getName(), second.getName()));
+                } else {
+                    announce(first,second,Component.translatable("mca.war.draw",first.getName(),second.getName()));
+                    if(war.independence){
+                        second.absorbConqueredVillage(first);manager.removeVillage(first.getId());
+                        second.getResidents(world).forEach(person->person.getResidency().remapVillage(first.getId(),second.getId()));
+                    }
+                }
             } else {
                 march(war.firstDefenders, war.secondDefenders, second);
                 march(war.secondDefenders, war.firstDefenders, first);
@@ -283,7 +360,7 @@ public final class VillageWarfare extends SavedData {
     private static final class War {
         final int first, second;
         final long starts;
-        boolean started;
+        boolean started, independence;
         final Set<UUID> firstDefenders = new HashSet<>(), secondDefenders = new HashSet<>();
         War(int first, int second, long starts) { this.first = first; this.second = second; this.starts = starts; }
         boolean involves(int id) { return first == id || second == id; }

@@ -58,7 +58,7 @@ public final class BuiltInSkinCatalog {
                 boolean exclude = GsonHelper.getAsBoolean(metadata, "exclude", false);
                 int temperature = GsonHelper.getAsInt(metadata, "temperature", 0);
 
-                clothing.put(entry.identifier(), new Clothing(entry.identifier(), profession, temperature, exclude, entryGender));
+                clothing.put(entry.identifier(), new Clothing(entry.identifier(), profession, temperature, exclude, entryGender, GsonHelper.getAsString(metadata, "name", GsonHelper.getAsString(metadata, "title", ""))));
             }
         });
 

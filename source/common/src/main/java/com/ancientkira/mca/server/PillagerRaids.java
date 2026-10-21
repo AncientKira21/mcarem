@@ -151,7 +151,7 @@ public final class PillagerRaids {
     }
 
     public static boolean isJohnny(VillagerEntityMCA person) {
-        return person.getProfession() == ProfessionsMCA.VINDICATOR && person.getName().getString().equals("Johnny");
+        return person.getProfession() == ProfessionsMCA.VINDICATOR && com.ancientkira.mca.entity.FamilyNames.firstName(person.getName().getString()).equals("Johnny");
     }
 
     public static boolean isRaiderTarget(LivingEntity target) {

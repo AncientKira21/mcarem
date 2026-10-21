@@ -31,13 +31,13 @@ public class Player2SpeechManager extends RealtimeSpeechManager {
         });
     }
 
-    public void playInApp(String text, float pitch, String voiceId) {
+    public boolean playInApp(String text, float pitch, String voiceId) {
         String url = this.url + "v1/tts/speak";
         String payload = String.format(
                 "{\"play_in_app\": true, \"speed\": %s, \"text\": \"%s\", \"voice_ids\": [\"%s\"]}",
                 pitch, text, voiceId
         );
-        download(null, url, payload, "");
+        return download(null, url, payload, "");
     }
 
     public List<String> getVoices(String languageCode, String gender) {

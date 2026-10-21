@@ -139,14 +139,18 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     private boolean rotatePreviewRight;
     private boolean previewFollowsMouse = true;
 
-    private static final int PRESETS_PER_PAGE = 4;
+    private static final int PRESETS_PER_PAGE = 3;
     private final File presetsDir = new File(Minecraft.getInstance().gameDirectory, "config/mca/presets");
     private final List<String> presetNames = new ArrayList<>();
+    private final List<String> allPresetNames = new ArrayList<>();
+    private final List<ButtonWidget> presetOptions = new ArrayList<>();
+    private String presetSearchQuery = "";
     private String selectedPreset = null;
     private String presetsReturnPage = "general";
     private int currentPage = 0;
     private int maxPage = 0;
     private EditBox nameField;
+    private EditBox villagerLastNameField;
     private ButtonWidget useButton;
     private ButtonWidget deleteButton;
     private CompoundTag presetsBackupNbt = null;
@@ -194,6 +198,10 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     @Override
     public void init() {
+        com.ancientkira.mca.client.resources.EditorLibraryCatalog.refresh(() -> {
+            if (minecraft != null && minecraft.screen == this) { filter(); updateClothingPageWidget(); }
+        });
+        minecraft.options.hideGui = true;
         setPage(page);
     }
 
@@ -214,6 +222,70 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
             right = !right;
         }
         return y + 4 + (right ? 20 : 0);
+    }
+
+    private void openAccentChoices() {
+        boolean elevenlabs = Config.getInstance().enableOnlineTTS && Config.getInstance().onlineTTSModel.equals("elevenlabs");
+        boolean voicebox = Config.getInstance().enableOnlineTTS && Config.getInstance().onlineTTSModel.equals("voicebox");
+        java.util.List<SearchableChoiceScreen.Choice> choices = new java.util.ArrayList<>();
+        choices.add(new SearchableChoiceScreen.Choice("auto", Component.translatable("gui.villager_editor.voice_auto").getString()));
+        if (!elevenlabs && !voicebox) {
+            for (int i = 0; i < 10; i++) choices.add(new SearchableChoiceScreen.Choice(Integer.toString(i),
+                    Component.translatable("gui.villager_editor.accent_number", i + 1).getString()));
+        }
+        var screen = new SearchableChoiceScreen(this, Component.translatable("gui.villager_editor.accent"), choices, choice -> {
+            if (choice.id().equals("auto")) villager.setTrackedValue(VillagerLike.VOICE_ID, "");
+            else if (elevenlabs || voicebox) villager.setTrackedValue(VillagerLike.VOICE_ID, choice.id());
+            else {
+                villager.setTrackedValue(VillagerLike.VOICE_ID, "");
+                villager.getGenetics().setGene(Genetics.VOICE_TONE, (Integer.parseInt(choice.id()) + 0.5F) / 10.0F);
+            }
+        });
+        String currentVoice = villager.getTrackedValue(VillagerLike.VOICE_ID);
+        screen.setSelectedId(elevenlabs || voicebox ? currentVoice.isBlank() ? "auto" : currentVoice
+                : Integer.toString(Math.clamp((int) Math.floor(villager.getGenetics().getGene(Genetics.VOICE_TONE) * 10), 0, 9)));
+        if (elevenlabs) screen.setReload(() -> {
+            try {
+                com.ancientkira.mca.client.tts.ElevenlabsVoices.reloadKey();
+                loadElevenlabsChoices(screen, choices);
+            } catch (Exception error) {
+                screen.setStatus(Component.translatable(com.ancientkira.mca.client.tts.ElevenlabsVoices.errorKey(error)));
+            }
+        });
+        if (voicebox) screen.setReload(() -> loadVoiceboxChoices(screen, choices));
+        minecraft.setScreen(screen);
+        if (elevenlabs) loadElevenlabsChoices(screen, choices);
+        if (voicebox) loadVoiceboxChoices(screen, choices);
+    }
+
+    private void loadVoiceboxChoices(SearchableChoiceScreen screen, java.util.List<SearchableChoiceScreen.Choice> choices) {
+        screen.setStatus(Component.translatable("gui.loading"));
+        com.ancientkira.mca.client.tts.VoiceboxSpeechManager.profiles().whenComplete((profiles, error) -> minecraft.execute(() -> {
+            if (error != null) screen.setStatus(Component.translatable("gui.villager_editor.voicebox_unavailable"));
+            else {
+                var all = new java.util.ArrayList<SearchableChoiceScreen.Choice>(choices);
+                all.addAll(profiles);
+                screen.setChoices(all);
+                screen.setStatus(profiles.isEmpty() ? Component.translatable("gui.villager_editor.voicebox_empty") : Component.empty());
+            }
+        }));
+    }
+
+    private void loadElevenlabsChoices(SearchableChoiceScreen screen, java.util.List<SearchableChoiceScreen.Choice> choices) {
+        {
+            screen.setStatus(Component.translatable("gui.loading"));
+            com.ancientkira.mca.client.tts.ElevenlabsVoices.load().whenComplete((voices, error) -> minecraft.execute(() -> {
+                if (error != null) {
+                    screen.setStatus(Component.translatable(com.ancientkira.mca.client.tts.ElevenlabsVoices.errorKey(error)));
+                } else {
+                    var all = new java.util.ArrayList<SearchableChoiceScreen.Choice>(choices);
+                    all.addAll(voices); screen.setChoices(all);
+                    screen.setStatus(voices.isEmpty() ? Component.translatable("gui.villager_editor.voices_empty")
+                            : com.ancientkira.mca.client.tts.ElevenlabsVoices.isPlanVerified() ? Component.empty()
+                            : Component.translatable("gui.villager_editor.voices_plan_unknown"));
+                }
+            }));
+        }
     }
 
     private void addGeneSlider(int x, int y, int widgetWidth, Genetics.GeneType gene) {
@@ -424,7 +496,12 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                     y += 22;
                 }
 
-                y = doubleGeneSliders(y, Genetics.VOICE_TONE, Genetics.VOICE);
+                addVoicePreviewButton(width / 2, y);
+                addGeneSlider(width / 2 + VOICE_PREVIEW_BUTTON_WIDTH + 2, y,
+                        DATA_WIDTH / 2 - VOICE_PREVIEW_BUTTON_WIDTH - 4, Genetics.VOICE);
+                addRenderableWidget(new ButtonWidget(width / 2 + DATA_WIDTH / 2, y, DATA_WIDTH / 2, 20,
+                        Component.translatable("gui.villager_editor.accent"), b -> openAccentChoices()));
+                y += 24;
 
                 //age
                 if (!villagerUUID.equals(playerUUID)) {
@@ -707,6 +784,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 List<ButtonWidget> professionButtons = new LinkedList<>();
                 for (VillagerProfession p : new VillagerProfession[]{
                         BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.NONE),
+                        BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.NITWIT),
                         ProfessionsMCA.GUARD,
                         ProfessionsMCA.ARCHER,
                         ProfessionsMCA.OUTLAW,
@@ -733,6 +811,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                     }
                     right = !right;
                 }
+                if (right) y += 18;
                 y += 4;
 
                 //infection
@@ -824,17 +903,34 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 filter();
             }
             case "presets" -> {
-                int startIdx = currentPage * PRESETS_PER_PAGE;
-                int count = Math.min(PRESETS_PER_PAGE, presetNames.size() - startIdx);
                 int startY = height / 2 - 100;
                 int yVal = startY + 20;
-
-                for (int i = 0; i < count; i++) {
-                    String name = presetNames.get(startIdx + i);
-                    Component btnText = Component.literal(name).withStyle(name.equals(selectedPreset) ? ChatFormatting.GREEN : ChatFormatting.GRAY);
-                    addRenderableWidget(new ButtonWidget(width / 2, yVal, DATA_WIDTH, 20, btnText, b -> selectPreset(name.equals(this.selectedPreset) ? null : name)));
+                EditBox presetSearch = addRenderableWidget(new EditBox(font, width / 2, yVal, DATA_WIDTH, 20,
+                        Component.translatable("gui.search")));
+                presetSearch.setHint(Component.translatable("gui.search"));
+                presetSearch.setMaxLength(100);
+                presetSearch.setValue(presetSearchQuery);
+                presetSearch.setResponder(query -> {
+                    presetSearchQuery = query;
+                    currentPage = 0;
+                    filterPresets();
+                    updatePresetChoices();
+                });
+                yVal += 22;
+                presetOptions.clear();
+                for (int i = 0; i < PRESETS_PER_PAGE; i++) {
+                    final int row = i;
+                    presetOptions.add(addRenderableWidget(new ButtonWidget(width / 2, yVal, DATA_WIDTH, 20,
+                            Component.empty(), b -> {
+                        int index = currentPage * PRESETS_PER_PAGE + row;
+                        if (index < presetNames.size()) {
+                            String name = presetNames.get(index);
+                            selectPreset(name.equals(selectedPreset) ? null : name);
+                        }
+                    })));
                     yVal += 20;
                 }
+                updatePresetChoices();
 
                 yVal += 2;
 
@@ -1136,8 +1232,20 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
         return y + 24;
     }
 
+    private static boolean isEditorCatalogClothing(Clothing clothing) {
+        return (Config.getInstance().enableSilvernaturalPack && "Silvernatural".equalsIgnoreCase(clothing.onlineAuthor))
+                || (Config.getInstance().showOwnLibrarySubmissions && com.ancientkira.mca.client.resources.EditorLibraryCatalog.isOwn(clothing.getIdentifier()))
+                || !clothing.onlineAutomatic && !clothing.getIdentifier().startsWith("immersive_library:");
+    }
+
+    private boolean isCurrentOnlineClothing(Clothing clothing) {
+        return clothing.getIdentifier().equals(villager.getClothes()) && !isEditorCatalogClothing(clothing);
+    }
+
     private List<Clothing> getClothingChoices() {
-        return SkinSelection.editorClothing(ClientSkinCatalog.clothing().values(), villager.getGenetics().getGender());
+        return SkinSelection.editorClothing(ClientSkinCatalog.clothing().values().stream()
+                .filter(c -> isEditorCatalogClothing(c) || isCurrentOnlineClothing(c)).toList(), villager.getGenetics().getGender())
+                .stream().sorted(java.util.Comparator.comparing(c -> !isCurrentOnlineClothing(c))).toList();
     }
 
     private List<Clothing> getRandomClothingChoices() {
@@ -1399,20 +1507,41 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
         }
     }
 
+    private static boolean matchesLibrarySearch(String id, SkinListEntry entry, String input) {
+        String query = input.strip().toLowerCase(Locale.ROOT);
+        if (query.isEmpty() || id.toLowerCase(Locale.ROOT).contains(query)) return true;
+        if (com.ancientkira.mca.client.resources.EditorLibraryCatalog.matches(id, query)) return true;
+        return entry instanceof Clothing c && (c.getDisplayName() + " " + c.onlineAuthor + " " + c.profession)
+                .toLowerCase(Locale.ROOT).contains(query);
+    }
+
     private <T extends SkinListEntry> List<String> filter(Map<String, T> map) {
         List<String> filtered = map.entrySet().stream()
-                .filter(v -> filterGender == v.getValue().getGender() || v.getValue().getGender() == Gender.NEUTRAL)
+                .filter(v -> filterGender == v.getValue().getGender() || v.getValue().getGender() == Gender.NEUTRAL
+                        || v.getValue() instanceof Clothing c && isCurrentOnlineClothing(c))
                 .filter(v -> {
                     if (v.getValue() instanceof Clothing c) {
-                        return !c.exclude;
+                        return SkinSelection.canWearClothing(c, villager.getGenetics().getGender())
+                                && (isCurrentOnlineClothing(c) || SkinSelection.isEditorClothing(c) && isEditorCatalogClothing(c));
                     } else {
                         return true;
                     }
                 })
-                .filter(v -> MCA.isBlankString(searchString) || v.getKey().contains(searchString))
+                .filter(v -> com.ancientkira.mca.client.resources.EditorLibraryCatalog.visible(v.getKey()))
+                .filter(v -> !(v.getValue() instanceof Clothing c) || Config.getInstance().enableSilvernaturalPack
+                        || !"Silvernatural".equalsIgnoreCase(c.onlineAuthor)
+                        || com.ancientkira.mca.client.resources.EditorLibraryCatalog.isOwn(v.getKey()) && Config.getInstance().showOwnLibrarySubmissions)
+                .filter(v -> matchesLibrarySearch(v.getKey(), v.getValue(), searchString))
                 .map(v -> v.getValue().getIdentifier())
                 .distinct()
-                .sorted(SkinListEntry::compareIdentifiers)
+                .sorted((a, b) -> {
+                    boolean currentA = map.get(a) instanceof Clothing c && isCurrentOnlineClothing(c);
+                    boolean currentB = map.get(b) instanceof Clothing c && isCurrentOnlineClothing(c);
+                    if (currentA != currentB) return currentA ? -1 : 1;
+                    boolean ownA = com.ancientkira.mca.client.resources.EditorLibraryCatalog.isOwn(a);
+                    boolean ownB = com.ancientkira.mca.client.resources.EditorLibraryCatalog.isOwn(b);
+                    return ownA != ownB ? (ownA ? 1 : -1) : SkinListEntry.compareIdentifiers(a, b);
+                })
                 .toList();
 
         clothingPageCount = Math.max(1, (int) Math.ceil(filtered.size() / ((float) getSelectionItemsPerPage())));
@@ -1466,10 +1595,22 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     }
 
     protected void drawName(int x, int y, Consumer<String> onChanged) {
-        villagerNameField = addRenderableWidget(new EditBox(this.font, x, y, DATA_WIDTH / 3 * 2, 18, Component.translatable("structure_block.structure_name")));
+        int fieldWidth = DATA_WIDTH / 3;
+        villagerNameField = addRenderableWidget(new EditBox(this.font, x, y, fieldWidth - 1, 18,
+                Component.translatable("gui.villager_editor.first_name")));
+        EditBox surname = addRenderableWidget(new EditBox(this.font, x + fieldWidth, y, fieldWidth - 1, 18,
+                Component.translatable("gui.villager_editor.last_name")));
+        villagerLastNameField = surname;
         villagerNameField.setMaxLength(32);
-        villagerNameField.setValue(getName().getString());
-        villagerNameField.setResponder(onChanged);
+        surname.setMaxLength(48);
+        String full = getName().getString();
+        villagerNameField.setValue(com.ancientkira.mca.entity.FamilyNames.firstName(full));
+        surname.setValue(com.ancientkira.mca.entity.FamilyNames.lastName(full));
+        villagerNameField.setHint(Component.translatable("gui.villager_editor.first_name"));
+        surname.setHint(Component.translatable("gui.villager_editor.last_name"));
+        EditBox first = villagerNameField;
+        first.setResponder(value -> onChanged.accept(com.ancientkira.mca.entity.FamilyNames.fullName(value, surname.getValue())));
+        surname.setResponder(value -> onChanged.accept(com.ancientkira.mca.entity.FamilyNames.fullName(first.getValue(), value)));
         addRenderableWidget(new ButtonWidget(x + DATA_WIDTH / 3 * 2 + 1, y - 1, DATA_WIDTH / 3 - 2, 20, Component.translatable("gui.button.random"), b ->
                 Network.sendToServer(new VillagerNameRequest(villager.getGenetics().getGender()))
         ));
@@ -1927,13 +2068,24 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
             }
         }
 
+        if (page.equals("clothing") && hoveredClothingId >= 0 && hoveredClothingId < filteredClothing.size()) {
+            String id = filteredClothing.get(hoveredClothingId);
+            Clothing outfit = ClientSkinCatalog.clothing().get(id);
+            if (outfit != null) {
+                var tooltip = new java.util.ArrayList<Component>();
+                tooltip.add(Component.literal(outfit.getDisplayName()));
+                if (!outfit.onlineAuthor.isBlank()) tooltip.add(Component.literal(outfit.onlineAuthor).withStyle(ChatFormatting.GRAY));
+                WidgetUtils.drawTooltip(context, font, tooltip, mouseX, mouseY);
+            }
+        }
+
         if (page.equals("presets")) {
             int startIdx = currentPage * PRESETS_PER_PAGE;
             int count = Math.min(PRESETS_PER_PAGE, presetNames.size() - startIdx);
             int startY = height / 2 - 100;
 
             int rightX = width / 2;
-            int paginationY = startY + 22 + count * 20 + 6;
+            int paginationY = startY + 44 + PRESETS_PER_PAGE * 20 + 6;
             context.centeredText(font, Component.literal((currentPage + 1) + " / " + (maxPage + 1)), rightX + DATA_WIDTH / 2, paginationY, 0xFFAAAAAA);
         }
     }
@@ -1952,8 +2104,9 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     }
 
     public void setVillagerName(String name) {
-        villagerNameField.setValue(name);
-        updateName(name);
+        String surname = villagerLastNameField == null ? "" : villagerLastNameField.getValue();
+        villagerNameField.setValue(com.ancientkira.mca.entity.FamilyNames.firstName(name));
+        updateName(com.ancientkira.mca.entity.FamilyNames.fullName(com.ancientkira.mca.entity.FamilyNames.firstName(name), surname));
     }
 
     public void setVillagerData(CompoundTag villagerData) {
@@ -2174,17 +2327,37 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
             //noinspection ResultOfMethodCallIgnored
             presetsDir.mkdirs();
         }
-        presetNames.clear();
+        allPresetNames.clear();
         File[] files = presetsDir.listFiles((d, name) -> name.endsWith(".json"));
         if (files != null) {
             for (File f : files) {
                 String name = f.getName();
-                presetNames.add(name.substring(0, name.length() - 5)); // remove .json
+                allPresetNames.add(name.substring(0, name.length() - 5)); // remove .json
             }
         }
-        presetNames.sort(String::compareToIgnoreCase);
+        allPresetNames.sort(String::compareToIgnoreCase);
+        filterPresets();
+    }
+
+    private void filterPresets() {
+        String query = presetSearchQuery.strip().toLowerCase(Locale.ROOT);
+        presetNames.clear();
+        allPresetNames.stream().filter(name -> name.toLowerCase(Locale.ROOT).contains(query)).forEach(presetNames::add);
         maxPage = Math.max(0, (presetNames.size() - 1) / PRESETS_PER_PAGE);
         currentPage = Math.min(currentPage, maxPage);
+    }
+
+    private void updatePresetChoices() {
+        for (int row = 0; row < presetOptions.size(); row++) {
+            int index = currentPage * PRESETS_PER_PAGE + row;
+            ButtonWidget option = presetOptions.get(row);
+            option.visible = index < presetNames.size();
+            option.active = option.visible;
+            if (option.visible) {
+                String name = presetNames.get(index);
+                option.setMessage(Component.literal(name).withStyle(name.equals(selectedPreset) ? ChatFormatting.GREEN : ChatFormatting.GRAY));
+            }
+        }
     }
 
     private void selectPreset(String name) {
@@ -2285,6 +2458,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
         try {
             CompoundTag tag = villager.toNbtForConversion();
+            tag.putString("VoiceId", villager.getTrackedValue(VillagerLike.VOICE_ID));
 
             // Extract PlayerModel from villagerData NBT if present
             if (villagerData != null) {

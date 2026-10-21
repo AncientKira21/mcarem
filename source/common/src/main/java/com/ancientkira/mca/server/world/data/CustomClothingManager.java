@@ -75,6 +75,21 @@ public class CustomClothingManager {
             return entries;
         }
 
+        public void replaceAutomaticClothing(Map<String, T> online) {
+            boolean changed = entries.entrySet().removeIf(entry -> entry.getValue() instanceof Clothing clothing
+                    && clothing.onlineAutomatic && !online.containsKey(entry.getKey()));
+            for (var entry : online.entrySet()) {
+                T previous = entries.get(entry.getKey());
+                // An explicit library subscription remains owned by the player.
+                if (previous != null && (!(previous instanceof Clothing clothing) || !clothing.onlineAutomatic)) continue;
+                if (previous == null || !previous.toJson().equals(entry.getValue().toJson())) {
+                    entries.put(entry.getKey(), entry.getValue());
+                    changed = true;
+                }
+            }
+            if (changed) setDirty();
+        }
+
         public void addEntry(String id, T entry) {
             entries.put(id, entry);
             setDirty();

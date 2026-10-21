@@ -19,6 +19,8 @@ public final class RangedWeaponHelper {
 
     @Nullable
     public static InteractionHand getWeaponHoldingHand(LivingEntity entity) {
+        InteractionHand gunHand = GunCompatibility.hand(entity);
+        if (gunHand != null) return gunHand;
         InteractionHand crossbowHand = findHoldingHand(entity, CrossbowItem.class);
         return crossbowHand != null ? crossbowHand : findHoldingHand(entity, BowItem.class);
     }
@@ -39,6 +41,7 @@ public final class RangedWeaponHelper {
     }
 
     public static double getAttackRangeSquared(LivingEntity entity, InteractionHand hand) {
+        if (GunCompatibility.isGun(entity.getItemInHand(hand))) return 1024.0D;
         if (!(entity.getItemInHand(hand).getItem() instanceof ProjectileWeaponItem weapon)) {
             return 0.0D;
         }

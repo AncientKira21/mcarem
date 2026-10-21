@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 
 public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag data) implements HandleablePayload {
     private static final String[] MCA_VISUAL_KEYS = {
+            "VoiceId",
             "Gender",
             "Clothes",
             "ClothingLocked",
@@ -203,9 +204,14 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
             CompoundTag merged = mergeAllowedEditorPatch(serverData, patch);
             sanitizeVisualIdentifiers(entity, merged);
 
+            String oldSurname = com.ancientkira.mca.entity.FamilyNames.lastName(entity.getName().getString());
             villagerLike.syncFromEditor(merged);
             entity.refreshDimensions();
             syncFamilyTree(player, entity, merged);
+            String newSurname = com.ancientkira.mca.entity.FamilyNames.lastName(entity.getName().getString());
+            if (!oldSurname.equals(newSurname)) {
+                com.ancientkira.mca.entity.FamilyNames.changeFamilySurname(entity, oldSurname, newSurname);
+            }
 
             if (entity instanceof VillagerEntityMCA villager) {
                 villager.getResidency().getHomeVillage().ifPresent(b -> b.updateResident(villager));
@@ -310,6 +316,7 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
 
                     String uuids = nodes.stream().map(FamilyTreeNode::id).map(UUID::toString).collect(Collectors.joining(", "));
                     player.sendSystemMessage(Component.translatable("gui.villager_editor.list_of_ids", uuids));
+                    return Optional.empty();
                 } else {
                     player.sendSystemMessage(Component.translatable("gui.villager_editor.name_unique", name));
                 }

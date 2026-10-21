@@ -91,4 +91,8 @@ Following mods have the required resource packs included and are therefore fully
 - CDAGaming
 - And many more!
 
+<<<<<<< HEAD
 Licensed under the [GNU General Public License v3.0](LICENSE).
+=======
+Licensed under the [GNU General Public License v3.0](LICENSE).
+>>>>>>> 6b5339c (update)

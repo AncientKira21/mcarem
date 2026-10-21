@@ -30,11 +30,22 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
     private static final double DESCENT_NODE_TOLERANCE = 0.08D;
     private static final double EXIT_HEIGHT_TOLERANCE = 0.25D;
     private static final double EXIT_VERTICAL_BIAS = 0.08D;
+    private final FluidEscapeController fluidEscape;
+    private Vec3 jumpStart;
+    private BlockPos jumpLanding;
+    private int jumpTick;
+    private boolean wasEscapingFluid;
+    private static final int JUMP_TICKS = 18;
     private final Set<Path> villageRoadPaths = Collections.newSetFromMap(new WeakHashMap<>());
 
     public MCAGroundPathNavigation(Mob mob, Level level) {
         super(mob, level);
+        fluidEscape = new FluidEscapeController(mob, level);
     }
+
+    public boolean isControllingFluid() { return fluidEscape != null && fluidEscape.active(); }
+
+    public boolean isControllingJump() { return jumpLanding != null; }
 
     public boolean isControllingClimbable() {
         return getClimbContext() != null;
@@ -45,12 +56,13 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
         this.nodeEvaluator = new MCAWalkNodeEvaluator();
         this.nodeEvaluator.setCanPassDoors(true);
         this.nodeEvaluator.setCanOpenDoors(true);
+        this.nodeEvaluator.setCanFloat(true);
         return new PathFinder(this.nodeEvaluator, maxVisitedNodes);
     }
 
     @Override
     public boolean canCutCorner(PathType type) {
-        return !villageRoadPaths.contains(path) && type != PathType.DOOR_OPEN && super.canCutCorner(type);
+        return false; // Follow every checked node rather than cutting across the edge buffer.
     }
 
     @Override
@@ -83,7 +95,7 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
 
     @Override
     protected boolean canMoveDirectly(Vec3 start, Vec3 end) {
-        return !villageRoadPaths.contains(path) && super.canMoveDirectly(start, end);
+        return false; // A direct shortcut has not passed our edge and fluid checks.
     }
 
     @Override
@@ -113,11 +125,126 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
 
     @Override
     public void tick() {
+        if (fluidEscape.tick()) {
+            if (!wasEscapingFluid) clearStaleMovementPath();
+            wasEscapingFluid = true;
+            jumpLanding = null;
+            return;
+        }
+        if (wasEscapingFluid) {
+            wasEscapingFluid = false;
+            clearStaleMovementPath();
+        }
+        if (jumpLanding != null) {
+            tickLavaJump();
+            return;
+        }
+        if (tryLavaJump()) return;
+        if (stepBackFromEdge()) return;
+        if (path != null && !path.isDone() && !mob.onClimbable() && !mob.isInWater()) {
+            BlockPos next = path.getNextNode().asBlockPos();
+            if (TerrainSafety.dangerousEdge(level, next) && !TerrainSafety.dangerousEdge(level, mob.blockPosition())
+                    || level.getFluidState(next).is(FluidTags.LAVA)
+                    || level.getFluidState(next.below()).is(FluidTags.LAVA)
+                    || level.getFluidState(next).is(FluidTags.WATER)
+                    || level.getFluidState(next.below()).is(FluidTags.WATER)) {
+                stop();
+                mob.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 0);
+                mob.setXxa(0); mob.setZza(0);
+                mob.setDeltaMovement(0, mob.getDeltaMovement().y(), 0);
+                return;
+            }
+        }
         super.tick();
         ClimbContext context = getClimbContext();
         if (context != null) {
             applyClimbableMotion(context);
         }
+    }
+
+    private boolean stepBackFromEdge() {
+        if (!mob.onGround() || mob.onClimbable() || mob.isInWater() || mob.isPassenger()
+                || !TerrainSafety.dangerousEdge(level, mob.blockPosition())) return false;
+        BlockPos feet = mob.blockPosition();
+        for (Direction direction : Direction.Plane.HORIZONTAL) {
+            BlockPos safe = feet.relative(direction);
+            if (!TerrainSafety.solidFloor(level, safe) || !TerrainSafety.clear(level, safe)
+                    || TerrainSafety.dangerousEdge(level, safe)) continue;
+            Vec3 center = Vec3.atBottomCenterOf(safe);
+            if (!level.noCollision(mob, mob.getBoundingBox().move(center.subtract(mob.position())))) continue;
+            mob.getMoveControl().setWantedPosition(center.x(), center.y(), center.z(), 0.6);
+            return true;
+        }
+        // No adjacent buffered tile: let navigation take a dry route along the edge.
+        return false;
+    }
+
+    private boolean tryLavaJump() {
+        if (path == null || path.isDone() || !mob.onGround() || mob.isPassenger()
+                || mob instanceof VillagerEntityMCA person
+                    && person.getAgeState() == com.ancientkira.mca.entity.ai.relationship.AgeState.BABY) return false;
+        int index = path.getNextNodeIndex();
+        if (index <= 0) return false;
+        BlockPos from = path.getNode(index - 1).asBlockPos();
+        BlockPos to = path.getNextNode().asBlockPos();
+        int dx = to.getX() - from.getX(), dz = to.getZ() - from.getZ();
+        int distance = Math.abs(dx) + Math.abs(dz);
+        if (to.getY() != from.getY() || dx != 0 && dz != 0 || distance < 4 || distance > 5) return false;
+        Direction direction = dx > 0 ? Direction.EAST : dx < 0 ? Direction.WEST : dz > 0 ? Direction.SOUTH : Direction.NORTH;
+        BlockPos safe = TerrainSafety.gapLanding(level, from, direction);
+        if (!to.equals(safe)) { stop(); return true; }
+        Vec3 launch = Vec3.atBottomCenterOf(from);
+        if (mob.position().distanceToSqr(launch) > 0.12) {
+            mob.getMoveControl().setWantedPosition(launch.x(), launch.y(), launch.z(), 0.5);
+            return true;
+        }
+        // Check the villager's full width, not just the central block, before committing.
+        for (int step = 1; step <= JUMP_TICKS; step++) {
+            Vec3 point = jumpPoint(launch, to, step);
+            if (!level.noCollision(mob, mob.getBoundingBox().move(point.subtract(mob.position())))) {
+                stop(); return true;
+            }
+        }
+        jumpStart = mob.position();
+        jumpLanding = to;
+        jumpTick = 0;
+        tickLavaJump();
+        return true;
+    }
+
+    private void clearStaleMovementPath() {
+        stop();
+        mob.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 0);
+        mob.setXxa(0);
+        mob.setZza(0);
+        mob.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.PATH);
+        mob.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
+        // Preserve WALK_TARGET so follow, work and combat can plan a fresh route from this bank.
+    }
+
+    private static Vec3 jumpPoint(Vec3 start, BlockPos landing, int tick) {
+        double t = tick / (double) JUMP_TICKS;
+        return start.lerp(Vec3.atBottomCenterOf(landing), t).add(0, 7.2 * t * (1 - t), 0);
+    }
+
+    private void tickLavaJump() {
+        if (!mob.isAlive() || mob.isPassenger()) { jumpLanding = null; stop(); return; }
+        if (jumpTick >= JUMP_TICKS) {
+            jumpLanding = null;
+            mob.setDeltaMovement(0, mob.getDeltaMovement().y(), 0);
+            clearStaleMovementPath();
+            return;
+        }
+        Vec3 next = jumpPoint(jumpStart, jumpLanding, ++jumpTick);
+        Vec3 delta = next.subtract(mob.position());
+        if (!level.noCollision(mob, mob.getBoundingBox().move(delta))) {
+            // A new obstruction appeared. Return toward the launch bank instead of pushing into it.
+            next = jumpStart.add(0, Math.max(0, mob.getY() - jumpStart.y()), 0);
+            delta = next.subtract(mob.position());
+            if (delta.horizontalDistanceSqr() > 0.16) delta = new Vec3(delta.x(), 0, delta.z()).normalize().scale(0.4);
+        }
+        mob.setXxa(0); mob.setZza(0);
+        mob.setDeltaMovement(delta);
     }
 
     @Override

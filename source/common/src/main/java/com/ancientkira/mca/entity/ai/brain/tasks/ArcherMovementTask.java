@@ -66,13 +66,15 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
 
     @Override
     protected boolean checkExtraStartConditions(ServerLevel level, E entity) {
-        return RangedWeaponHelper.isValidAttackTarget(entity, getAttackTarget(entity))
+        return !com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.hasMovementOrder(entity)
+               && RangedWeaponHelper.isValidAttackTarget(entity, getAttackTarget(entity))
                && RangedWeaponHelper.isHoldingSupportedWeapon(entity);
     }
 
     @Override
     protected boolean canStillUse(ServerLevel level, E entity, long gameTime) {
-        return RangedWeaponHelper.isValidAttackTarget(entity, getAttackTarget(entity))
+        return !com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.hasMovementOrder(entity)
+               && RangedWeaponHelper.isValidAttackTarget(entity, getAttackTarget(entity))
                && RangedWeaponHelper.isHoldingSupportedWeapon(entity);
     }
 
@@ -89,6 +91,8 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
         if (!RangedWeaponHelper.isValidAttackTarget(entity, target)) {
             return;
         }
+
+        if (retreatFromEdge(entity)) return;
 
         entity.getBrain().eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
 
@@ -264,6 +268,28 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
                 || entity.getDeltaMovement().horizontalDistanceSqr() < STUCK_HORIZONTAL_SPEED_SQUARED);
     }
 
+    private boolean retreatFromEdge(E entity) {
+        var world = entity.level();
+        if (!entity.onGround() || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world, entity.blockPosition())) return false;
+        // Prefer the nearest reachable interior block instead of strafing along the lip.
+        Path best = null;
+        double distance = Double.MAX_VALUE;
+        for (net.minecraft.core.BlockPos candidate : net.minecraft.core.BlockPos.betweenClosed(
+                entity.blockPosition().offset(-4, -1, -4), entity.blockPosition().offset(4, 1, 4))) {
+            double nextDistance = entity.distanceToSqr(Vec3.atBottomCenterOf(candidate));
+            if (nextDistance >= distance
+                    || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(world, candidate)
+                    || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.clear(world, candidate)
+                    || com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world, candidate)) continue;
+            Path path = entity.getNavigation().createPath(candidate, 0);
+            if (path != null && path.canReach()) { best = path; distance = nextDistance; }
+        }
+        entity.getArcherMoveControl().setEmergencyFleeing(false);
+        if (best != null) entity.getNavigation().moveTo(best, SPEED_MODIFIER);
+        else hold(entity);
+        return true;
+    }
+
     private Path findPathAway(E entity, LivingEntity target, double desiredDistance, boolean allowPartialPath) {
         double currentDistanceSquared = entity.distanceToSqr(target);
         double currentDistance = Math.sqrt(currentDistanceSquared);
@@ -279,7 +305,10 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
             }
 
             Path path = entity.getNavigation().createPath(candidate.x, candidate.y, candidate.z, 0);
-            if (path == null || !allowPartialPath && !path.canReach()) {
+            if (path == null || !allowPartialPath && !path.canReach()
+                    || path.getEndNode() == null
+                    || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(entity.level(), path.getEndNode().asBlockPos())
+                    || com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(entity.level(), path.getEndNode().asBlockPos())) {
                 continue;
             }
 

@@ -67,7 +67,7 @@ public class ExtendedFindPointOfInterestTask extends Behavior<VillagerEntityMCA>
 
     @Override
     protected boolean checkExtraStartConditions(ServerLevel serverWorld, VillagerEntityMCA pathAwareEntity) {
-        if (this.onlyRunIfAdult && pathAwareEntity.isBaby()) {
+        if (this.onlyRunIfAdult && pathAwareEntity.getAgeState() == com.ancientkira.mca.entity.ai.relationship.AgeState.BABY) {
             return false;
         }
         if (this.positionExpireTimeLimit == 0L) {

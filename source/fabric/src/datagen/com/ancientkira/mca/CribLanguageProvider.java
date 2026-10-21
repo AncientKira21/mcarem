@@ -1,4 +1,4 @@
-package com.ancientkira.mca.fabric.datagen;
+package com.ancientkira.mca;
 
 import com.ancientkira.mca.entity.CribWoodType;
 import com.ancientkira.mca.registry.ItemsMCA;

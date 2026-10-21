@@ -93,7 +93,7 @@ public class OnlineSpeechManager {
         }
     }
 
-    public void downloadAudio(OutputStream output, String language, String voice, String text) {
+    public boolean downloadAudio(OutputStream output, String language, String voice, String text) {
         Map<String, String> params = Map.of(
                 "text", text,
                 "language", language,
@@ -108,6 +108,8 @@ public class OnlineSpeechManager {
                 .collect(Collectors.joining("&", Config.getInstance().onlineTTSServer + "v1/tts/xtts-v2?", ""));
         try {
             HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(15000);
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
 
@@ -120,8 +122,10 @@ public class OnlineSpeechManager {
             }
 
             connection.disconnect();
+            return true;
         } catch (IOException e) {
             MCA.LOGGER.warn("Failed to download {}: {}", url, e.getMessage());
+            return false;
         }
     }
 }

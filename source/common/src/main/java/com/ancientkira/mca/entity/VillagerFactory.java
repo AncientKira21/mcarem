@@ -128,7 +128,7 @@ public class VillagerFactory {
                         level.orElseGet(data::level)
                 )
         );
-        villager.setCustomName(Component.literal(name.orElseGet(() -> Names.pickCitizenName(gender, villager))));
+        villager.setCustomName(Component.literal(name.orElseGet(() -> FamilyNames.generated(Names.pickCitizenName(gender, villager), villager.getUUID()))));
         offers.ifPresent(villager::setOffers);
         return villager;
     }

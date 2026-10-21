@@ -24,7 +24,9 @@ public abstract class EntityCommandHandler<T extends Entity & VillagerLike<?>> {
     }
 
     public Optional<Player> getInteractingPlayer() {
-        return Optional.ofNullable(interactingPlayer).filter(player -> player.containerMenu != null);
+        return Optional.ofNullable(interactingPlayer).filter(player -> player.containerMenu != null
+                && player.isAlive() && !player.isRemoved() && player.level() == entity.level()
+                && player.distanceToSqr(entity) <= 64);
     }
 
     public void stopInteracting() {

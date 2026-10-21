@@ -34,7 +34,9 @@ public class LazyFindPointOfInterestTask extends AcquirePoi {
         MutableLong cooldown = new MutableLong(0L);
         Long2ObjectMap<RetryMarker> long2ObjectMap = new Long2ObjectOpenHashMap<>();
         OneShot<PathfinderMob> singleTickTask = BehaviorBuilder.create(taskContext -> taskContext.map(queryResult -> (Trigger<PathfinderMob>) (world, entity, time) -> {
-            if (onlyRunIfChild && entity.isBaby()) {
+            if (onlyRunIfChild && (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person
+                    ? person.getAgeState() == com.ancientkira.mca.entity.ai.relationship.AgeState.BABY
+                    : entity.isBaby())) {
                 return false;
             } else if (cooldown.longValue() == 0L) {
                 cooldown.setValue(world.getGameTime() + (long) world.getRandom().nextInt(MIN_DELAY));

@@ -27,6 +27,16 @@ public record InteractionDialogueInitMessage(UUID villagerUUID) implements Handl
     public void handleServer(ServerPlayer player) {
         Entity v = player.level().getEntity(villagerUUID);
         if (v instanceof VillagerEntityMCA villager) {
+            if (villager.isTooBusyToTalk()) {
+                villager.getInteractions().stopInteracting();
+                String key = villager.getRandom().nextBoolean() ? "dialogue.busy" : "dialogue.goaway";
+                if (villager.getRelationships().isMarriedTo(player.getUUID())) key = "spouse." + key;
+                else if (villager.getRelationships().getFamilyEntry().isParent(player.getUUID())) key = "childp." + key;
+                villager.sendChatMessage(player, key);
+                Network.sendToPlayer(new com.ancientkira.mca.network.s2c.OpenGuiRequest(
+                        com.ancientkira.mca.network.s2c.OpenGuiRequest.Type.CLOSE), player);
+                return;
+            }
             Question question = Dialogues.getInstance().getQuestion("root");
             if (question.isAuto()) {
                 Dialogues.getInstance().selectAnswer(villager, player, question.getName(), question.getRandomAnswer().getName());

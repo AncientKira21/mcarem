@@ -40,6 +40,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
     public final Set<BlockPos> cache = ConcurrentHashMap.newKeySet();
     private final Map<Integer, Village> villages = new HashMap<>();
     private final List<BlockPos> buildingQueue = new LinkedList<>();
+    private final Map<Long, Long> automaticScanTimes = new HashMap<>();
     private final ServerLevel world;
     private final ReaperSpawner reapers;
     private int lastBuildingId;
@@ -83,6 +84,35 @@ public class VillageManager extends SavedData implements Iterable<Village> {
 
     public Optional<Village> getOrEmpty(int id) {
         return Optional.ofNullable(villages.get(id));
+    }
+
+    public Village detachForIndependence(Village origin,int territory){
+        if(com.ancientkira.mca.server.VillageWarfare.get(world).isBusy(origin.getId()))return null;
+        int id=territory>=0&&!villages.containsKey(territory)?territory:lastVillageId++;
+        Village released=origin.detachVillage(territory,id);
+        if(released==null)return null;
+        villages.put(id,released);cache.clear();setDirty();
+        released.getResidents(world).forEach(person->person.getResidency().remapVillage(origin.getId(),released.getId()));
+        for(var person:origin.getResidents(world))if(released.isWithinBorder(person.blockPosition(),0))person.getResidency().returnAfterRelease(origin,released);
+        return released;
+    }
+
+    public boolean releaseVillage(Village origin, int territory) {
+        if (com.ancientkira.mca.server.VillageWarfare.get(world).isBusy(origin.getId())) return false;
+        int id = territory >= 0 && !villages.containsKey(territory) ? territory : lastVillageId++;
+        Village released = origin.detachVillage(territory, id);
+        if (released == null) return false;
+        villages.put(id, released); cache.clear(); setDirty();
+        released.getResidents(world).forEach(person->person.getResidency().remapVillage(origin.getId(),released.getId()));
+        for(var person:origin.getResidents(world)){
+            if(!released.isWithinBorder(person.blockPosition(),0))continue;
+            person.getResidency().returnAfterRelease(origin,released);
+        }
+        var message = net.minecraft.network.chat.Component.translatable("mca.war.released", released.getName(), origin.getName());
+        origin.getCivilRegistry().ifPresent(registry -> registry.addText(message));
+        released.getCivilRegistry().ifPresent(registry -> registry.addText(message));
+        world.getServer().getPlayerList().broadcastSystemMessage(message, false);
+        return true;
     }
 
     public boolean removeVillage(int id) {
@@ -148,6 +178,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         }
 
         long time = world.getGameTime();
+        if (time % 200 == 0) mergeConnectedVillages();
 
         for (Village v : this) {
             v.tick(world, time);
@@ -162,6 +193,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         com.ancientkira.mca.server.VillageWarfare.get(world).tick();
         reapers.tick(world);
         SpawnQueue.getInstance().tick();
+        com.ancientkira.mca.server.OnlineClothingCatalog.tick(world);
     }
 
     private void startBountyHunterWave(ServerPlayer player, Village sender) {
@@ -218,8 +250,14 @@ public class VillageManager extends SavedData implements Iterable<Village> {
 
     //adds a potential block to the processing queue
     public void reportBuilding(BlockPos pos) {
-        //mark in cache
-        cache.add(pos);
+        // Coalesce reports from villagers sharing an area; retry so later edits are detected.
+        long now = world.getGameTime();
+        long cell = BlockPos.asLong(Math.floorDiv(pos.getX(), 4), Math.floorDiv(pos.getY(), 2), Math.floorDiv(pos.getZ(), 4));
+        Long last = automaticScanTimes.get(cell);
+        if (last != null && now >= last && now - last < 200) return;
+        automaticScanTimes.put(cell, now);
+        if (automaticScanTimes.size() > 4096) automaticScanTimes.entrySet().removeIf(entry -> now - entry.getValue() >= 200);
+        cache.add(pos.immutable());
 
         if (!buildingQueue.contains(pos)) {
             buildingQueue.add(pos.immutable());
@@ -520,6 +558,12 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             added.setTypeForced(false);
             added.determineType();
         }
+        if (!added.getBuildingType().grouped()) {
+            Optional<Building> duplicate = village.getBuildings().values().stream()
+                    .filter(existing -> existing.isStrictScan() == added.isStrictScan() && existing.isIdentical(added))
+                    .findFirst();
+            if (duplicate.isPresent()) return Building.validationResult.ROOM_ALREADY_ADDED;
+        }
         added.setId(lastBuildingId++);
         if (mode == Village.RoomScanMode.ADD_ROOM && target != null) {
             added.setStructureId(target.getStructureId());
@@ -534,6 +578,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         village.normalizeFloorNumbers();
         village.calculateDimensions();
         village.recalculateRoomTypes(added.getStructureId());
+        mergeConnectedVillages();
         village.markDirty();
         setDirty();
         return Building.validationResult.SUCCESS;
@@ -556,13 +601,16 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         if (forcedType != null && !scan.matchesType(forcedType)) {
             return Building.validationResult.INVALID_TYPE;
         }
-        if (!automatic && forcedType == null && scan.isAmbiguous()) {
+        if (!automatic && forcedType == null && !existing.isTypeForced() && scan.isAmbiguous()) {
             return Building.validationResult.INVALID_TYPE;
         }
         Building scanned = scan.building();
         if (forcedType != null) {
             scanned.setTypeForced(true);
             scanned.setType(forcedType);
+        } else if (existing.isTypeForced()) {
+            scanned.setTypeForced(true);
+            scanned.setType(existing.getType());
         } else {
             scanned.setTypeForced(false);
             scanned.determineType();
@@ -705,8 +753,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             if (forcedType != null) {
                 existing.setTypeForced(true);
                 existing.setType(forcedType);
-            } else {
-                existing.setTypeForced(false);
+            } else if (!existing.isTypeForced()) {
                 existing.determineType();
             }
             existing.validateBuilding(world, getBlockedSet(targetVillage));
@@ -807,8 +854,64 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         this.buildingCooldown = buildingCooldown;
     }
 
+    private boolean connectedByRoad(Village a,Village b){
+        if(a.getCenter().distSqr(b.getCenter())>256*256)return false;
+        java.util.ArrayDeque<BlockPos> queue=new java.util.ArrayDeque<>();
+        Set<BlockPos> seen=new HashSet<>();
+        for(var building:a.getBuildingsOfType("town_center").toList())
+            for(BlockPos pos:BlockPos.betweenClosed(building.getSourceBlock().offset(-6,-3,-6),building.getSourceBlock().offset(6,1,6)))
+                if(world.hasChunkAt(pos) && world.getBlockState(pos).is(a.getPathBlock()) && seen.add(pos.immutable()))queue.add(pos.immutable());
+        int visits=0;
+        while(!queue.isEmpty() && visits++<4096){
+            BlockPos current=queue.removeFirst();
+            if(b.isWithinBorder(current.above(),4))return true;
+            for(var direction:net.minecraft.core.Direction.Plane.HORIZONTAL)
+                for(int dy=-1;dy<=1;dy++){
+                    BlockPos next=current.relative(direction).offset(0,dy,0);
+                    if(seen.contains(next)||!world.hasChunkAt(next))continue;
+                    var block=world.getBlockState(next);
+                    if((block.is(a.getPathBlock())||block.is(b.getPathBlock())) && seen.add(next))queue.add(next);
+                }
+        }
+        return false;
+    }
+
+    private void mergeConnectedVillages() {
+        boolean changed;
+        do {
+            changed = false;
+            List<Village> ordered = villages.values().stream().sorted(Comparator.comparingInt(Village::getId)).toList();
+            outer: for (int i = 0; i < ordered.size(); i++) {
+                for (int j = i + 1; j < ordered.size(); j++) {
+                    Village a = ordered.get(i), b = ordered.get(j);
+                    if (a.getBuildings().isEmpty() || b.getBuildings().isEmpty()) continue;
+                    if(a.isSeparateFrom(b) || com.ancientkira.mca.server.VillageWarfare.get(world).isBusy(a.getId())
+                            || com.ancientkira.mca.server.VillageWarfare.get(world).isBusy(b.getId()))continue;
+                    boolean horizontal=a.getBox().minX()-Village.MERGE_MARGIN<=b.getBox().maxX()
+                            && a.getBox().maxX()+Village.MERGE_MARGIN>=b.getBox().minX()
+                            && a.getBox().minZ()-Village.MERGE_MARGIN<=b.getBox().maxZ()
+                            && a.getBox().maxZ()+Village.MERGE_MARGIN>=b.getBox().minZ();
+                    if(!horizontal && !connectedByRoad(a,b))continue;
+                    Village into = b.getPopulation() > a.getPopulation() ? b : a;
+                    merge(into, into == a ? b : a);
+                    changed = true;
+                    break outer;
+                }
+            }
+        } while (changed);
+    }
+
     public void merge(Village into, Village from) {
+        if (into == from) return;
         into.merge(from);
+        villages.remove(from.getId());
+        for (var entity : world.getAllEntities()) {
+            if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) {
+                person.getResidency().remapVillage(from.getId(), into.getId());
+            }
+        }
+        cache.clear();
+        setDirty();
     }
 
     public enum BuildingEditResult {

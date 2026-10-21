@@ -144,6 +144,7 @@ public class ClientHandlerImpl implements ClientHandler {
 
             Village village = new Village(message.getData(), null);
             gui.setVillage(village);
+            gui.setMedicalInsurance(message.getData().getStringOr("medicalInsurance", "none"));
             gui.setVillageData(message.rank(), message.reputation(), message.isVillage(), message.ids(), message.tasks());
         }
     }

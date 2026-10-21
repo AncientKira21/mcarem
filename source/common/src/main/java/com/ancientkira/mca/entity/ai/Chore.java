@@ -39,7 +39,7 @@ public enum Chore {
     }
 
     public static Optional<Chore> byCommand(String action) {
-        return Optional.ofNullable(REGISTRY.get(action.toLowerCase(Locale.ENGLISH)));
+        return Optional.ofNullable(REGISTRY.get(action.equalsIgnoreCase("mining") ? "prospecting" : action.toLowerCase(Locale.ENGLISH)));
     }
 
     public static Chore byId(int id) {

@@ -55,10 +55,21 @@
     "constraints": ""
   },
   {
-    "identifier": "gui.button.stopworking",
+    "identifier": "gui.button.prospecting",
     "x": -90,
     "y": 10,
     "row": 4,
+    "width": 80,
+    "height": 20,
+    "notifyServer": true,
+    "targetServer": false,
+    "constraints": ""
+  },
+  {
+    "identifier": "gui.button.stopworking",
+    "x": -90,
+    "y": 10,
+    "row": 5,
     "width": 80,
     "height": 20,
     "notifyServer": true,

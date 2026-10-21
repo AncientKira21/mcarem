@@ -77,6 +77,7 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
             BlockPos pos = existing.blockPosition();
             restoreVillager(existing, pos);
             node.setDeceased(false);
+            com.ancientkira.mca.server.RevivalCelebration.complete(existing, player.getUUID());
             TombstoneBlock.Data.playInstantRevivalEffect((ServerLevel) existing.level(), pos);
             if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
             return;
@@ -84,8 +85,9 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
         if (stored != null) {
             restoreVillager(stored.entity(), stored.pos());
             if (stored.level().addFreshEntity(stored.entity())) {
-                stored.tombstone().setEntity(null);
+                stored.tombstone().cleanupAfterRevival();
                 node.setDeceased(false);
+                com.ancientkira.mca.server.RevivalCelebration.complete(stored.entity(), player.getUUID());
                 TombstoneBlock.Data.playInstantRevivalEffect(stored.level(), stored.pos());
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
             } else {
@@ -114,6 +116,7 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
             if (quiet && !placeBatchSpawn(player, recordedVillager, index)) return;
             if (level.addFreshEntity(recordedVillager)) {
                 node.setDeceased(false);
+                com.ancientkira.mca.server.RevivalCelebration.complete(recordedVillager, player.getUUID());
                 TombstoneBlock.Data.playInstantRevivalEffect(level, revivePos);
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
             } else {
@@ -145,6 +148,7 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
         if (quiet && !placeBatchSpawn(player, revived, index)) return;
         if (level.addFreshEntity(revived)) {
             node.setDeceased(false);
+            com.ancientkira.mca.server.RevivalCelebration.complete(revived, player.getUUID());
             TombstoneBlock.Data.playInstantRevivalEffect(level, revivePos);
             if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
         } else {

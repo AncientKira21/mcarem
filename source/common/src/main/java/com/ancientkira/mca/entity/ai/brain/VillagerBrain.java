@@ -130,6 +130,7 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
      * Assigns a job for the villager to do.
      */
     public void assignJob(Chore chore, Player player) {
+        entity.setTrackedValue(MOVE_STATE, MoveState.MOVE);
         entity.getBrain().setActiveActivityIfPossible(ActivitiesMCA.CHORE);
         entity.setTrackedValue(ACTIVE_CHORE, chore);
         entity.setTrackedValue(CHORE_ASSIGNING_PLAYER, Optional.of(player.getUUID()));
@@ -245,6 +246,12 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
     }
 
     public void setMoveState(MoveState state, @Nullable Player leader) {
+        if (state == MoveState.FOLLOW && leader == null) return;
+        if (entity.asEntity() instanceof VillagerEntityMCA person) com.ancientkira.mca.server.VillagerHangouts.cancelOrder(person);
+        if (state == MoveState.STAY || state == MoveState.FOLLOW) {
+            entity.setTrackedValue(ACTIVE_CHORE, Chore.NONE);
+            entity.setTrackedValue(CHORE_ASSIGNING_PLAYER, Optional.empty());
+        }
         entity.setTrackedValue(MOVE_STATE, state);
         if (state == MoveState.MOVE) {
             entity.getBrain().eraseMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING);
@@ -257,10 +264,20 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
         if (state == MoveState.FOLLOW) {
             entity.getBrain().setMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING, leader);
             entity.getBrain().eraseMemory(MemoryModuleTypeMCA.STAYING);
-            abandonJob();
         }
 
         resetsBrain();
+        // Stop callbacks from the previous behavior may restore its route; clear it
+        // after rebuilding, before the new order starts navigating.
+        if (entity.asEntity() instanceof VillagerEntityMCA villager) {
+            villager.getNavigation().stop();
+            villager.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+            villager.getBrain().eraseMemory(MemoryModuleType.PATH);
+            villager.getBrain().eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);
+            villager.getMoveControl().setWantedPosition(villager.getX(), villager.getY(), villager.getZ(), 0);
+            villager.setXxa(0);
+            villager.setZza(0);
+        }
     }
 
     private void resetsBrain() {
@@ -290,6 +307,8 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
     }
 
     public boolean shouldGrieve() {
+        if(entity.asEntity() instanceof VillagerEntityMCA person && person.getResidency().getHomeVillage()
+                .filter(com.ancientkira.mca.server.world.data.Village::isGraveMourningDisabled).isPresent())return false;
         Optional<Long> memory = entity.getBrain().getMemoryInternal(LAST_GRIEVE);
         if (memory.isPresent()) {
             return entity.level().getGameTime() - memory.get() > GRIEVE_COOLDOWN;

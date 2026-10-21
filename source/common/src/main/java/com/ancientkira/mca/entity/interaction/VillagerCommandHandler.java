@@ -1,5 +1,7 @@
 package com.ancientkira.mca.entity.interaction;
 
+import net.minecraft.world.entity.ai.memory.MemoryModuleType;
+
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
@@ -84,6 +86,8 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
             arg = split[1];
         }
 
+        if (com.ancientkira.mca.server.VillagerHangouts.handle(entity, player, command, arg)) return true;
+
         switch (command) {
             case "pick_up" -> {
                 return handlePickUp(player);
@@ -155,6 +159,7 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 FamilyTreeNode parentNode = FamilyTree.get((ServerLevel) player.level()).getOrCreate(player);
                 Optional<FamilyTreeNode> parentSpouse = FamilyTree.get((ServerLevel) player.level()).getOrEmpty(parentNode.partner());
                 entity.getRelationships().getFamilyEntry().replaceParents(parentNode, parentSpouse);
+                com.ancientkira.mca.entity.FamilyNames.inheritSurname(entity);
             }
             case "procreate" -> {
                 if (memory.getHearts() < 100) {
@@ -187,6 +192,17 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 playerData.endRelationShip(RelationshipState.SINGLE);
                 return true;
             }
+            case "armororder" -> {
+                if (entity.getProfession() == ProfessionsMCA.GUARD || entity.getProfession() == ProfessionsMCA.ARCHER) {
+                    entity.setArmorRemovedByOrder(arg.equals("off"));
+                    if (entity.isUsingCombatShield()) entity.stopUsingItem();
+                }
+                return true;
+            }
+            case "elect" -> {
+                com.ancientkira.mca.server.VillagerLeadership.elect(entity, player, arg);
+                return true;
+            }
             case "execute" -> {
                 entity.setProfession(ProfessionsMCA.OUTLAW);
                 return true;
@@ -196,7 +212,14 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 return true;
             }
             case "stay_in_village" -> {
-                entity.setProfession(BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(VillagerProfession.NONE).value());
+                var destination=com.ancientkira.mca.server.world.data.VillageManager.get(player.level()).findNearestVillage(player);
+                if(destination.isEmpty() || !destination.get().hasSpace())return true;
+                boolean guest=entity.getProfession()==ProfessionsMCA.ADVENTURER || entity.getProfession()==ProfessionsMCA.WANDERING_TRADER;
+                entity.getResidency().leaveHome();
+                entity.releasePoi(MemoryModuleType.HOME);entity.getBrain().eraseMemory(MemoryModuleType.HOME);
+                entity.releasePoi(MemoryModuleType.JOB_SITE);entity.getBrain().eraseMemory(MemoryModuleType.JOB_SITE);
+                entity.getResidency().joinVillage(destination.get());
+                if(guest)entity.setProfession(BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(VillagerProfession.NONE).value());
                 entity.setDespawnDelay(0);
                 return true;
             }

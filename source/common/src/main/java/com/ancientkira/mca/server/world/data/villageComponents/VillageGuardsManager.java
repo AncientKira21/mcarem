@@ -92,25 +92,42 @@ public class VillageGuardsManager {
             }
         }
         java.util.Map<Integer, java.util.Set<net.minecraft.core.BlockPos>> staffed = new java.util.HashMap<>();
-        for (var worker : village.getResidents(world)) {
-            if (!worker.isAlive() || worker.isKidnapped()) continue;
+        java.util.Set<net.minecraft.core.BlockPos> outdoorWorkplaces = new java.util.HashSet<>();
+        // Contributions follow staffed workplaces, including children not yet registered as residents.
+        for (var entity : world.getAllEntities()) {
+            if (!(entity instanceof VillagerEntityMCA worker) || !worker.isAlive() || worker.isKidnapped()
+                    || worker.getAgeState() == com.ancientkira.mca.entity.ai.relationship.AgeState.BABY) continue;
             var profession = worker.getVillagerData().profession();
             if (!profession.is(VillagerProfession.ARMORER) && !profession.is(VillagerProfession.WEAPONSMITH)
                     && !profession.is(VillagerProfession.TOOLSMITH)) continue;
-            worker.getBrain().getMemoryInternal(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE)
-                    .filter(site -> site.dimension().equals(world.dimension()))
+            var workplace = worker.getBrain().getMemoryInternal(net.minecraft.world.entity.ai.memory.MemoryModuleType.JOB_SITE);
+            // Young workers can have a profession before a saved JOB_SITE is established.
+            // Count their actual nearby workplace, never their profession alone.
+            if (workplace == null || workplace.isEmpty()) {
+                workplace = world.getPoiManager().findClosest(
+                        worker.getProfession().heldJobSite(),
+                        pos -> village.isWithinBorder(pos, 0)
+                                && Math.abs(pos.getY() - worker.blockPosition().getY()) <= 1,
+                        worker.blockPosition(), 4,
+                        net.minecraft.world.entity.ai.village.poi.PoiManager.Occupancy.ANY)
+                        .map(pos -> net.minecraft.core.GlobalPos.of(world.dimension(), pos));
+            }
+            workplace.filter(site -> site.dimension().equals(world.dimension()))
                     .filter(site -> world.hasChunkAt(site.pos()))
                     .ifPresent(site -> {
                         var block = world.getBlockState(site.pos());
                         boolean matches = profession.is(VillagerProfession.ARMORER) && block.is(net.minecraft.world.level.block.Blocks.BLAST_FURNACE)
                                 || profession.is(VillagerProfession.WEAPONSMITH) && block.is(net.minecraft.world.level.block.Blocks.GRINDSTONE)
                                 || profession.is(VillagerProfession.TOOLSMITH) && block.is(net.minecraft.world.level.block.Blocks.SMITHING_TABLE);
-                        if (matches) village.getBuildingAt(site.pos()).ifPresent(building ->
-                                staffed.computeIfAbsent(building.getStructureId(), key -> new java.util.HashSet<>()).add(site.pos()));
+                        if (matches) village.getBuildingAt(site.pos()).ifPresentOrElse(building ->
+                                staffed.computeIfAbsent(building.getStructureId(), key -> new java.util.HashSet<>()).add(site.pos()),
+                                () -> {
+                                    if (village.isWithinBorder(site.pos(), 0)) outdoorWorkplaces.add(site.pos());
+                                });
                     });
         }
         for (var entry : staffed.entrySet()) buildingUnits.merge(entry.getKey(), entry.getValue().size(), Math::max);
-        supplyUnits = buildingUnits.values().stream().mapToInt(Integer::intValue).sum();
+        supplyUnits = buildingUnits.values().stream().mapToInt(Integer::intValue).sum() + outdoorWorkplaces.size();
         return supplyUnits;
     }
 

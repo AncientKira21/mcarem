@@ -48,7 +48,7 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
     public static final Predicate IS_PROMISED = (villager, player) -> villager.getRelationships().isPromisedTo(player);
     public static final Predicate IS_RELATIVE = (villager, player) -> villager.getRelationships().getFamilyEntry().isRelative(player);
     public static final Predicate IS_ROMANTIC_PARTNER = IS_MARRIED.or(IS_ENGAGED).or(IS_PROMISED);
-    public static final Predicate IS_FAMILY = IS_MARRIED.or(IS_RELATIVE);
+    public static final Predicate IS_FAMILY = (villager, player) -> villager.getRelationships().getFamilyEntry().isFamilyMember(player);
     public static final Predicate IS_PARENT = (villager, player) -> villager.getRelationships().getFamilyEntry().isParent(player);
     public static final Predicate IS_KID = (villager, player) -> FamilyTree.get(villager.getRelationships().getWorld()).getOrEmpty(player).filter(n -> n.isParent(villager.getRelationships().getUUID())).isPresent();
     public static final Predicate IS_ORPHAN = (villager, player) -> villager.getRelationships().getFamilyEntry().getParents().allMatch(FamilyTreeNode::isDeceased);
@@ -95,8 +95,10 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
             // prefer center
             BlockPos pos = entityPos.offset(0, y, 0);
             if (world.getBlockState(pos).isAir() && tombstoneState.canSurvive(world, pos)) {
-                world.setBlockAndUpdate(pos, tombstoneState);
-                return Optional.of(pos);
+                if (world.setBlockAndUpdate(pos, tombstoneState)) {
+                    TombstoneBlock.Data.of(world.getBlockEntity(pos)).ifPresent(TombstoneBlock.Data::markAutomaticallyPlaced);
+                    return Optional.of(pos);
+                }
             }
 
             for (int x = -range; x <= range; x++) {
@@ -104,8 +106,10 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
                     if (x != 0 || z != 0) {
                         pos = entityPos.offset(x, y, z);
                         if (world.getBlockState(pos).isAir() && tombstoneState.canSurvive(world, pos)) {
-                            world.setBlockAndUpdate(pos, tombstoneState);
-                            return Optional.of(pos);
+                            if (world.setBlockAndUpdate(pos, tombstoneState)) {
+                                TombstoneBlock.Data.of(world.getBlockEntity(pos)).ifPresent(TombstoneBlock.Data::markAutomaticallyPlaced);
+                                return Optional.of(pos);
+                            }
                         }
                     }
                 }
@@ -206,6 +210,7 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
 
         if (burialSite != null && type != RelationshipType.STRANGER) {
             entity.getVillagerBrain().setGrieving();
+            entity.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_PERSON, with.getUUID());
             entity.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_SITE, burialSite);
             entity.getBrain().eraseMemory(MemoryModuleTypeMCA.MOURNING_POSITION);
             entity.getBrain().eraseMemory(MemoryModuleType.PATH);

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "entrypoints": {
     "fabric-datagen": [
-      "net.ancientkira.mca.fabric.datagen.CribDatagen"
+      "com.ancientkira.mca.CribDatagen"
     ]
   }
 }

@@ -27,6 +27,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
     private final Function<VillagerEntityMCA, EquipmentSet> equipmentSet;
     private int lastEquipTime;
     private boolean lastArmorWearState;
+    private boolean lastArmorRemoved;
     private int lastCheckTick = -CHECK_INTERVAL;
     private boolean cachedConditionResult;
     private EquipmentSet cachedEquipmentSet;
@@ -42,7 +43,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
     @Override
     protected boolean checkExtraStartConditions(ServerLevel world, VillagerEntityMCA villager) {
         //armor visibility settings have been changed
-        if (lastArmorWearState != villager.getVillagerBrain().getArmorWear()) {
+        if (lastArmorRemoved != villager.isArmorRemovedByOrder() || lastArmorWearState != villager.getVillagerBrain().getArmorWear()) {
             return true;
         }
 
@@ -54,7 +55,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
         }
 
         EquipmentSet set = cachedEquipmentSet;
-        if (set != null && isNakedCombatSet(set, villager)) {
+        if (isNakedCombatSet(set, villager)) {
             return false;
         }
 
@@ -64,7 +65,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
             lastEquipTime = villager.tickCount;
             return !present || set != null && !preserveMourningHands
                     && (!set.equals(appliedEquipmentSet) || shouldEnchant(villager) != appliedEnchantments
-                    || isMissingRequestedHandItem(villager, set));
+                    || isMissingRequestedHandItem(villager, set) || hasUnequippedShield(villager) || hasUnequippedGun(villager));
         } else if (villager.tickCount - lastEquipTime > COOLDOWN) {
             return present;
         } else {
@@ -81,6 +82,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
     }
 
     private void equipBestWeapon(VillagerEntityMCA villager, Item fallback) {
+        if (com.ancientkira.mca.entity.ai.GunCompatibility.equipSupplied(villager)) return;
         if (villager.getItemBySlot(villager.getDominantSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)) return;
         ItemStack stack = InventoryUtils.getBestSword(villager.getInventory()).orElse(fallback == null ? ItemStack.EMPTY : new ItemStack(fallback));
         if (fallback != null && new ItemStack(fallback).getMaxDamage() > stack.getMaxDamage()) stack = new ItemStack(fallback);
@@ -88,6 +90,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
     }
 
     private void equipBestRanged(VillagerEntityMCA villager, Item fallback) {
+        if (com.ancientkira.mca.entity.ai.GunCompatibility.equipSupplied(villager)) return;
         if (villager.getItemBySlot(villager.getDominantSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)) return;
         ItemStack stack = InventoryUtils.getBestRanged(villager.getInventory()).orElse(fallback == null ? ItemStack.EMPTY : new ItemStack(fallback));
         villager.setItemSlot(villager.getDominantSlot(), enchantSupplied(villager, stack, villager.getDominantSlot()));
@@ -98,6 +101,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
         super.start(world, villager, time);
 
         lastArmorWearState = villager.getVillagerBrain().getArmorWear();
+        lastArmorRemoved = villager.isArmorRemovedByOrder();
         boolean wear = cachedConditionResult;
         EquipmentSet set = cachedEquipmentSet;
 
@@ -106,7 +110,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
             cachedEquipmentSet = set;
         }
 
-        if (set != null && isNakedCombatSet(set, villager)) {
+        if (isNakedCombatSet(set, villager)) {
             return;
         }
 
@@ -144,6 +148,9 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
                         }
                     }
                 }
+                if (villager.isArmorRemovedByOrder() && offHand.has(net.minecraft.core.component.DataComponents.BLOCKS_ATTACKS)) {
+                    if (!keepSuppliedShieldIfBagFull(villager, offHand)) offHand = ItemStack.EMPTY;
+                }
                 if (!villager.getItemBySlot(villager.getOpposingSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)) {
                     villager.setItemSlot(villager.getOpposingSlot(), offHand);
                 }
@@ -151,14 +158,17 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
                 if (!villager.getItemBySlot(villager.getDominantSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)) {
                     villager.setItemInHand(villager.getDominantHand(), ItemStack.EMPTY);
                 }
-                if (!villager.getItemBySlot(villager.getOpposingSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)) {
-                    villager.setItemInHand(villager.getOpposingHand(), ItemStack.EMPTY);
+                if (!villager.getItemBySlot(villager.getOpposingSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)
+                        && !(villager.getVillagerBrain().getArmorWear()
+                            && villager.getItemBySlot(villager.getOpposingSlot()).has(net.minecraft.core.component.DataComponents.BLOCKS_ATTACKS))) {
+                    if(!keepSuppliedShieldIfBagFull(villager,villager.getItemBySlot(villager.getOpposingSlot())))
+                        villager.setItemInHand(villager.getOpposingHand(), ItemStack.EMPTY);
                 }
             }
         }
 
         //armor
-        if (wear || villager.getVillagerBrain().getArmorWear()) {
+        if (!villager.isArmorRemovedByOrder() && (wear || villager.getVillagerBrain().getArmorWear())) {
             if (!com.ancientkira.mca.registry.ProfessionsMCA.isRaider(villager.getProfession())
                     || !villager.getItemBySlot(EquipmentSlot.HEAD).is(net.minecraft.tags.ItemTags.BANNERS)) {
                 equipBestArmor(villager, EquipmentSlot.HEAD, set.getHead());
@@ -175,7 +185,7 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
     }
 
     private static boolean shouldEnchant(VillagerEntityMCA person) {
-        return person.isGuard() && person.getResidency().getHomeVillage()
+        return person.isGuard() && person.getResidency().getEquipmentVillage()
                 .map(v -> v.getVillageGuardsManager().suppliesEnchantedEquipment()).orElse(false);
     }
 
@@ -198,32 +208,15 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
     }
 
     private static boolean isNakedCombatSet(EquipmentSet set, VillagerEntityMCA villager) {
-        return set == EquipmentSet.NAKED
-                && villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).isPresent();
+        return (set == null || set == EquipmentSet.NAKED)
+                && !villager.isKidnapped()
+                && (villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).isPresent()
+                    || com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.needsDefensiveEquipment(villager));
     }
 
     private static EquipmentSet orientForDominantHand(VillagerEntityMCA villager, EquipmentSet set) {
-        if (villager.getDominantHand() != InteractionHand.OFF_HAND) {
-            return set;
-        }
-        if (set == EquipmentSet.VINDICATOR) {
-            return EquipmentSet.VINDICATOR_LEFT;
-        }
-        if (set == EquipmentSet.PILLAGER) {
-            return EquipmentSet.PILLAGER_LEFT;
-        }
-        if (set == EquipmentSet.GUARD_0) {
-            return EquipmentSet.GUARD_0_LEFT;
-        }
-        if (set == EquipmentSet.ARCHER_0) {
-            return EquipmentSet.ARCHER_0_LEFT;
-        }
-        if (set == EquipmentSet.ARCHER_1) {
-            return EquipmentSet.ARCHER_1_LEFT;
-        }
-        if (set == EquipmentSet.ARCHER_2) {
-            return EquipmentSet.ARCHER_2_LEFT;
-        }
+        // EquipmentSet hand entries describe weapon/shield roles. The equip code
+        // already maps those roles to the villager's dominant/opposing slots.
         return set;
     }
 
@@ -233,15 +226,42 @@ public class EquipmentTask extends Behavior<VillagerEntityMCA> {
                && !villager.getVillagerBrain().isPanicking();
     }
 
+    private static boolean keepSuppliedShieldIfBagFull(VillagerEntityMCA person,ItemStack shield){
+        var data=shield.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA);
+        if(data==null || !data.copyTag().getBooleanOr("mcaSuppliedShield",false))return false;
+        var inventory=person.getInventory();
+        for(int i=0;i<inventory.getContainerSize();i++)if(inventory.getItem(i)==shield)return false;
+        return !inventory.addItem(shield.copy()).isEmpty();
+    }
+
+    private static boolean hasUnequippedShield(VillagerEntityMCA person) {
+        if (person.isArmorRemovedByOrder() || !person.usesCombatShield()
+                || person.getItemBySlot(person.getOpposingSlot()).has(net.minecraft.core.component.DataComponents.DEATH_PROTECTION)
+                || person.getItemBySlot(person.getOpposingSlot()).has(net.minecraft.core.component.DataComponents.BLOCKS_ATTACKS)) return false;
+        for (int i = 0; i < person.getInventory().getContainerSize(); i++) {
+            if (person.getInventory().getItem(i).has(net.minecraft.core.component.DataComponents.BLOCKS_ATTACKS)) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasUnequippedGun(VillagerEntityMCA person){
+        if(!com.ancientkira.mca.entity.ai.GunCompatibility.eligible(person)
+                || com.ancientkira.mca.entity.ai.GunCompatibility.hand(person)!=null)return false;
+        for(int i=0;i<person.getInventory().getContainerSize();i++)
+            if(com.ancientkira.mca.entity.ai.GunCompatibility.isGun(person.getInventory().getItem(i)))return true;
+        return false;
+    }
+
     private static boolean isMissingRequestedHandItem(VillagerEntityMCA villager, EquipmentSet set) {
         return isMissingRequestedItem(villager.getItemBySlot(villager.getDominantSlot()), set.getMainHand())
-                || isRequestedItem(set.getGetOffHand()) && villager.getItemBySlot(villager.getOpposingSlot()).isEmpty();
+                || !villager.isArmorRemovedByOrder() && isRequestedItem(set.getGetOffHand()) && villager.getItemBySlot(villager.getOpposingSlot()).isEmpty();
     }
 
     private static boolean isMissingRequestedItem(ItemStack equipped, Item requested) {
         if (!isRequestedItem(requested)) {
             return false;
         }
+        if (com.ancientkira.mca.entity.ai.GunCompatibility.isGun(equipped)) return false;
         if (requested instanceof ProjectileWeaponItem) {
             return !(equipped.getItem() instanceof ProjectileWeaponItem);
         }

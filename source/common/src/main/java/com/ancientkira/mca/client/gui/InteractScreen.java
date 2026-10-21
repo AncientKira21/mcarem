@@ -191,32 +191,36 @@ public class InteractScreen extends AbstractDynamicScreen {
             drawTooltip(context, villager.asEntity().getName(), 10, 28);
         }
 
-        //age or profession
-        drawTooltip(context, villager.asEntity().isBaby() ? villager.getAgeState().getName() : villager.getProfessionText(), 10, 30 + h);
+        // Young villagers show both their age and the profession they can now practise.
+        int extraRow = villager.asEntity().isBaby() ? 1 : 0;
+        if (extraRow != 0) {
+            drawTooltip(context, villager.getAgeState().getName(), 10, 30 + h);
+        }
+        drawTooltip(context, villager.getProfessionText(), 10, 30 + h * (1 + extraRow));
 
         VillagerBrain<?> brain = villager.getVillagerBrain();
 
         //mood
         drawTooltip(context,
                 Component.translatable("gui.interact.label.mood", brain.getMood().getText())
-                        .withStyle(brain.getMood().getColor()), 10, 30 + h * 2);
+                        .withStyle(brain.getMood().getColor()), 10, 30 + h * (2 + extraRow));
 
         //personality
-        if (hoveringOverText(10, 30 + h * 3, 128)) {
-            drawTooltip(context, brain.getPersonality().getDescription(), 10, 30 + h * 3);
+        if (hoveringOverText(10, 30 + h * (3 + extraRow), 128)) {
+            drawTooltip(context, brain.getPersonality().getDescription(), 10, 30 + h * (3 + extraRow));
         } else {
             //White as we don't know if a personality is negative
-            drawTooltip(context, Component.translatable("gui.interact.label.personality", brain.getPersonality().getName()).withStyle(ChatFormatting.WHITE), 10, 30 + h * 3);
+            drawTooltip(context, Component.translatable("gui.interact.label.personality", brain.getPersonality().getName()).withStyle(ChatFormatting.WHITE), 10, 30 + h * (3 + extraRow));
         }
 
         //traits
         Set<Traits.Trait> traits = villager.getTraits().getTraits();
         if (!traits.isEmpty()) {
-            if (hoveringOverText(10, 30 + h * 4, 128)) {
+            if (hoveringOverText(10, 30 + h * (4 + extraRow), 128)) {
                 //details
                 List<Component> traitText = traits.stream().map(Traits.Trait::getDescription).collect(Collectors.toList());
                 traitText.addFirst(Component.translatable("traits.title"));
-                drawTooltip(context, traitText, 10, 30 + h * 4);
+                drawTooltip(context, traitText, 10, 30 + h * (4 + extraRow));
             } else {
                 //list
                 MutableComponent traitText = Component.translatable("traits.title");
@@ -226,7 +230,7 @@ public class InteractScreen extends AbstractDynamicScreen {
                     }
                     traitText.append(t);
                 });
-                drawTooltip(context, traitText, 10, 30 + h * 4);
+                drawTooltip(context, traitText, 10, 30 + h * (4 + extraRow));
             }
         }
 
@@ -383,6 +387,11 @@ public class InteractScreen extends AbstractDynamicScreen {
             } else {
                 setLayout("main");
             }
+        } else if (id.equals("gui.button.hangouttime")) {
+            var choices = java.util.List.of("morning", "afternoon", "evening").stream()
+                    .map(period -> new SearchableChoiceScreen.Choice(period, Component.translatable("mca.hangout." + period).getString())).toList();
+            minecraft.setScreen(new SearchableChoiceScreen(this, Component.translatable("gui.button.hangouttime"), choices,
+                    choice -> Network.sendToServer(new InteractionVillagerMessage("hangouttime." + choice.id(), villager.asEntity().getUUID()))));
         } else if (id.equals("gui.button.locations")) {
             setLayout("locations");
         } else if (button.notifyServer()) {

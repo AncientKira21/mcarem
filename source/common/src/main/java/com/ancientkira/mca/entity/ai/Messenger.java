@@ -61,6 +61,12 @@ public interface Messenger extends EntityWrapper {
     }
 
     default MutableComponent getTranslatable(Player target, String phraseId, Object... params) {
+        if (asEntity() instanceof VillagerEntityMCA person
+                && person.getRelationships().getFamilyEntry().isFamilyMember(target.getUUID())
+                && phraseId.startsWith("dialogue.")
+                && (phraseId.contains(".fail") || phraseId.equals("dialogue.busy") || phraseId.equals("dialogue.goaway"))) {
+            phraseId = person.isTooBusyToTalk() ? "family.dialogue.scared" : "family.dialogue.negative";
+        }
         String genderString = "";
 
         String targetName;
@@ -101,6 +107,7 @@ public interface Messenger extends EntityWrapper {
     }
 
     default void sendChatToAllAround(String phrase, Object... params) {
+        if ("villager.scream".equals(phrase) && asEntity() instanceof VillagerEntityMCA person) person.markScreaming();
         for (Player player : asEntity().level().getEntitiesOfClass(Player.class, asEntity().getBoundingBox().inflate(20))) {
             float dist = player.distanceTo(asEntity());
             sendChatMessage(getTranslatable(player, phrase, params).withStyle(dist < 10 ? ChatFormatting.WHITE : ChatFormatting.GRAY), player);

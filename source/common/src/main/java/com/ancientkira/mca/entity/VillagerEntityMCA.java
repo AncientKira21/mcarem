@@ -123,8 +123,17 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             serializer -> SynchedEntityData.defineId(VillagerEntityMCA.class, serializer)
     )).build();
     private static final EntityDataAccessor<Boolean> CASTING_SPELL = SynchedEntityData.defineId(VillagerEntityMCA.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> INFIRMARY_REST = SynchedEntityData.defineId(VillagerEntityMCA.class, EntityDataSerializers.BOOLEAN);
+    public boolean isRestingInInfirmary() { return entityData.get(INFIRMARY_REST); }
+    public void setRestingInInfirmary(boolean resting) { entityData.set(INFIRMARY_REST, resting); }
     private static final EntityDataAccessor<Boolean> CAPTIVE = SynchedEntityData.defineId(VillagerEntityMCA.class, EntityDataSerializers.BOOLEAN);
     private long shieldDisabledUntil;
+    private net.minecraft.nbt.CompoundTag portalHomeState = new net.minecraft.nbt.CompoundTag();
+    public net.minecraft.nbt.CompoundTag getPortalHomeState() { return portalHomeState; }
+    private boolean armorRemovedByOrder;
+    public boolean isArmorRemovedByOrder() { return armorRemovedByOrder; }
+    public void setArmorRemovedByOrder(boolean removed) { armorRemovedByOrder = removed; }
+
     private long kidnappedUntil;
     private int traderLlamaCount;
     private CompoundTag captivityState = new CompoundTag();
@@ -169,6 +178,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         this.archerMoveControl = new ArcherMoveControl(this);
         this.moveControl = this.archerMoveControl;
         genetics.setGender(gender);
+        this.setPathfindingMalus(PathType.LAVA, -1.0F);
+        this.setPathfindingMalus(PathType.WATER, 12.0F);
         this.setPathfindingMalus(PathType.WATER_BORDER, 16.0F);
         this.setPathfindingMalus(PathType.TRAPDOOR, 8.0F);
         this.setPathfindingMalus(PathType.ON_TOP_OF_TRAPDOOR, 8.0F);
@@ -187,7 +198,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public void setJumping(boolean jumping) {
         boolean navigationControlsClimb = this.getNavigation() instanceof MCAGroundPathNavigation navigation
-                && navigation.isControllingClimbable();
+                && (navigation.isControllingClimbable() || navigation.isControllingJump());
         super.setJumping(jumping && !navigationControlsClimb);
     }
 
@@ -275,6 +286,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         getTypeDataManager().register(builder);
         builder.define(CASTING_SPELL, false);
         builder.define(CAPTIVE, false);
+        builder.define(INFIRMARY_REST, false);
     }
 
     public void setCastingSpell(boolean casting) {
@@ -356,14 +368,18 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         SpawnGroupData data = super.finalizeSpawn(level, difficulty, spawnType, groupData);
 
         initialize(spawnType);
+        // Family ancestry never assigns a raider profession to a newborn.
+        if (spawnType == EntitySpawnReason.BREEDING) {
+            setVillagerData(getVillagerData().withProfession(level.registryAccess(), VillagerProfession.NONE));
+        }
 
         setAgeState(AgeState.byCurrentAge(getAge()));
 
         FamilyTreeNode entry = getRelationships().getFamilyEntry();
         if (!FamilyTreeNode.isValid(entry.father()) && !FamilyTreeNode.isValid(entry.mother())) {
             FamilyTree tree = FamilyTree.get(level.getLevel());
-            FamilyTreeNode father = tree.getOrCreate(UUID.randomUUID(), Names.pickCitizenName(Gender.MALE), Gender.MALE);
-            FamilyTreeNode mother = tree.getOrCreate(UUID.randomUUID(), Names.pickCitizenName(Gender.FEMALE), Gender.FEMALE);
+            FamilyTreeNode father = tree.getOrCreate(UUID.randomUUID(), FamilyNames.fullName(Names.pickCitizenName(Gender.MALE), FamilyNames.lastName(entry.getName())), Gender.MALE);
+            FamilyTreeNode mother = tree.getOrCreate(UUID.randomUUID(), FamilyNames.fullName(Names.pickCitizenName(Gender.FEMALE), FamilyNames.lastName(entry.getName())), Gender.FEMALE);
             father.setDeceased(true);
             mother.setDeceased(true);
             entry.setFather(father);
@@ -462,11 +478,13 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean doHurtTarget(ServerLevel level, Entity target) {
-        if (target == this || target.getUUID().equals(getUUID())) return false;
+        if (getAgeState() == AgeState.BABY || target == this || target.getUUID().equals(getUUID())) return false;
         boolean hurt = super.doHurtTarget(level, target);
         if (hurt) {
             attackedEntity(target);
         }
+        if (hurt && com.ancientkira.mca.server.InfirmaryCare.emergency(this))
+            com.ancientkira.mca.server.InfirmaryCare.tick(this);
         return hurt;
     }
 
@@ -475,7 +493,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     private void attackedEntity(Entity target) {
-        if (target instanceof Player player) {
+        // A guard's successful hit is combat, not a pardon for the player's offence.
+        if (target instanceof Player player && !isGuard()) {
             pardonPlayers(player);
         }
     }
@@ -533,7 +552,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             return stack.interactLivingEntity(player, this, hand);
         }
         boolean isOnBlacklist = Config.getInstance().villagerInteractionItemBlacklist.contains(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
-        if (hand.equals(InteractionHand.MAIN_HAND) && !isOnBlacklist && !stack.is(TagsMCA.Items.VILLAGER_EGGS) && canInteractWithItemStackInHand(stack) && !getVillagerBrain().isPanicking()) {
+        if (hand.equals(InteractionHand.MAIN_HAND) && !isOnBlacklist && !stack.is(TagsMCA.Items.VILLAGER_EGGS) && canInteractWithItemStackInHand(stack)) {
             //make sure dialogueType is synced in case the client needs it
             getDialogueType(player);
 
@@ -565,10 +584,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         if (stack.is(ItemsMCA.VILLAGER_EDITOR) && isAlive()) {
             return stack.interactLivingEntity(player, this, hand);
         }
-        if (!stack.is(TagsMCA.Items.VILLAGER_EGGS) && isAlive() && !isTrading() && !isSleeping() && canInteractWithItemStackInHand(stack) && !getVillagerBrain().isPanicking()) {
-            if (isBaby()) {
-                playNoTradeResponse();
-            } else if (!level().isClientSide()) {
+        if (!stack.is(TagsMCA.Items.VILLAGER_EGGS) && isAlive() && !isTrading() && !isSleeping() && canInteractWithItemStackInHand(stack)) {
+            if (!level().isClientSide()) {
                 boolean hasOffers = hasTradeOffers();
                 if (hand == InteractionHand.MAIN_HAND) {
                     if (!hasOffers && !level().isClientSide()) {
@@ -592,7 +609,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     public boolean usesCombatShield() {
-        return getProfession() == ProfessionsMCA.GUARD || getProfession() == ProfessionsMCA.VINDICATOR;
+        return !isKidnapped() && getAgeState()!=AgeState.BABY;
     }
 
     public boolean isUsingCombatShield() {
@@ -600,12 +617,24 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     private void tickCombatShield() {
+        if(getHealth()<=6.0F)prepareTotem();
+        net.minecraft.world.entity.monster.Creeper creeper = level().getEntitiesOfClass(net.minecraft.world.entity.monster.Creeper.class,
+                        getBoundingBox().inflate(10), c -> c.isAlive() && (c.isIgnited() || c.getSwelling(0.0F) > 0.0F) && hasLineOfSight(c))
+                .stream().min(java.util.Comparator.comparingDouble(this::distanceToSqr)).orElse(null);
+        boolean equipmentThreat=creeper != null
+                || com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isInDanger(this)
+                || getBrain().hasMemoryValue(MemoryModuleType.NEAREST_HOSTILE)
+                || getBrain().hasMemoryValue(MemoryModuleType.HURT_BY_ENTITY);
+        if(usesCombatShield() && (getVillagerBrain().getArmorWear() || equipmentThreat || isGuard()
+                || getProfession()==ProfessionsMCA.PILLAGER || getProfession()==ProfessionsMCA.VINDICATOR))prepareShield();
         if (!usesCombatShield() || isPeacefulRaider() || isNoAi() || level().getGameTime() < shieldDisabledUntil) {
             if (isUsingCombatShield()) stopUsingItem();
             return;
         }
         if (!getMainHandItem().has(DataComponents.BLOCKS_ATTACKS) && !getOffhandItem().has(DataComponents.BLOCKS_ATTACKS)) return;
-        LivingEntity enemy = getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).orElse(null);
+        LivingEntity enemy = getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET)
+                .or(() -> getBrain().getMemoryInternal(MemoryModuleType.HURT_BY_ENTITY))
+                .or(() -> getBrain().getMemoryInternal(MemoryModuleType.NEAREST_HOSTILE)).orElse(null);
         Entity arrow = level().getEntitiesOfClass(net.minecraft.world.entity.projectile.arrow.AbstractArrow.class,
                         getBoundingBox().inflate(16), projectile -> projectile.getOwner() != this
                                 && incomingArrowTime(projectile.position(), projectile.getDeltaMovement(),
@@ -614,16 +643,17 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
                 .stream().min(java.util.Comparator.comparingDouble(projectile ->
                         incomingArrowTime(projectile.position(), projectile.getDeltaMovement(),
                                 position().add(0, getBbHeight() * 0.5, 0), getBbWidth() * 0.5 + 0.8))).orElse(null);
-        Entity threat = arrow != null ? arrow : enemy;
-        boolean defend = arrow != null || enemy != null && enemy.isAlive() && distanceToSqr(enemy) <= 144
-                && hasLineOfSight(enemy) && tickCount % 30 < 20;
+        Entity threat = creeper != null ? creeper : (arrow != null ? arrow : enemy);
+        boolean rangedWeapon = com.ancientkira.mca.entity.ai.RangedWeaponHelper.isHoldingSupportedWeapon(this);
+        boolean defend = creeper != null || arrow != null || (!rangedWeapon && enemy != null && enemy.isAlive() && distanceToSqr(enemy) <= 144
+                && hasLineOfSight(enemy) && tickCount % 30 < 20);
         if (!defend) {
             if (isUsingCombatShield()) stopUsingItem();
             return;
         }
         getLookControl().setLookAt(threat, 90.0F, 90.0F);
-        if (arrow != null) {
-            float facing = (float) (Math.atan2(arrow.getZ() - getZ(), arrow.getX() - getX()) * 180 / Math.PI) - 90;
+        if (creeper != null || arrow != null) {
+            float facing = (float) (Math.atan2(threat.getZ() - getZ(), threat.getX() - getX()) * 180 / Math.PI) - 90;
             setYRot(facing);
             setYBodyRot(facing);
             setYHeadRot(facing);
@@ -645,6 +675,27 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         if (time < 0 || time > 12) return -1;
         Vec3 predicted = arrow.add(velocity.scale(time)).add(0, -0.025 * time * time, 0);
         return predicted.distanceToSqr(target) <= radius * radius ? time : -1;
+    }
+
+    private void prepareShield(){
+        if(armorRemovedByOrder || isNoAi() || isKidnapped() || isUsingCombatShield()
+                || getMainHandItem().has(DataComponents.BLOCKS_ATTACKS) || getOffhandItem().has(DataComponents.BLOCKS_ATTACKS))return;
+        if(getOffhandItem().has(DataComponents.DEATH_PROTECTION))return;
+        var bag=getInventory();
+        for(int i=0;i<bag.getContainerSize();i++){
+            ItemStack stack=bag.getItem(i);
+            if(!stack.has(DataComponents.BLOCKS_ATTACKS))continue;
+            ItemStack replaced=getOffhandItem();
+            boolean stored=false,room=stack.getCount()==1||replaced.isEmpty();
+            for(int n=0;n<bag.getContainerSize();n++){if(bag.getItem(n)==replaced)stored=true;if(bag.getItem(n).isEmpty())room=true;}
+            if(!stored&&!room)continue;
+            ItemStack shield=bag.removeItem(i,1);
+            var shieldData=shield.getOrDefault(DataComponents.CUSTOM_DATA,net.minecraft.world.item.component.CustomData.EMPTY).copyTag();
+            shieldData.putBoolean("mcaSuppliedShield",true);
+            shield.set(DataComponents.CUSTOM_DATA,net.minecraft.world.item.component.CustomData.of(shieldData));
+            if(!stored&&!replaced.isEmpty())bag.addItem(replaced);
+            setItemSlot(EquipmentSlot.OFFHAND,shield);return;
+        }
     }
 
     private void prepareTotem() {
@@ -699,6 +750,12 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         return blocked;
     }
 
+    /** NPC trades use merchant stock and experience without firing a player-only trade event. */
+    public void notifyVillagerTrade(net.minecraft.world.item.trading.MerchantOffer offer) {
+        offer.increaseUses();
+        rewardTradeXp(offer);
+    }
+
     public boolean hasTradeOffers() {
         return !getOffers().isEmpty();
     }
@@ -721,7 +778,14 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             MCA.LOGGER.warn("Removed {} invalid villager trade(s) with empty result for villager {} (profession {}, level {})",
                     removed, getUUID(), getProfessionId(), getVillagerData().level());
         }
+        com.ancientkira.mca.server.MedicalInsurance.prepareOffers(this, offers);
         return offers;
+    }
+
+    @Override
+    public void notifyTrade(net.minecraft.world.item.trading.MerchantOffer offer) {
+        super.notifyTrade(offer);
+        com.ancientkira.mca.server.MedicalInsurance.purchase(this, offer);
     }
 
     @Override
@@ -809,8 +873,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
                 && getProfession() != ProfessionsMCA.GUARD
                 && Config.getInstance().enableInfection
                 && random.nextFloat() < Config.getInstance().zombieBiteInfectionChance
-                && random.nextFloat() > (getVillagerData().level() - 1) * Config.getInstance().infectionChanceDecreasePerLevel
-                && (getResidency().getHomeVillage().filter(v -> v.hasBuilding("infirmary")).isEmpty() || random.nextBoolean())) {
+                && random.nextFloat() > (getVillagerData().level() - 1) * Config.getInstance().infectionChanceDecreasePerLevel) {
                 setInfected(true);
                 sendChatToAllAround("villager.bitten");
                 MCA.LOGGER.info("{} has been infected", getName());
@@ -825,8 +888,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             damageAmount *= 0.0f;
         }
 
-        if (damageAmount > 0 && (damageAmount >= getHealth() + getAbsorptionAmount()
-                || getHealth() <= getMaxHealth() * 0.25F)) prepareTotem();
+        if (damageAmount > 0 && getHealth() <= 6.0F) prepareTotem();
         boolean hurt = super.hurtServer(level, source, damageAmount);
         if (hurt && attacker instanceof VillagerEntityMCA enemy
                 && com.ancientkira.mca.server.VillageWarfare.isEnemy(this, enemy)) {
@@ -951,6 +1013,17 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         }
     }
 
+    public void adoptTraderLlamas(Entity previousTrader) {
+        if (!(level() instanceof ServerLevel world)) return;
+        traderLlamaCount = 0;
+        for (var llama : world.getEntitiesOfClass(net.minecraft.world.entity.animal.equine.TraderLlama.class,
+                getBoundingBox().inflate(32), companion -> companion.getLeashHolder() == previousTrader
+                        || companion.getLeashHolder() == this)) {
+            llama.setLeashedTo(this, true);
+            traderLlamaCount++;
+        }
+    }
+
     private void tickTraderLlamas() {
         if (getProfession() == ProfessionsMCA.WANDERING_TRADER && tickCount % 20 == 0
                 && !isClothingLocked() && !getClothes().contains("/cultist/")
@@ -985,10 +1058,16 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         }
     }
 
+    private CompoundTag hangoutState = new CompoundTag();
+    public CompoundTag getHangoutState() { return hangoutState; }
+    private CompoundTag miningWorkState = new CompoundTag();
+    public CompoundTag getMiningWorkState() { return miningWorkState; }
+
     public boolean isKidnapped() { return level().isClientSide() ? entityData.get(CAPTIVE) : kidnappedUntil > 0; }
 
     public boolean beginKidnapping(VillagerEntityMCA captor) {
         if (level().isClientSide() || isKidnapped() || !isAlive() || ProfessionsMCA.isRaider(getProfession())
+                || getAgeState() == AgeState.BABY
                 || !ProfessionsMCA.isRaider(captor.getProfession()) || captor.isPeacefulRaider()
                 || com.ancientkira.mca.server.RaiderSocial.isFamily(captor, this)) return false;
         com.ancientkira.mca.server.ClericAid.onCaptured(this);
@@ -1172,6 +1251,14 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         captivityState = new CompoundTag();
     }
 
+    @Override
+    public boolean isPushable() {
+        // Entity crowding must not force villagers over lava banks or pin swimmers.
+        // Damage knockback uses its own motion path and remains unchanged.
+        return super.isPushable() && !isInLava()
+                && !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.lavaNear(level(), getBoundingBox(), 0.75);
+    }
+
     public boolean isGuard() {
         return getProfession() == ProfessionsMCA.GUARD || getProfession() == ProfessionsMCA.ARCHER;
     }
@@ -1188,14 +1275,52 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         return 2;
     }
 
+    private long nextPuddleSlip;
+    private long nextPuddleCheck;
+
+    private void tickPuddleSlip() {
+        if (!(level() instanceof ServerLevel world) || !isAlive()) return;
+        long now = world.getGameTime();
+        if (now < nextPuddleCheck) return;
+        nextPuddleCheck = now + 20;
+        if (now < nextPuddleSlip || isKidnapped() || isSleeping() || isPassenger() || !onGround()
+                || isInWater() || isInLava() || getAgeState() == AgeState.BABY) return;
+        // AI mobs use movement speeds rather than consistently setting the sprint flag.
+        boolean running = isSprinting() || getSpeed() > getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED) * 0.75;
+        if (!running || getDeltaMovement().horizontalDistanceSqr() < 0.01) return;
+        var feet = level().getBlockState(blockPosition());
+        var floor = level().getBlockState(getBlockPosBelowThatAffectsMyMovement());
+        var waterlogged = net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED;
+        boolean wet = feet.hasProperty(waterlogged) && feet.getValue(waterlogged)
+                || floor.hasProperty(waterlogged) && floor.getValue(waterlogged);
+        if (!wet || getRandom().nextFloat() >= 0.05F) return;
+        nextPuddleSlip = now + 200;
+        // A stumble slows the villager; it must not launch them toward nearby hazards.
+        setSprinting(false);
+        setDeltaMovement(getDeltaMovement().multiply(0.25, 1, 0.25));
+        var slip = new DamageSource(damageSources().generic().typeHolder()) {
+            @Override public Component getLocalizedDeathMessage(net.minecraft.world.entity.LivingEntity victim) {
+                return Component.translatable("death.fell.accident.water", victim.getDisplayName());
+            }
+        };
+        hurtServer(world, slip, 4.0F);
+    }
+
     @Override
     public void aiStep() {
         int oldAge = getAge();
         updateSwingTime();
 
         super.aiStep();
+        if (!level().isClientSide() && tickCount % 20 == 0) {
+            FamilyNames.applyPendingSurname(this);
+            com.ancientkira.mca.server.RevivalCelebration.tick(this);
+        }
+        if (!level().isClientSide()) isTooBusyToTalk();
         tickKidnapping();
         if (isKidnapped()) return;
+        tickPuddleSlip();
+        if (!isAlive()) return;
 
         if (getTraits().hasTrait(Traits.NO_AGING)) {
             setAge(oldAge);
@@ -1229,6 +1354,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             if (tickCount % 5 == 0) {
                 com.ancientkira.mca.entity.ai.brain.tasks.CloseRememberedDoorsTask.tickDoors((ServerLevel) level(), this);
             }
+            com.ancientkira.mca.server.DroppedEmeraldTrading.tick(this);
+            com.ancientkira.mca.server.VillagerTrading.tick(this);
             tickTraderLlamas();
             tickDespawnDelay();
 
@@ -1245,8 +1372,21 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             com.ancientkira.mca.server.PillagerRaids.tick(this);
             com.ancientkira.mca.server.VillageWarfare.tickCombat(this);
 
+            com.ancientkira.mca.server.GuardPardons.tick(this);
+            com.ancientkira.mca.server.ChildSafety.tick(this);
+            com.ancientkira.mca.server.InfirmaryCare.tick(this);
             com.ancientkira.mca.server.ClericAid.tick(this);
+            com.ancientkira.mca.server.MedicalInsurance.tick(this);
+            getInteractions().getInteractingPlayer().ifPresent(player -> {
+                getLookControl().setLookAt(player.getX(), player.getEyeY(), player.getZ(), 30, 30);
+                getBrain().setMemory(MemoryModuleType.LOOK_TARGET,
+                        new net.minecraft.world.entity.ai.behavior.EntityTracker(player, true));
+            });
             com.ancientkira.mca.server.CaptiveRescue.tick(this);
+            com.ancientkira.mca.server.VillagerHangouts.tick(this);
+            com.ancientkira.mca.entity.ai.brain.tasks.PatrolVillageTask.keepRoutinePatrolInside(this);
+            getResidency().tickReturn();
+            com.ancientkira.mca.server.PortalHomecoming.tick(this);
             tickCombatShield();
             inventory.update(this);
 
@@ -1456,6 +1596,25 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     @Override
+    public void updateSwimming() {
+        // Pose and swimming flags are replicated to clients; clients only interpolate them.
+        if (level().isClientSide()) return;
+        boolean deepWater = level().getFluidState(blockPosition().above()).is(net.minecraft.tags.FluidTags.WATER)
+                || isSwimming() && !onGround();
+        boolean swim = isAlive() && !isPassenger() && !isKidnapped() && !isSleeping()
+                && isInWater() && !isInLava() && deepWater
+                && getDeltaMovement().horizontalDistanceSqr() > 0.0004;
+        setSwimming(swim);
+        if (swim) {
+            if (getPose() != Pose.SWIMMING) setPose(Pose.SWIMMING);
+        } else if (getPose() == Pose.SWIMMING) {
+            // Do not stand up into a low ceiling while leaving the water.
+            var standing = getDefaultDimensions(Pose.STANDING).makeBoundingBox(position());
+            if (!level().getBlockCollisions(this, standing).iterator().hasNext()) setPose(Pose.STANDING);
+        }
+    }
+
+    @Override
     public EntityDimensions getDefaultDimensions(Pose pose) {
         Entity vehicle = getVehicle();
         if (vehicle instanceof Player) {
@@ -1468,6 +1627,10 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
         float height = getVerticalScaleFactor() * 2.0F;
         float width = getHorizontalScaleFactor() * 0.6F;
+        if (pose == Pose.SWIMMING) {
+            float swimHeight = Math.min(height, getVerticalScaleFactor() * 0.6F);
+            return EntityDimensions.scalable(width, swimHeight).withEyeHeight(swimHeight * (2.0F / 3.0F));
+        }
 
         return EntityDimensions.scalable(width, height).withAttachments(EntityAttachments.builder()
                 .attach(EntityAttachment.VEHICLE, 0.0F, getRawVerticalScaleFactor() * VEHICLE_ATTACHMENT_Y, 0.0F));
@@ -1521,6 +1684,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public void die(DamageSource cause) {
+        com.ancientkira.mca.server.VillagerHangouts.cancelAppointment(this);
         com.ancientkira.mca.server.PillagerRaids.onDeath(this, cause);
         // deselect equipment as this messes with MobEntities equipment dropping
         for (EquipmentSlot slot : EquipmentSlot.values()) {
@@ -1588,13 +1752,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public SoundEvent getDeathSound() {
-        if (Config.getInstance().useMCAVoices) {
-            return getGenetics().getGender() == Gender.MALE ? SoundsMCA.VILLAGER_MALE_SCREAM : SoundsMCA.VILLAGER_FEMALE_SCREAM;
-        } else if (Config.getInstance().useVanillaVoices) {
-            return super.getDeathSound();
-        } else {
-            return SoundsMCA.SILENT;
-        }
+        if (!level().isClientSide()) level().broadcastEntityEvent(this, Status.MCA_VILLAGER_SCREAM);
+        return SoundsMCA.SILENT;
     }
 
     public SoundEvent getSurprisedSound() {
@@ -1650,18 +1809,23 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     protected final SoundEvent getHurtSound(DamageSource cause) {
-        if (Config.getInstance().useMCAVoices) {
-            return getGenetics().getGender() == Gender.MALE ? SoundsMCA.VILLAGER_MALE_HURT : SoundsMCA.VILLAGER_FEMALE_HURT;
-        } else if (Config.getInstance().useVanillaVoices) {
-            return super.getHurtSound(cause);
-        } else {
-            return SoundsMCA.SILENT;
-        }
+        if (!level().isClientSide()) level().broadcastEntityEvent(this, Status.MCA_VILLAGER_HURT);
+        return SoundsMCA.SILENT;
+    }
+
+    private long panicTalkBlockedUntil;
+
+    public void markScreaming() {
+        panicTalkBlockedUntil = level().getGameTime() + 60;
+    }
+
+    public boolean isTooBusyToTalk() {
+        return level().getGameTime() < panicTalkBlockedUntil;
     }
 
     public final void playWelcomeSound() {
-        if (Config.getInstance().useMCAVoices && !getVillagerBrain().isPanicking() && getAgeState() != AgeState.BABY) {
-            playSound(getGenetics().getGender() == Gender.MALE ? SoundsMCA.VILLAGER_MALE_GREET : SoundsMCA.VILLAGER_FEMALE_GREET, getSoundVolume(), getVoicePitch());
+        if (!level().isClientSide() && !isTooBusyToTalk() && getAgeState() != AgeState.BABY) {
+            level().broadcastEntityEvent(this, Status.MCA_VILLAGER_GREETING);
         }
     }
 
@@ -1736,18 +1900,18 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         if (getVillagerBrain() != null) {
             MoveState state = getVillagerBrain().getMoveState();
             if (state != MoveState.MOVE) {
-                name = name.plainCopy().append(" (").append(state.getName()).append(")");
+                name = name.copy().append(" (").append(state.getName()).append(")");
             }
             Chore chore = getVillagerBrain().getCurrentJob();
             if (chore != Chore.NONE) {
-                name = name.plainCopy().append(" (").append(chore.getName()).append(")");
+                name = name.copy().append(" (").append(chore.getName()).append(")");
             }
         }
 
         if (isInfected()) {
-            return name.plainCopy().withStyle(ChatFormatting.GREEN);
+            return name.copy().withStyle(ChatFormatting.GREEN);
         } else if (getProfession() == ProfessionsMCA.OUTLAW) {
-            return name.plainCopy().withStyle(ChatFormatting.RED);
+            return name.copy().withStyle(ChatFormatting.RED);
         }
         return name;
     }
@@ -1800,6 +1964,11 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     public boolean setAgeState(AgeState state) {
         if (VillagerLike.super.setAgeState(state)) {
             if (!level().isClientSide()) {
+                if (state == AgeState.BABY) {
+                    com.ancientkira.mca.server.RaiderCombat.clear(this);
+                    getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                    stopUsingItem();
+                }
                 // trigger grow up advancements
                 relations.getParents()
                         .filter(ServerPlayer.class::isInstance)
@@ -1868,14 +2037,23 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         this.brain.setMemory(MemoryModuleType.LOOK_TARGET, new BlockPosTracker(pos));
     }
 
+    private int villageDanceUntil;
+
+    public boolean isVillageDancing() { return tickCount < villageDanceUntil && !getVillagerBrain().isPanicking(); }
+
     @Override
     public void handleEntityEvent(byte id) {
         switch (id) {
+            case -124 -> villageDanceUntil = tickCount + 25;
+            case -125 -> villageDanceUntil = 0;
             case Status.MCA_VILLAGER_NEG_INTERACTION ->
                     level().addAlwaysVisibleParticle(ParticleTypesMCA.NEG_INTERACTION, true, getX(), getEyeY() + 0.5, getZ(), 0, 0, 0);
             case Status.MCA_VILLAGER_POS_INTERACTION ->
                     level().addAlwaysVisibleParticle(ParticleTypesMCA.POS_INTERACTION, true, getX(), getEyeY() + 0.5, getZ(), 0, 0, 0);
             case Status.MCA_VILLAGER_TRAGEDY -> this.addParticlesAroundSelf(ParticleTypes.DAMAGE_INDICATOR);
+            case Status.MCA_VILLAGER_SCREAM -> com.ancientkira.mca.ClientProxy.playVillagerScream(this);
+            case Status.MCA_VILLAGER_HURT -> com.ancientkira.mca.ClientProxy.playVillagerHurt(this);
+            case Status.MCA_VILLAGER_GREETING -> com.ancientkira.mca.ClientProxy.playVillagerGreeting(this);
             default -> super.handleEntityEvent(id);
         }
     }
@@ -1938,11 +2116,15 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             trackedData.put(key, java.util.Objects.requireNonNull(nbt.get(key)).copy());
         }
         getTypeDataManager().load(this, trackedData);
+        hangoutState = nbt.getCompound("Hangout").map(CompoundTag::copy).orElseGet(CompoundTag::new);
+        miningWorkState = nbt.getCompound("MiningWork").map(CompoundTag::copy).orElseGet(CompoundTag::new);
         traderLlamaCount = Math.max(0, Math.min(2, nbt.getIntOr("TraderLlamaCount", 0)));
         kidnappedUntil = nbt.getLongOr("KidnappedUntil", 0);
         entityData.set(CAPTIVE, kidnappedUntil > 0);
         captivityState = nbt.getCompound("CaptivityState").map(CompoundTag::copy).orElseGet(CompoundTag::new);
         if (isKidnapped()) noPhysics = isInvisible();
+        portalHomeState = nbt.getCompound("PortalHome").orElseGet(net.minecraft.nbt.CompoundTag::new).copy();
+        armorRemovedByOrder = nbt.getBooleanOr("ArmorRemovedByOrder", false);
         shieldDisabledUntil = level().getGameTime() + Math.max(0, nbt.getIntOr("ShieldCooldown", 0));
         relations.readFromNbt(nbt);
         longTermMemory.readFromNbt(nbt);
@@ -1989,9 +2171,13 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         CompoundTag nbt = new CompoundTag();
         super.addAdditionalSaveData(output);
 
+        nbt.put("Hangout", hangoutState.copy());
+        nbt.put("MiningWork", miningWorkState.copy());
         nbt.putInt("TraderLlamaCount", traderLlamaCount);
         nbt.putLong("KidnappedUntil", kidnappedUntil);
         nbt.put("CaptivityState", captivityState.copy());
+        nbt.put("PortalHome", portalHomeState.copy());
+        nbt.putBoolean("ArmorRemovedByOrder", armorRemovedByOrder);
         nbt.putInt("ShieldCooldown", (int) Math.max(0, shieldDisabledUntil - level().getGameTime()));
         relations.writeToNbt(nbt);
         longTermMemory.writeToNbt(nbt);
@@ -2060,12 +2246,12 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean isHostile() {
-        return getProfession() == ProfessionsMCA.OUTLAW
-                || ProfessionsMCA.isRaider(getProfession()) && !isPeacefulRaider();
+        return getAgeState() != AgeState.BABY && (getProfession() == ProfessionsMCA.OUTLAW
+                || ProfessionsMCA.isRaider(getProfession()) && !isPeacefulRaider());
     }
 
     public boolean isPeacefulRaider() {
-        return ProfessionsMCA.isRaider(getProfession()) && level().getDifficulty() == net.minecraft.world.Difficulty.PEACEFUL;
+        return ProfessionsMCA.isRaider(getProfession()) && (getAgeState() == AgeState.BABY || level().getDifficulty() == net.minecraft.world.Difficulty.PEACEFUL);
     }
 
     //friends will not get slapped in revenge
@@ -2095,7 +2281,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     @SuppressWarnings("deprecation")
     public void performRangedAttack(LivingEntity target, float pullProgress) {
-        if (target == this || target.getUUID().equals(getUUID())) return;
+        if (getAgeState() == AgeState.BABY || target == this || target.getUUID().equals(getUUID())) return;
         if (this.level().isClientSide() || !(this.level() instanceof ServerLevel serverLevel)) {
             return;
         }

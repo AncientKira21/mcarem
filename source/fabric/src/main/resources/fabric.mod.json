@@ -31,14 +31,15 @@
   "custom": {
     "modmenu": {
       "links": {
-        "modmenu.discord": "https://discord.gg/EjYwZUJbpf",
-        "modmenu.wiki": "https://github.com/Luke100000/minecraft-comes-alive/wiki"
+        "modmenu.discord": "",
+        "modmenu.wiki": "https://github.com/AncientKira21/mcarem/wiki"
       }
     }
   },
   "depends": {
     "fabricloader": "${fabric_loader_version_range}",
     "fabric-api": "*",
+    "mixinextras": ">=0.5.5",
     "minecraft": "${minecraft_version}",
     "java": ">=${java_version}"
   },

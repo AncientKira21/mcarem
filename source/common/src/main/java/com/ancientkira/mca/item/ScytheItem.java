@@ -54,7 +54,7 @@ public class ScytheItem extends Item {
                 }
 
                 if (!world.isClientSide() && !data.isResurrecting()) {
-                    data.startResurrecting(cure);
+                    data.startResurrecting(cure, context.getPlayer() == null ? net.minecraft.util.Util.NIL_UUID : context.getPlayer().getUUID());
                     return InteractionResult.SUCCESS;
                 }
 

@@ -2,6 +2,7 @@ package com.ancientkira.mca.server;
 
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.registry.ProfessionsMCA;
+import com.ancientkira.mca.entity.ai.MemoryModuleTypeMCA;
 import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundEvents;
@@ -23,8 +24,6 @@ import java.util.Map;
 public final class ClericAid {
     private static final Map<VillagerEntityMCA, Assignment> ASSIGNMENTS = new com.google.common.collect.MapMaker().weakKeys().makeMap();
     private static final Map<VillagerEntityMCA, Long> NEXT_CALL = new com.google.common.collect.MapMaker().weakKeys().makeMap();
-    private static final java.util.Set<VillagerEntityMCA> RECOVERING = java.util.Collections.newSetFromMap(
-            new com.google.common.collect.MapMaker().weakKeys().<VillagerEntityMCA, Boolean>makeMap());
     private static final int HELP_RADIUS = 128;
     private static final int ASSIGNMENT_TIMEOUT = 20 * 180;
     private ClericAid() { }
@@ -34,22 +33,22 @@ public final class ClericAid {
             if (entry.getKey() == person || entry.getValue().patient == person) finish(entry.getKey());
         }
         NEXT_CALL.remove(person);
-        RECOVERING.remove(person);
+        person.getBrain().eraseMemory(MemoryModuleTypeMCA.RECOVERING_FROM_CAPTIVITY);
     }
 
     public static void onRescued(VillagerEntityMCA person) {
         onCaptured(person);
-        RECOVERING.add(person);
+        person.getBrain().setMemory(MemoryModuleTypeMCA.RECOVERING_FROM_CAPTIVITY, true);
     }
 
-    public static boolean isHelping(VillagerEntityMCA person) { return ASSIGNMENTS.containsKey(person)
+    public static boolean isHelping(VillagerEntityMCA person) { return InfirmaryCare.isPatient(person) || ASSIGNMENTS.containsKey(person)
             || ASSIGNMENTS.values().stream().anyMatch(a -> a.patient == person && a.seekingCure); }
 
     public static void tick(VillagerEntityMCA person) {
         if (!(person.level() instanceof ServerLevel world) || !person.isAlive()) return;
         long now = world.getGameTime();
-        if (!person.isInfected() && person.getHealth() >= person.getMaxHealth() * 0.85F && !person.isOnFire()) {
-            RECOVERING.remove(person);
+        if (!person.isInfected() && !person.hasEffect(MobEffects.WITHER) && person.getHealth() >= person.getMaxHealth() * 0.85F && !person.isOnFire()) {
+            person.getBrain().eraseMemory(MemoryModuleTypeMCA.RECOVERING_FROM_CAPTIVITY);
         }
         if (person.tickCount % 20 == 0) {
             for (var entry : java.util.List.copyOf(ASSIGNMENTS.entrySet())) {
@@ -63,16 +62,18 @@ public final class ClericAid {
             }
         }
         if (!ProfessionsMCA.isRaider(person.getProfession()) && !person.isKidnapped() && !person.isNoAi()
-                && (person.isInfected() || person.getHealth() <= person.getMaxHealth() * 0.25F
-                    || RECOVERING.contains(person))
-                && person.tickCount % 20 == 0 && now >= NEXT_CALL.getOrDefault(person, 0L)
+                && (person.isInfected() || person.hasEffect(MobEffects.WITHER) || person.getHealth() <= person.getMaxHealth() * 0.25F
+                    || person.getBrain().hasMemoryValue(MemoryModuleTypeMCA.RECOVERING_FROM_CAPTIVITY))
+                && person.tickCount % 20 == 0
                 && ASSIGNMENTS.values().stream().noneMatch(a -> a.patient == person)) {
-            NEXT_CALL.put(person, now + 200);
-            person.sendChatToAllAround("villager.cleric_help");
+            if (now >= NEXT_CALL.getOrDefault(person, 0L)) {
+                NEXT_CALL.put(person, now + 200);
+                person.sendChatToAllAround("villager.cleric_help");
+            }
             world.getEntitiesOfClass(VillagerEntityMCA.class, person.getBoundingBox().inflate(HELP_RADIUS),
                     cleric -> cleric != person && cleric.isAlive() && !cleric.isNoAi() && !cleric.isKidnapped() && cleric.getHealth() > cleric.getMaxHealth() * 0.25F
                             && cleric.getVillagerData().profession().is(VillagerProfession.CLERIC)
-                            && !ASSIGNMENTS.containsKey(cleric) && cleric.distanceToSqr(person) <= HELP_RADIUS * HELP_RADIUS
+                            && !ASSIGNMENTS.containsKey(cleric) && !MedicalInsurance.isHelping(cleric) && cleric.distanceToSqr(person) <= HELP_RADIUS * HELP_RADIUS
                             && cleric.getInteractions().getInteractingPlayer().isEmpty())
                     .stream().min(Comparator.comparingDouble(person::distanceToSqr)).ifPresent(cleric -> {
                         ASSIGNMENTS.put(cleric, new Assignment(person, now));
@@ -87,11 +88,11 @@ public final class ClericAid {
                 || person.isKidnapped() || !patient.isAlive() || patient.isKidnapped() || patient.isNoAi()
                 || ProfessionsMCA.isRaider(patient.getProfession()) || patient.level() != world
                 || patient.distanceToSqr(person) > HELP_RADIUS * HELP_RADIUS || now >= assignment.expires
-                || !patient.isInfected() && patient.getHealth() >= patient.getMaxHealth() * 0.85F && !patient.isOnFire()) {
+                || !patient.isInfected() && !patient.hasEffect(MobEffects.WITHER) && patient.getHealth() >= patient.getMaxHealth() * 0.85F && !patient.isOnFire()) {
             finish(person);
             return;
         }
-        if (patient.isInfected() && patient.getInteractions().getInteractingPlayer().isEmpty()) {
+        if (patient.isInfected() && !InfirmaryCare.isPatient(patient) && patient.getInteractions().getInteractingPlayer().isEmpty()) {
             assignment.seekingCure = true;
             if (patient.isSleeping()) patient.stopSleeping();
             patient.getBrain().setActiveActivityIfPossible(Activity.IDLE);
@@ -102,15 +103,24 @@ public final class ClericAid {
         if (person.isSleeping()) person.stopSleeping();
         person.getBrain().setActiveActivityIfPossible(Activity.IDLE);
         person.getBrain().setMemory(MemoryModuleType.LOOK_TARGET, new EntityTracker(patient, true));
-        double treatmentRange = patient.isInfected() ? 2.0 : 6.0;
+        double treatmentRange = patient.isInfected() || patient.hasEffect(MobEffects.WITHER) ? 2.0 : 6.0;
         if (person.distanceToSqr(patient) > treatmentRange * treatmentRange || !person.hasLineOfSight(patient)) {
             person.getBrain().setMemory(MemoryModuleType.WALK_TARGET,
-                    new WalkTarget(new EntityTracker(patient, false), 0.65F, patient.isInfected() ? 1 : 3));
+                    new WalkTarget(new EntityTracker(patient, false), 0.65F, patient.isInfected() || patient.hasEffect(MobEffects.WITHER) ? 1 : 3));
             return;
         }
         person.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
         person.getNavigation().stop();
         if (now < assignment.nextPotion) return;
+        if (patient.hasEffect(MobEffects.WITHER)) {
+            person.swing(InteractionHand.MAIN_HAND);
+            world.sendParticles(new ItemParticleOption(ParticleTypes.ITEM, Items.MILK_BUCKET),
+                    patient.getX(), patient.getY() + .5, patient.getZ(), 8, .15, .1, .15, .02);
+            patient.playSound(SoundEvents.GENERIC_DRINK.value(), 1.0F, 1.0F);
+            patient.removeEffect(MobEffects.WITHER);
+            assignment.nextPotion = now + 60;
+            return;
+        }
         if (patient.isInfected()) {
             person.swing(InteractionHand.MAIN_HAND);
             world.sendParticles(new ItemParticleOption(ParticleTypes.ITEM, Items.GOLDEN_APPLE),

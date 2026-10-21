@@ -1,1 +1,50 @@
-gradlew
+#!/usr/bin/env bash
+set -eo pipefail
+
+build_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+target_version=""
+gradle_args=()
+
+usage() {
+    printf '%s\n' 'Usage: ./buildmca [--version 26.1.2|26.2|26.3] [Gradle options]' \
+        'Without --version, builds all three Minecraft versions for Fabric, Quilt, and NeoForge.'
+}
+
+while (($#)); do
+    case "$1" in
+        --version)
+            if (($# < 2)) || [[ -z "$2" || "$2" == -* ]]; then
+                printf '%s\n' 'Missing Minecraft version after --version.' >&2
+                exit 2
+            fi
+            target_version="$2"
+            shift 2
+            ;;
+        --version=*) target_version="${1#*=}"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) gradle_args+=("$1"); shift ;;
+    esac
+done
+
+version_args=()
+case "$target_version" in
+    '') ;;
+    26.1.2)
+        version_args=(-Pmca_single_version=true -Pminecraft_version=26.1.2)
+        ;;
+    26.2)
+        version_args=(-Pmca_single_version=true -Pminecraft_version=26.2
+            '-Pminecraft_version_range=[26.2,)' -Pneo_form_version=26.2-2
+            -Ploader_version=0.19.5 -Pfabric_api_version=0.161.0+26.2
+            -Pneoforge_version=26.2.0.88)
+        ;;
+    26.3)
+        version_args=(-Pmca_single_version=true -Pminecraft_version=26.3
+            '-Pminecraft_version_range=[26.3,)' -Pneo_form_version=26.3-1
+            -Ploader_version=0.19.5 -Pfabric_api_version=0.162.0+26.3
+            -Pneoforge_version=26.3.0.69-beta)
+        ;;
+    *) printf 'Unsupported Minecraft version: %s\n' "$target_version" >&2; usage >&2; exit 2 ;;
+esac
+
+exec "$build_root/gradlew" -p "$build_root" build "${version_args[@]}" "${gradle_args[@]}"

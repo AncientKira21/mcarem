@@ -21,6 +21,7 @@ public interface MessagesMCA {
         c.register(GetVillageRequest.TYPE, GetVillageRequest.STREAM_CODEC, true);
         c.register(GetVillagerRequest.TYPE, GetVillagerRequest.STREAM_CODEC, true);
         c.register(InteractionCloseRequest.TYPE, InteractionCloseRequest.STREAM_CODEC, true);
+        c.register(DiscCordFinishedMessage.TYPE, DiscCordFinishedMessage.STREAM_CODEC, true);
         c.register(InteractionDialogueInitMessage.TYPE, InteractionDialogueInitMessage.STREAM_CODEC, true);
         c.register(InteractionDialogueMessage.TYPE, InteractionDialogueMessage.STREAM_CODEC, true);
         c.register(InteractionVillagerMessage.TYPE, InteractionVillagerMessage.STREAM_CODEC, true);

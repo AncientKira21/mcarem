@@ -1,6 +1,7 @@
 package com.ancientkira.mca.client.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.client.gui.VillagerEditorScreen;
 import com.ancientkira.mca.client.model.VillagerEntityBaseModelMCA;
@@ -84,7 +85,26 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
                 return HumanoidModel.ArmPose.CROSSBOW_CHARGE;
             }
         }
+        if (!(mob.isUsingItem() && mob.getUseItem().has(net.minecraft.core.component.DataComponents.BLOCKS_ATTACKS))
+                && itemStack.getItem() instanceof net.minecraft.world.item.CrossbowItem
+                && !itemStack.getOrDefault(net.minecraft.core.component.DataComponents.CHARGED_PROJECTILES,
+                        net.minecraft.world.item.component.ChargedProjectiles.EMPTY).isEmpty()) {
+            return HumanoidModel.ArmPose.CROSSBOW_HOLD;
+        }
+        if (!(mob.isUsingItem() && mob.getUseItem().has(net.minecraft.core.component.DataComponents.BLOCKS_ATTACKS))
+                && com.ancientkira.mca.entity.ai.GunCompatibility.isGun(itemStack)) return HumanoidModel.ArmPose.BOW_AND_ARROW;
         return super.getArmPose(mob, arm);
+    }
+
+    @Override
+    protected void setupRotations(VillagerRenderState state, PoseStack poseStack, float bodyRot, float entityScale) {
+        super.setupRotations(state, poseStack, bodyRot, entityScale);
+        // Use the same whole-body swimming tilt and offset as Minecraft's player renderer.
+        if (state.swimAmount > 0 && !state.hasPose(Pose.SLEEPING) && state.deathTime <= 0) {
+            float targetAngle = state.isInWater ? -90.0F - state.xRot : -90.0F;
+            poseStack.mulPose(Axis.XP.rotationDegrees(state.swimAmount * targetAngle));
+            if (state.isVisuallySwimming) poseStack.translate(0.0F, -1.0F, 0.3F);
+        }
     }
 
     @Override
@@ -95,6 +115,26 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
     @Override
     public void extractRenderState(T entity, VillagerRenderState state, float partialTicks) {
         super.extractRenderState(entity, state, partialTicks);
+        state.mcaAnimationId = entity.getUUID();
+        state.mcaRunning = entity.isSprinting() || entity.getSpeed() > entity.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED) * 0.75;
+        state.mcaClimbing = entity.onClimbable();
+        state.mcaInWater = entity.isInWater();
+        state.mcaFalling = !entity.onGround() && !entity.isInWater() && !entity.isInLava() && entity.getDeltaMovement().y < -0.1;
+        state.mcaSleeping = entity.isSleeping();
+        if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA patient && patient.isRestingInInfirmary()) {
+            state.pose = net.minecraft.world.entity.Pose.SLEEPING;
+            var bed = entity.level().getBlockState(entity.blockPosition());
+            state.bedOrientation = bed.getBlock() instanceof net.minecraft.world.level.block.BedBlock
+                    ? bed.getValue(net.minecraft.world.level.block.BedBlock.FACING) : entity.getDirection();
+        }
+        state.mcaSwinging = entity.getAttackAnim(partialTicks) > 0;
+        if (state.nameTag != null) {
+            state.nameTag = net.minecraft.network.chat.Component.literal(
+                    com.ancientkira.mca.entity.FamilyNames.nameTag(state.nameTag.getString(),
+                            entity.getCustomName() == null ? null : entity.getCustomName().getString()))
+                    .withStyle(state.nameTag.getStyle());
+        }
+        state.isVillageDancing = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA dancer && dancer.isVillageDancing();
         state.isCastingSpell = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isCastingSpell();
         state.isKidnapped = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA captive && captive.isKidnapped();
         VillagerStateHolder holder = VillagerStateHolder.require(state);

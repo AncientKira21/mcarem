@@ -87,14 +87,17 @@ public final class ClientSkinCatalog {
         }
     }
 
+    public static void refreshEditorEntries() { mergeCatalogs(); }
+
     private static void mergeCatalogs() {
-        clothing = merge(BUILT_IN.clothing(), serverClothing);
+        clothing = merge(merge(BUILT_IN.clothing(), serverClothing), EditorLibraryCatalog.clothing());
         bodySkins = merge(BUILT_IN.bodySkins(), serverBodySkins);
         layeredHair = merge(BUILT_IN.layeredHair(), serverLayeredHair);
 
         HashMap<String, HairStyle> styles = new HashMap<>(BUILT_IN.hairStyles());
         styles.putAll(serverHairStyles);
         serverHair.values().forEach(custom -> styles.putIfAbsent(custom.getIdentifier(), HairStyle.fromHair(custom)));
+        styles.putAll(EditorLibraryCatalog.hairStyles());
         hairStyles = Map.copyOf(styles);
     }
 

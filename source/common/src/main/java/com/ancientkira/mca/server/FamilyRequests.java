@@ -54,6 +54,7 @@ public final class FamilyRequests {
             if (data.getFamilyRequests().getOrDefault(key, 0L) > now || person.getLongTermMemory().hasMemory(memory)) continue;
             person.getLongTermMemory().remember(memory, DAY);
             if (world.getRandom().nextDouble() >= Config.getInstance().familyRequestChancePerDay) continue;
+            if(!data.reserveInvitation(type,person.getUUID(),now+7*DAY))continue;
             data.updateFamilyRequest(key, now + 7 * DAY);
             if (orphan) {
                 pendingAdoption = true;
@@ -75,6 +76,7 @@ public final class FamilyRequests {
                 if (!(spouse instanceof VillagerEntityMCA other) || !available(other) || other.getAgeState() != AgeState.ADULT
                         || other.getResidency().getHomeVillage().filter(v -> v.getId() == village.getId()).isEmpty()) continue;
                 node.replaceParents(parent.getRelationships().getFamilyEntry(), Optional.of(other.getRelationships().getFamilyEntry()));
+                com.ancientkira.mca.entity.FamilyNames.inheritSurname(person);
                 record(person, Component.translatable("mca.adoption.local", person.getName().getString(), parent.getName().getString(), other.getName().getString()));
                 break;
             }
@@ -114,6 +116,7 @@ public final class FamilyRequests {
             var parent = data.getFamilyEntry();
             var spouse = data.getFamilyTree().getOrEmpty(parent.partner()).filter(node -> !node.isDeceased());
             person.getRelationships().getFamilyEntry().replaceParents(parent, spouse);
+            com.ancientkira.mca.entity.FamilyNames.inheritSurname(person);
             record(person, Component.translatable("mca.adoption.player", person.getName().getString(), player.getName().getString()));
         } else {
             data.updateFamilyRequest(key, null);

@@ -208,6 +208,9 @@ public class BabyItem extends Item {
             child.readAdditionalSaveData(TagValueInput.create(ProblemReporter.DISCARDING, child.registryAccess(), savedBaby));
         }
 
+        child.setVillagerData(child.getVillagerData().withProfession(child.registryAccess(),
+                net.minecraft.world.entity.npc.villager.VillagerProfession.NONE));
+
         child.setCustomName(stack.getOrDefault(DataComponents.CUSTOM_NAME, Component.literal("Unnamed")));
 
         WorldUtils.spawnEntity(world, child, EntitySpawnReason.BREEDING);
@@ -228,6 +231,8 @@ public class BabyItem extends Item {
                             child.getRelationships().getFamilyEntry().assignParent(entry);
                         });
             });
+
+            com.ancientkira.mca.entity.FamilyNames.inheritSurname(child);
 
             // notify parents
             Stream.of(parents.mother(), parents.father()).map(world::getEntity).filter(Objects::nonNull)

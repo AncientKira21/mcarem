@@ -9,6 +9,7 @@
     "MixinAdvancementRewards",
     "MixinCrossbowAttack",
     "MixinEntity",
+    "MixinEntitySelectorOptions",
     "MixinItemStack",
     "MixinGoat",
     "MixinInventory",
@@ -16,11 +17,13 @@
     "MixinLivingEntity",
     "MixinMilkBucketItem",
     "MixinMob",
+    "MixinLevelGraveFlowers",
     "MixinBlocksAttacks",
     "MixinMoveToTargetSink",
     "MixinProtoChunk",
     "MixinRaid",
     "RaidCountdownAccessor",
+    "PoiTypesAccessor",
     "MixinScreenHandler",
     "MixinServerGamePacketListenerImpl",
     "MixinServerPlayer",
@@ -28,9 +31,12 @@
     "MixinServerWorld",
     "MixinTranslatableContents",
     "MixinTypedInstance",
+    "MixinVillageMusicJukebox",
     "MixinVillager",
     "MixinZombie",
-    "MixinZombieVillager"
+    "MixinZombieVillager",
+    "MixinEndPortalHomecoming",
+    "MixinMedicalInsuranceTrade"
   ],
   "client": [
     "client.MixinClientLanguage",
@@ -43,6 +49,7 @@
     "client.MixinLivingEntityRenderer",
     "client.MixinLivingEntityRenderState",
     "client.MixinModel",
+    "client.MixinOptionsScreen",
     "client.MixinPlayerRenderer",
     "client.MixinSoundBufferLibrary"
   ],

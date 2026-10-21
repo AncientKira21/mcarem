@@ -22,6 +22,9 @@ if (!singleVersionBuild && !gradle.startParameter.projectProperties.containsKey(
                 '-Pminecraft_version_range=[26.2,)', '-Pneo_form_version=26.2-2',
                 '-Ploader_version=0.19.5', '-Pfabric_api_version=0.161.0+26.2',
                 '-Pneoforge_version=26.2.0.88', '--console=plain', '--non-interactive'
+        if (providers.gradleProperty('mca_build_loader').isPresent()) {
+            args '-Pmca_build_loader=' + providers.gradleProperty('mca_build_loader').get()
+        }
         mustRunAfter subprojects.collect { "${it.path}:build" }
     }
     tasks.named('build') {
@@ -38,6 +41,9 @@ if (!singleVersionBuild && !gradle.startParameter.projectProperties.containsKey(
                 '-Ploader_version=0.19.5', '-Pfabric_api_version=0.162.0+26.3',
                 '-Pneoforge_version=26.3.0.69-beta', '--console=plain', '--non-interactive'
         mustRunAfter buildMinecraft262
+        if (providers.gradleProperty('mca_build_loader').isPresent()) {
+            args '-Pmca_build_loader=' + providers.gradleProperty('mca_build_loader').get()
+        }
         mustRunAfter subprojects.collect { "${it.path}:build" }
     }
     tasks.named('build') {
@@ -71,7 +77,7 @@ allprojects {
     }
 }
 
-def mod_version = "8.2.0"
+def mod_version = "8.2.1"
 ext.mcaReleaseVersion = mod_version
 
 def getAppVersion = { ->

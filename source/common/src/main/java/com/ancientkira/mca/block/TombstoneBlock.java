@@ -316,6 +316,11 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
 
         private int resurrectionProgress;
         private boolean cure;
+        private boolean automaticallyPlaced;
+        private boolean revivalCleanupPending;
+        private boolean decorationsRegistered;
+        private CompoundTag mourningDecorations = new CompoundTag();
+        private java.util.UUID rescuer = net.minecraft.util.Util.NIL_UUID;
 
         public Data(BlockPos pos, BlockState state) {
             super(BlockEntityTypesMCA.TOMBSTONE, pos, state);
@@ -329,7 +334,8 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
             return resurrectionProgress > 0;
         }
 
-        public void startResurrecting(boolean cure) {
+        public void startResurrecting(boolean cure, java.util.UUID rescuer) {
+            this.rescuer = rescuer;
             if (shouldDiscardStoredEntity()) {
                 setEntity(null);
                 return;
@@ -342,6 +348,18 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         }
 
         public void tick() {
+            if (!decorationsRegistered && level != null) {
+                for (String key : mourningDecorations.keySet()) {
+                    try { com.ancientkira.mca.server.GraveFlowers.track(level, BlockPos.of(Long.parseLong(key)), this); }
+                    catch (NumberFormatException malformedPosition) { }
+                }
+                decorationsRegistered = true;
+            }
+            if (revivalCleanupPending) { cleanupAfterRevival(); return; }
+            if (hasEntity() && level instanceof ServerLevel world && getStoredEntityUuid()
+                    .flatMap(uuid -> FamilyTree.get(world).getOrEmpty(uuid)).filter(node -> !node.isDeceased()).isPresent()) {
+                cleanupAfterRevival(); return;
+            }
             if (hasEntity() && resurrectionProgress > 0) {
                 if (shouldDiscardStoredEntity()) {
                     resurrectionProgress = 0;
@@ -389,9 +407,6 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                             alreadySpawned = true;
                         }
 
-                        if (entity instanceof CompassionateEntity<?> compassionateEntity) {
-                            compassionateEntity.getRelationships().getFamilyEntry().setDeceased(false);
-                        }
 
                         if (entity instanceof VillagerEntityMCA villager) {
                             villager.getBrain().eraseMemory(MemoryModuleTypeMCA.LAST_GRIEVE);
@@ -408,8 +423,12 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                             );
                         }
 
-                        if (!alreadySpawned) {
-                            level.addFreshEntity(entity);
+                        if (entity != null && (alreadySpawned || level.addFreshEntity(entity))) {
+                            if (entity instanceof CompassionateEntity<?> compassionateEntity) {
+                                compassionateEntity.getRelationships().getFamilyEntry().setDeceased(false);
+                            }
+                            com.ancientkira.mca.server.RevivalCelebration.complete(entity, rescuer);
+                            cleanupAfterRevival();
                         }
                     });
                 }
@@ -459,8 +478,52 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
             }
         }
 
+        public void markAutomaticallyPlaced() { automaticallyPlaced = true; setChanged(); }
+
+        public void recordDecoration(BlockPos pos, BlockState state) {
+            mourningDecorations.putString(Long.toString(pos.asLong()), net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+            com.ancientkira.mca.server.GraveFlowers.track(level, pos, this);
+            setChanged();
+        }
+
+        public boolean ownsDecoration(BlockPos pos, BlockState state) {
+            return mourningDecorations.getString(Long.toString(pos.asLong()))
+                    .filter(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString()::equals).isPresent();
+        }
+
+        public void forgetDecoration(BlockPos pos) {
+            mourningDecorations.remove(Long.toString(pos.asLong()));
+            setChanged();
+        }
+
+        public void cleanupAfterRevival() {
+            if (!(level instanceof ServerLevel world)) return;
+            revivalCleanupPending = true;
+            if (hasEntity()) setEntity(null);
+            for (String key : java.util.List.copyOf(mourningDecorations.keySet())) {
+                BlockPos pos;
+                try { pos = BlockPos.of(Long.parseLong(key)); }
+                catch (NumberFormatException malformedPosition) { mourningDecorations.remove(key); continue; }
+                if (!world.hasChunkAt(pos)) continue;
+                boolean owned = ownsDecoration(pos, world.getBlockState(pos));
+                forgetDecoration(pos);
+                if (owned) world.removeBlock(pos, false);
+            }
+            setChanged();
+            if (!mourningDecorations.isEmpty()) return;
+            revivalCleanupPending = false;
+            if (automaticallyPlaced && world.getBlockEntity(worldPosition) == this) {
+                // Preserve water instead of deleting it along with a waterlogged headstone.
+                world.setBlockAndUpdate(worldPosition, getBlockState().getFluidState().createLegacyBlock());
+            }
+        }
+
         public boolean hasEntity() {
             return entityData.isPresent();
+        }
+
+        public Optional<UUID> getStoredEntityUuid() {
+            return entityData.flatMap(EntityData::getUuid);
         }
 
         public boolean storesEntity(UUID uuid) {
@@ -531,8 +594,13 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         protected void loadAdditional(ValueInput input) {
             super.loadAdditional(input);
             entityData = input.read("EntityData", CompoundTag.CODEC).map(EntityData::new);
+            automaticallyPlaced = input.getBooleanOr("AutomaticallyPlaced", false);
+            revivalCleanupPending = input.getBooleanOr("RevivalCleanupPending", false);
+            mourningDecorations = input.read("MourningDecorations", CompoundTag.CODEC).orElseGet(CompoundTag::new);
+            decorationsRegistered = false;
             resurrectionProgress = input.getIntOr("ResurrectionProgress", 0);
             cure = input.getBooleanOr("Cure", false);
+            rescuer = input.read("RevivalRescuer", net.minecraft.core.UUIDUtil.CODEC).orElse(net.minecraft.util.Util.NIL_UUID);
         }
 
         @Override
@@ -543,8 +611,12 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                 data.writeNbt(entityTag);
                 output.store("EntityData", CompoundTag.CODEC, entityTag);
             });
+            output.putBoolean("AutomaticallyPlaced", automaticallyPlaced);
+            output.putBoolean("RevivalCleanupPending", revivalCleanupPending);
+            output.store("MourningDecorations", CompoundTag.CODEC, mourningDecorations);
             output.putInt("ResurrectionProgress", resurrectionProgress);
             output.putBoolean("Cure", cure);
+            output.store("RevivalRescuer", net.minecraft.core.UUIDUtil.CODEC, rescuer);
         }
 
         @Override
@@ -558,6 +630,11 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         }
 
         public void readFromStack(ItemStack stack) {
+            // Item placement is manual, including creative copies of an automatically generated grave.
+            automaticallyPlaced = false;
+            revivalCleanupPending = false;
+            mourningDecorations = new CompoundTag();
+            decorationsRegistered = false;
             entityData = Optional.ofNullable(stack)
                     .map(s -> s.get(DataComponents.BLOCK_ENTITY_DATA))
                     .filter(data -> data.type() == BlockEntityTypesMCA.TOMBSTONE)

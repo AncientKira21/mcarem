@@ -45,12 +45,30 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 public class PlayerSaveData extends SavedData implements EntityRelationship {
+    private final Map<String,Long> socialInvitations = new HashMap<>();
+    private long nextInvitationLetter;
+    /** Shared, persisted cap and delivery spacing across social invitation types. */
+    public boolean reserveInvitation(String kind,UUID sender,long expires) {
+        long now=world.getServer().overworld().getGameTime();
+        if(!Config.getInstance().enableVillagerMailingPlayers || now<nextInvitationLetter)return false;
+        socialInvitations.entrySet().removeIf(e->e.getValue()<=now);
+        Set<String> people=new HashSet<>();
+        socialInvitations.forEach((key,end)->people.add(key.substring(key.indexOf(':')+1)));
+        marriageProposals.forEach((id,end)->{if(end>now)people.add(id.toString());});
+        familyRequests.forEach((key,end)->{if(end>now)people.add(key.substring(key.indexOf(':')+1));});
+        if(people.size()>=3 || people.contains(sender.toString()))return false;
+        socialInvitations.put(kind+":"+sender,expires);nextInvitationLetter=now+6000;setDirty();return true;
+    }
+    public void finishInvitation(String kind,UUID sender){socialInvitations.remove(kind+":"+sender);setDirty();}
     private final Map<String, Long> familyRequests = new HashMap<>();
     public Map<String, Long> getFamilyRequests() { return familyRequests; }
     public void updateFamilyRequest(String key, Long expires) {
-        if (expires == null) familyRequests.remove(key); else familyRequests.put(key, expires);
+        if (expires == null) {familyRequests.remove(key);socialInvitations.remove(key);} else familyRequests.put(key, expires);
         setDirty();
     }
+    private final Set<UUID> medicalPolicies = new HashSet<>();
+    public boolean hasMedicalPolicy(UUID cleric) { return medicalPolicies.contains(cleric); }
+    public void insureWith(UUID cleric) { medicalPolicies.add(cleric); setDirty(); }
     private boolean welcome820Shown;
     public boolean markWelcome820Shown() {
         if (welcome820Shown) return false;
@@ -75,7 +93,7 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
 
     public Map<UUID, Long> getMarriageProposals() { return marriageProposals; }
     public void updateMarriageProposal(UUID sender, Long expires) {
-        if (expires == null) marriageProposals.remove(sender);
+        if (expires == null) {marriageProposals.remove(sender);socialInvitations.remove("marriage:"+sender);}
         else marriageProposals.put(sender, expires);
         setDirty();
     }
@@ -99,8 +117,13 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
         this.world = world;
         this.uuid = uuid;
 
+        CompoundTag invitations=nbt.getCompound("socialInvitations").orElseGet(CompoundTag::new);
+        invitations.keySet().forEach(key->socialInvitations.put(key,invitations.getLongOr(key,0)));
+        nextInvitationLetter=nbt.getLongOr("nextInvitationLetter",0);
         CompoundTag requests = nbt.getCompound("familyRequests").orElseGet(CompoundTag::new);
         requests.keySet().forEach(key -> familyRequests.put(key, requests.getLongOr(key, 0)));
+        CompoundTag policies = nbt.getCompound("medicalPolicies").orElseGet(CompoundTag::new);
+        for (String id : policies.keySet()) { try { medicalPolicies.add(UUID.fromString(id)); } catch (IllegalArgumentException ignored) {} }
         welcome820Shown = nbt.getBooleanOr("welcome820Shown", false);
         befriendedVillager = nbt.getBooleanOr("befriendedVillager", false);
         CompoundTag contacts = nbt.getCompound("contactedRaiders").orElseGet(CompoundTag::new);
@@ -293,13 +316,13 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
     }
 
     protected void onLeave(ServerPlayer self, Village village) {
-        if (Config.getInstance().enterVillageNotification && village.isVillage()) {
+        if (Config.getInstance().enterVillageNotification && !village.getBuildings().isEmpty()) {
             self.sendSystemMessage(Component.translatable("gui.village.left", village.getName()).withStyle(ChatFormatting.GOLD), true);
         }
     }
 
     protected void onEnter(ServerPlayer self, Village village) {
-        if (Config.getInstance().enterVillageNotification && village.isVillage()) {
+        if (Config.getInstance().enterVillageNotification && !village.getBuildings().isEmpty()) {
             self.sendSystemMessage(Component.translatable("gui.village.welcome", village.getName()).withStyle(ChatFormatting.GOLD), true);
         }
         village.onEnter(world);
@@ -353,11 +376,16 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
     }
 
     public CompoundTag save(CompoundTag nbt, HolderLookup.Provider provider) {
+        CompoundTag policies = new CompoundTag();
+        medicalPolicies.forEach(id -> policies.putBoolean(id.toString(), true));
+        nbt.put("medicalPolicies", policies);
         if (lastSeenVillageId != null) {
             nbt.putInt("lastSeenVillage", lastSeenVillageId);
         }
         if (registryVillageId != null) nbt.putInt("registryVillage", registryVillageId);
         nbt.putString("registryDimension", registryDimension);
+        CompoundTag invitations=new CompoundTag();socialInvitations.forEach(invitations::putLong);
+        nbt.put("socialInvitations",invitations);nbt.putLong("nextInvitationLetter",nextInvitationLetter);
         CompoundTag requests = new CompoundTag();
         familyRequests.forEach(requests::putLong);
         nbt.put("familyRequests", requests);
@@ -400,7 +428,8 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
 
     public ItemStack getMail() {
         if (hasMail()) {
-            Letter letter = inbox.removeFirst();
+            // Letters are saved oldest-to-newest; collect the newest pending letter first.
+            Letter letter = inbox.removeLast();
             setDirty();
             ItemStack stack = new ItemStack(ItemsMCA.LETTER, 1);
             stack.set(DataComponentsMCA.BOOK_PAGES, letter.pages());

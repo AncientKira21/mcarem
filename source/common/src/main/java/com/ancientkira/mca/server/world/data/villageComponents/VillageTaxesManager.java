@@ -109,6 +109,7 @@ public class VillageTaxesManager {
             }
         }
 
+        if(moodImpact<0 && village.isTaxMourningDisabled())moodImpact=0;
         if (moodImpact != 0) {
             village.pushMood(moodImpact);
         }

@@ -25,7 +25,7 @@ public record GetFamilyRequest() implements HandleablePayload {
         CompoundTag familyData = new CompoundTag();
         PlayerSaveData playerData = PlayerSaveData.get(player);
         Stream.concat(
-                        playerData.getFamilyEntry().getAllRelatives(4),
+                        playerData.getFamilyEntry().getFamilyMembers(6),
                         playerData.getPartnerUUID().stream()
                 ).distinct()
                 .map(uuid -> player.level().getEntity(uuid))

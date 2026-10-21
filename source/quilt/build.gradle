@@ -1,0 +1,14 @@
+plugins {
+    id 'base'
+}
+
+// Quilt loads the Fabric entrypoints and API directly on these unobfuscated versions.
+// Keep one implementation, including its fabric.mod.json, rather than two mod identities.
+def fabricJar = project(':fabric').tasks.named('jar', Jar)
+def quiltJar = tasks.register('quiltJar', Copy) {
+    dependsOn fabricJar
+    from fabricJar.flatMap { it.archiveFile }
+    into layout.projectDirectory.dir('build/libs')
+    rename { name -> name.replace('mcarem-fabric-', 'mcarem-quilt-') }
+}
+tasks.named('assemble') { dependsOn quiltJar }

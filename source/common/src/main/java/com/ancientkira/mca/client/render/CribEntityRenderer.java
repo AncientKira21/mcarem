@@ -22,10 +22,7 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
+import com.mojang.blaze3d.platform.NativeImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -111,35 +108,58 @@ public class CribEntityRenderer extends EntityRenderer<CribEntity, CribEntityRen
     }
 
     private Identifier generateMultiTexture(CribWoodType wood, DyeColor color) throws IOException {
+        String frame = "assets/mca/textures/entity/crib/frames/" + wood.toString().toLowerCase(Locale.ROOT) + ".png";
+        String bed = "assets/mca/textures/entity/crib/beds/" + color.getName() + ".png";
+        try (InputStream frameStream = openTexture(frame, "assets/mca/textures/entity/crib/frames/oak.png");
+             InputStream bedStream = openTexture(bed, "assets/mca/textures/entity/crib/beds/white.png");
+             NativeImage frameImage = NativeImage.read(frameStream);
+             NativeImage bedImage = NativeImage.read(bedStream)) {
+            NativeImage combined = new NativeImage(TEXTURE_WIDTH, TEXTURE_HEIGHT, true);
+            try {
+                composite(combined, frameImage);
+                composite(combined, bedImage);
+                Identifier textureId = Identifier.fromNamespaceAndPath(MCA.MOD_ID, "dynamic/crib/" + getTextureID(wood, color));
+                DynamicTexture dynTex = new DynamicTexture(textureId::toString, combined);
+                Minecraft.getInstance().getTextureManager().register(textureId, dynTex);
+                return textureId;
+            } catch (RuntimeException | Error exception) {
+                combined.close();
+                throw exception;
+            }
+        }
+    }
+
+    private static InputStream openTexture(String path, String fallback) throws IOException {
         ClassLoader loader = MCA.class.getClassLoader();
-        InputStream frameStream = loader.getResourceAsStream("assets/mca/textures/entity/crib/frames/" + wood.toString().toLowerCase(Locale.ROOT) + ".png");
-        if (frameStream == null) {
-            frameStream = loader.getResourceAsStream("assets/mca/textures/entity/crib/frames/oak.png");
+        InputStream stream = loader.getResourceAsStream(path);
+        if (stream == null) stream = loader.getResourceAsStream(fallback);
+        if (stream == null) throw new IOException("Missing crib texture: " + path);
+        return stream;
+    }
+
+    private static void composite(NativeImage destination, NativeImage source) {
+        for (int y = 0; y < Math.min(destination.getHeight(), source.getHeight()); y++) {
+            for (int x = 0; x < Math.min(destination.getWidth(), source.getWidth()); x++) {
+                destination.setPixel(x, y, sourceOver(destination.getPixel(x, y), source.getPixel(x, y)));
+            }
         }
-        assert frameStream != null;
+    }
 
-        BufferedImage frame = ImageIO.read(frameStream);
-        InputStream bedStream = loader.getResourceAsStream("assets/mca/textures/entity/crib/beds/" + color.getName() + ".png");
-        if (bedStream == null) {
-            bedStream = loader.getResourceAsStream("assets/mca/textures/entity/crib/beds/white.png");
+    // Straight-alpha ARGB composition, without starting AWT's macOS application loop.
+    private static int sourceOver(int background, int foreground) {
+        int alpha = foreground >>> 24;
+        if (alpha == 0) return background;
+        if (alpha == 255) return foreground;
+        int backgroundAlpha = background >>> 24;
+        int scaledAlpha = alpha * 255 + backgroundAlpha * (255 - alpha);
+        int result = ((scaledAlpha + 127) / 255) << 24;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            int channel = (((foreground >>> shift) & 255) * alpha * 255
+                    + ((background >>> shift) & 255) * backgroundAlpha * (255 - alpha)
+                    + scaledAlpha / 2) / scaledAlpha;
+            result |= channel << shift;
         }
-        assert bedStream != null;
-        BufferedImage bed = ImageIO.read(bedStream);
-
-        BufferedImage combined = new BufferedImage(TEXTURE_WIDTH, TEXTURE_HEIGHT, BufferedImage.TYPE_INT_ARGB);
-        Graphics g = combined.getGraphics();
-        g.drawImage(frame, 0, 0, null);
-        g.drawImage(bed, 0, 0, null);
-        g.dispose();
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageIO.write(combined, "png", baos);
-        byte[] bytes = baos.toByteArray();
-
-        Identifier textureId = Identifier.fromNamespaceAndPath(MCA.MOD_ID, "dynamic/crib/" + getTextureID(wood, color));
-        DynamicTexture dynTex = new DynamicTexture(textureId::toString, com.mojang.blaze3d.platform.NativeImage.read(bytes));
-        Minecraft.getInstance().getTextureManager().register(textureId, dynTex);
-        return textureId;
+        return result;
     }
 
     public Identifier getTextureLocation(CribEntityRenderState state) {

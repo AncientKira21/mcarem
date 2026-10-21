@@ -41,11 +41,13 @@ public abstract class MixinMob {
     @Inject(method = "serverAiStep", at = @At("HEAD"))
     private void mca$targetVillagers(CallbackInfo ci) {
         Mob mob = (Mob) (Object) this;
-        if (!(mob instanceof Enemy) || mca$villagerTargetInstalled) return;
+        if (!(mob instanceof Enemy) || com.ancientkira.mca.server.NeutralMobRules.passiveUntilProvoked(mob)
+                || mca$villagerTargetInstalled) return;
         mca$villagerTargetInstalled = true;
         // Install after subclass goals are registered; retain each mob's native attack behavior.
         targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(mob, LivingEntity.class, true,
-                (candidate, world) -> mca$ordinaryVillager(candidate) && !mca$protectedRaider(candidate)));
+                (candidate, world) -> mca$ordinaryVillager(candidate) && !mca$protectedRaider(candidate)
+                        && com.ancientkira.mca.server.NeutralMobRules.mayHuntVillager(mob, candidate)));
     }
 
     @Inject(method = "setTarget", at = @At("TAIL"))
@@ -53,6 +55,10 @@ public abstract class MixinMob {
         Mob mob = (Mob) (Object) this;
         if (mob instanceof Enemy && candidate != null && mca$ordinaryVillager(candidate)
                 && !mca$protectedRaider(candidate)) {
+            if (mob instanceof net.minecraft.world.entity.monster.piglin.Piglin
+                    && com.ancientkira.mca.server.NeutralMobRules.mayHuntVillager(mob, candidate)) {
+                mob.getBrain().setMemoryWithExpiry(MemoryModuleType.ANGRY_AT, candidate.getUUID(), 600L);
+            }
             mob.getBrain().setMemory(MemoryModuleType.ATTACK_TARGET, candidate);
         }
     }
@@ -67,14 +73,22 @@ public abstract class MixinMob {
                 && ProfessionsMCA.isRaider(person.getProfession());
     }
 
+    @Unique
+    private boolean mca$goldProtected(LivingEntity person) {
+        return (Object) this instanceof net.minecraft.world.entity.monster.piglin.Piglin piglin
+                && person != null && mca$ordinaryVillager(person)
+                && com.ancientkira.mca.server.NeutralMobRules.wearingGold(person)
+                && !com.ancientkira.mca.server.NeutralMobRules.provokedBy(piglin, person);
+    }
+
     @Inject(method = "canAttack(Lnet/minecraft/world/entity/LivingEntity;)Z", at = @At("HEAD"), cancellable = true)
     private void mca$ignoreRaiders(LivingEntity candidate, CallbackInfoReturnable<Boolean> cir) {
-        if (mca$protectedRaider(candidate)) cir.setReturnValue(false);
+        if (mca$protectedRaider(candidate) || mca$goldProtected(candidate)) cir.setReturnValue(false);
     }
 
     @Inject(method = "setTarget", at = @At("HEAD"), cancellable = true)
     private void mca$rejectRaiderTarget(LivingEntity candidate, CallbackInfo ci) {
-        if (mca$protectedRaider(candidate)) {
+        if (mca$protectedRaider(candidate) || mca$goldProtected(candidate)) {
             target = null;
             ci.cancel();
         }
@@ -82,10 +96,11 @@ public abstract class MixinMob {
 
     @Inject(method = "serverAiStep", at = @At("HEAD"))
     private void mca$forgetRaiderTargets(CallbackInfo ci) {
-        if (mca$protectedRaider(target)) target = null;
+        if (mca$protectedRaider(target) || mca$goldProtected(target)) target = null;
         Mob mob = (Mob) (Object) this;
         if (mob.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)
-                && mca$protectedRaider(mob.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).orElse(null))) {
+                && (mca$protectedRaider(mob.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).orElse(null))
+                    || mca$goldProtected(mob.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).orElse(null)))) {
             mob.getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
         }
     }

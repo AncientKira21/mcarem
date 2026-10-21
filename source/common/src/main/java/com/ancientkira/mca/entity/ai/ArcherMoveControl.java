@@ -91,7 +91,16 @@ public class ArcherMoveControl extends MCAMoveControl {
         if (!this.isWalkable(dx, dz)) {
             if (this.strafeRight != 0.0F) {
                 this.strafeRight = -this.strafeRight;
-                this.lastStrafeResult = StrafeResult.REDIRECTED;
+                // The opposite side can also be lava or a cliff; check it before moving.
+                float reverseDx = xa * cos + za * sin;
+                float reverseDz = xa * sin - za * cos;
+                if (this.isWalkable(reverseDx, reverseDz)) {
+                    this.lastStrafeResult = StrafeResult.REDIRECTED;
+                } else {
+                    this.strafeForwards = 0;
+                    this.strafeRight = 0;
+                    this.lastStrafeResult = StrafeResult.BLOCKED;
+                }
             } else {
                 this.strafeForwards = 0.0F;
                 this.strafeRight = 0.0F;
@@ -108,6 +117,11 @@ public class ArcherMoveControl extends MCAMoveControl {
     }
 
     private boolean isWalkable(float dx, float dz) {
+        double length = Math.sqrt(dx * dx + dz * dz);
+        double scale = length > 1.0E-5 ? Math.max(1.0, 0.9 / length) : 1.0;
+        BlockPos ahead = BlockPos.containing(this.mob.getX() + dx * scale, this.mob.getY(), this.mob.getZ() + dz * scale);
+        if (!com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(mob.level(), ahead)
+                || com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(mob.level(), ahead)) return false;
         PathNavigation pathNavigation = this.mob.getNavigation();
         if (pathNavigation != null) {
             NodeEvaluator nodeEvaluator = pathNavigation.getNodeEvaluator();

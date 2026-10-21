@@ -113,6 +113,7 @@ public interface EntityRelationship {
             CriterionMCA.GENERIC_EVENT.trigger(spouseEntity, "marriage");
         }
         getFamilyEntry().updatePartner(spouse, state);
+        com.ancientkira.mca.entity.FamilyNames.shareSurname(this, spouse);
     }
 
     default void engage(Entity spouse) {

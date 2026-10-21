@@ -11,6 +11,21 @@ public abstract class ClientProxyAbstractImpl extends ClientProxy.Impl {
     private ClientHandler networkHandler;
 
     @Override
+    public final void playVillagerGreeting(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+        com.ancientkira.mca.client.tts.SpeechManager.INSTANCE.playGreeting(villager);
+    }
+
+    @Override
+    public final void playVillagerHurt(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+        com.ancientkira.mca.client.tts.SpeechManager.INSTANCE.playHurt(villager);
+    }
+
+    @Override
+    public final void playVillagerScream(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+        com.ancientkira.mca.client.tts.SpeechManager.INSTANCE.playScream(villager);
+    }
+
+    @Override
     public final synchronized ClientHandler getNetworkHandler() {
         if (networkHandler == null) {
             networkHandler = new ClientHandlerImpl();

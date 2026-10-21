@@ -53,6 +53,7 @@ public final class VillagerProposals {
                 villager.getLongTermMemory().remember(memory, DAY);
                 continue;
             }
+            if(!data.reserveInvitation("marriage",villager.getUUID(),now+EXPIRY))continue;
             data.updateMarriageProposal(villager.getUUID(), now + EXPIRY);
             villager.getLongTermMemory().remember(memory, EXPIRY);
             data.sendLetter(Component.translatable("mca.letter.proposal", villager.getName().getString())

@@ -32,7 +32,7 @@ public class PatrolVillageTask extends Behavior<VillagerEntityMCA> {
 
     @Override
     protected boolean checkExtraStartConditions(ServerLevel world, VillagerEntityMCA entity) {
-        return entity.getResidency().getHomeVillage().isPresent()
+        return entity.getResidency().getEquipmentVillage().isPresent()
                && !InteractTask.shouldRun(entity);
     }
 
@@ -41,14 +41,75 @@ public class PatrolVillageTask extends Behavior<VillagerEntityMCA> {
         getNextPosition(villager).ifPresent(pos -> BehaviorUtils.setWalkAndLookTargetMemories(villager, pos, speed, completionRange));
     }
 
+    public static void keepRoutinePatrolInside(VillagerEntityMCA person) {
+        if (!person.isGuard() || person.isNoAi() || person.isKidnapped() || person.tickCount%10!=0
+                || person.getVillagerBrain().getMoveState()!=com.ancientkira.mca.entity.ai.MoveState.MOVE
+                || person.getVillagerBrain().isPanicking() || person.isInWater() || person.isInLava() || person.isOnFire()
+                || person.getBrain().hasMemoryValue(MemoryModuleType.INTERACTION_TARGET)
+                || com.ancientkira.mca.server.CaptiveRescue.isHelping(person)
+                || com.ancientkira.mca.server.ClericAid.isHelping(person)) return;
+        var home=person.getResidency().getEquipmentVillage();
+        if(home.isEmpty() || com.ancientkira.mca.server.VillageWarfare.get((ServerLevel)person.level()).isBusy(home.get().getId()))return;
+        var village=home.get();
+        var target=person.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET);
+        if(target!=null && target.isPresent()) {
+            if(com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.canPursueFromVillage(person,target.get()))return;
+            person.getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+            person.setTarget(null);
+        }
+        if(person.getBrain().hasMemoryValue(MemoryModuleType.HURT_BY_ENTITY)
+                && village.isWithinBorder(person.blockPosition(),16))return;
+        var walk=person.getBrain().getMemoryInternal(MemoryModuleType.WALK_TARGET);
+        boolean outside=!village.isWithinBorder(person.blockPosition(),0);
+        if(outside && walk!=null && walk.isPresent()) {
+            BlockPos destination=walk.get().getTarget().currentBlockPosition();
+            if(village.isWithinBorder(destination,0)
+                    || borderDistance(destination,village.getBox())<borderDistance(person.blockPosition(),village.getBox()))return;
+        }
+        if(!outside && (walk==null || walk.isEmpty() || village.isWithinBorder(walk.get().getTarget().currentBlockPosition(),0)))return;
+        person.getNavigation().stop();
+        person.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+        person.getBrain().eraseMemory(MemoryModuleType.PATH);
+        person.getMoveControl().setWantedPosition(person.getX(),person.getY(),person.getZ(),0);
+        person.setXxa(0);person.setZza(0);
+        if(outside)new PatrolVillageTask(1,0.4F).getNextPosition(person).ifPresent(pos->
+                BehaviorUtils.setWalkAndLookTargetMemories(person,pos,0.4F,1));
+    }
+
+    private static long borderDistance(BlockPos pos, BlockBoxExtended box){
+        long dx=Math.max(0,Math.max(box.minX()-pos.getX(),pos.getX()-box.maxX()));
+        long dz=Math.max(0,Math.max(box.minZ()-pos.getZ(),pos.getZ()-box.maxZ()));
+        return dx*dx+dz*dz;
+    }
+
     private Optional<BlockPos> getNextPosition(VillagerEntityMCA villager) {
-        return villager.getResidency().getHomeVillage().map(village -> {
+        return villager.getResidency().getEquipmentVillage().map(village -> {
             BlockBoxExtended box = village.getBox();
             int x = box.minX() + villager.getRandom().nextInt(box.getXSpan());
             int z = box.minZ() + villager.getRandom().nextInt(box.getZSpan());
             Vec3 targetPos = new Vec3(x, box.getCenter().getY(), z);
 
-            return DefaultRandomPos.getPosTowards(villager, 32, 16, targetPos, Math.PI * 0.5);
+            for(int attempt=0;attempt<10;attempt++){
+                Vec3 candidate=DefaultRandomPos.getPosTowards(villager,32,16,targetPos,Math.PI*0.5);
+                if(candidate==null)continue;
+                BlockPos feet=BlockPos.containing(candidate);
+                boolean outside=!village.isWithinBorder(villager.blockPosition(),0);
+                if((!village.isWithinBorder(feet,0) && (!outside || borderDistance(feet,box)>=borderDistance(villager.blockPosition(),box)))
+                        || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(villager.level(),feet)
+                        || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.clear(villager.level(),feet)
+                        || com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(villager.level(),feet))continue;
+                var path=villager.getNavigation().createPath(feet,completionRange);
+                if(path!=null && path.canReach()) {
+                    boolean inside=true;
+                    if(village.isWithinBorder(villager.blockPosition(),0))
+                        for(int n=0;n<path.getNodeCount();n++){
+                            var node=path.getNode(n);
+                            if(!village.isWithinBorder(new BlockPos(node.x,node.y,node.z),0)){inside=false;break;}
+                        }
+                    if(inside)return candidate;
+                }
+            }
+            return (Vec3)null;
         }).map(BlockPos::containing);
     }
 }

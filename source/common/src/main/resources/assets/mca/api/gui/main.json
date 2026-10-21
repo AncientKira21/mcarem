@@ -30,8 +30,8 @@
     "height": 20,
     "notifyServer": true,
     "targetServer": false,
-    "constraints": "trader,adult",
-    "hideOnFail": true
+    "constraints": "trader,!baby",
+    "hideOnFail": false
   },
   {
     "identifier": "gui.button.inventory",
@@ -42,20 +42,8 @@
     "height": 20,
     "notifyServer": true,
     "targetServer": false,
-    "constraints": "family",
-    "hideOnFail": true
-  },
-  {
-    "identifier": "gui.button.inventory",
-    "x": -90,
-    "y": 10,
-    "row": 3,
-    "width": 80,
-    "height": 20,
-    "notifyServer": true,
-    "targetServer": false,
-    "constraints": "mercenary",
-    "hideOnFail": true
+    "constraints": "inventory_access",
+    "hideOnFail": false
   },
   {
     "identifier": "gui.button.work",
@@ -66,20 +54,8 @@
     "height": 20,
     "notifyServer": false,
     "targetServer": false,
-    "constraints": "family,!baby",
-    "hideOnFail": true
-  },
-  {
-    "identifier": "gui.button.work",
-    "x": -90,
-    "y": 10,
-    "row": 4,
-    "width": 80,
-    "height": 20,
-    "notifyServer": false,
-    "targetServer": false,
-    "constraints": "!family,mercenary",
-    "hideOnFail": true
+    "constraints": "work_access",
+    "hideOnFail": false
   },
   {
     "identifier": "gui.button.familyTree",

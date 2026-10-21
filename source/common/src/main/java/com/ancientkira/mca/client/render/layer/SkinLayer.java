@@ -17,6 +17,7 @@ public class SkinLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
 
     @Override
     protected void prepareModel(S state) {
+        com.ancientkira.mca.client.model.CrossbowPoseGuard.repair(getParentModel(), state);
         VillagerStateHolder.require(state).mca$setHumanoidModelPose(HumanoidModelPose.capture(getParentModel()));
     }
 

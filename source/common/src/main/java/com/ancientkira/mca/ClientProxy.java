@@ -24,10 +24,28 @@ public class ClientProxy {
         return INSTANCE.getPlayerData(uuid);
     }
 
+    public static void playVillagerGreeting(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+        INSTANCE.playVillagerGreeting(villager);
+    }
+
+    public static void playVillagerHurt(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+        INSTANCE.playVillagerHurt(villager);
+    }
+
+    public static void playVillagerScream(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+        INSTANCE.playVillagerScream(villager);
+    }
+
     public static class Impl {
         protected Impl() {
             INSTANCE = this;
         }
+
+        public void playVillagerScream(com.ancientkira.mca.entity.VillagerEntityMCA villager) { }
+
+        public void playVillagerHurt(com.ancientkira.mca.entity.VillagerEntityMCA villager) { }
+
+        public void playVillagerGreeting(com.ancientkira.mca.entity.VillagerEntityMCA villager) { }
 
         public Player getClientPlayer() {
             return null;

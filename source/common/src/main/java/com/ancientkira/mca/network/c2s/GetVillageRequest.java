@@ -35,7 +35,11 @@ public record GetVillageRequest() implements HandleablePayload {
             boolean isVillage = village.get().isVillage();
             Rank rank = Tasks.getRank(village.get(), player);
             Set<String> ids = Tasks.getCompletedIds(village.get(), player);
-            Network.sendToPlayer(new GetVillageResponse(village.get(), rank, reputation, isVillage, ids), player);
+            GetVillageResponse response = new GetVillageResponse(village.get(), rank, reputation, isVillage, ids);
+            var data = response.data();
+            data.putString("medicalInsurance", com.ancientkira.mca.server.MedicalInsurance.status(player));
+            Network.sendToPlayer(new GetVillageResponse(data, rank, reputation, isVillage, ids,
+                    response.tasks(), response.buildingTypes()), player);
         } else {
             Network.sendToPlayer(new GetVillageFailedResponse(), player);
         }

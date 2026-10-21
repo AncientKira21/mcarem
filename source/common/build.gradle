@@ -204,6 +204,7 @@ if (minecraft_version in ['26.2', '26.3']) {
                             .replace('item instanceof HoeItem', 'stack.is(net.minecraft.tags.ItemTags.HOES)')
                             .replace('item instanceof ShovelItem', 'stack.is(net.minecraft.tags.ItemTags.SHOVELS)')
                             .replace('updateSwingTime();', '')
+                            .replace('.getAttackAnim(', '.getSwingAnimation(')
                             .replace('living.swingTime == -1', 'living.isSwinging() && living.getSwingAnimation(0.0F) == 0.0F')
                             .replace('villager.hurtMarked', '(villager.hurtTime > 0)')
                             .replace('.setInvulnerable(', '.setPermanentlyInvulnerable(')

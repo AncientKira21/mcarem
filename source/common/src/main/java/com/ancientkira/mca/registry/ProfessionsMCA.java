@@ -30,6 +30,10 @@ public interface ProfessionsMCA {
     Set<ResourceKey<VillagerProfession>> IS_IMPORTANT = new HashSet<>();
     Set<ResourceKey<VillagerProfession>> NEEDS_NO_HOME = new HashSet<>();
 
+    VillagerProfession MAYOR = register("mayor", false, true, false, poi -> false, poi -> false, SoundEvents.VILLAGER_WORK_LIBRARIAN);
+    VillagerProfession RULER = register("ruler", false, true, false, poi -> false, poi -> false, SoundEvents.VILLAGER_WORK_LIBRARIAN);
+    VillagerProfession MINER = register("miner", true, false, false,
+            poi -> poi.is(PoiTypesMCA.MINER), poi -> poi.is(PoiTypesMCA.MINER), SoundEvents.VILLAGER_WORK_TOOLSMITH, TradeOffersMCA.MINER_TRADES);
     VillagerProfession VINDICATOR = register("vindicator", false, true, true, poi -> false, poi -> false, SoundEvents.VINDICATOR_AMBIENT);
     VillagerProfession EVOKER = register("evoker", false, true, true, poi -> false, poi -> false, SoundEvents.EVOKER_AMBIENT);
     VillagerProfession WITCH = register("witch", false, true, true, poi -> false, poi -> false, SoundEvents.WITCH_AMBIENT);

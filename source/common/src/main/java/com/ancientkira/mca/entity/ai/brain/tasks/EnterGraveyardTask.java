@@ -38,6 +38,9 @@ public class EnterGraveyardTask extends EnterBuildingTask {
     @Override
     protected Optional<BlockPos> getNextPosition(VillagerEntityMCA villager) {
         return findTarget(villager).map(target -> {
+            TombstoneBlock.Data.of(villager.level().getBlockEntity(target.grave()))
+                    .flatMap(TombstoneBlock.Data::getStoredEntityUuid)
+                    .ifPresent(victim -> villager.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_PERSON, victim));
             villager.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_SITE, target.grave());
             villager.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_POSITION, GlobalPos.of(villager.level().dimension(), target.standingPosition()));
             villager.getBrain().eraseMemory(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE);

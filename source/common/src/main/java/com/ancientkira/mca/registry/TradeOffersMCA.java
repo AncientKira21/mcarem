@@ -16,6 +16,10 @@ public final class TradeOffersMCA {
             Int2ObjectMap.entry(1, CULTIST_LEVEL_1)
     );
 
+    public static final Int2ObjectMap<ResourceKey<TradeSet>> MINER_TRADES = Int2ObjectMap.ofEntries(
+            Int2ObjectMap.entry(1, createTradeSet("miner/level_1"))
+    );
+
     private TradeOffersMCA() {
     }
 

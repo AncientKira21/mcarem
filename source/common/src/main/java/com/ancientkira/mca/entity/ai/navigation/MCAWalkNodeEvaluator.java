@@ -105,6 +105,17 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
     @Override
     public int getNeighbors(Node[] nodes, Node origin) {
         int nodeCount = super.getNeighbors(nodes, origin);
+        if (this.mob instanceof com.ancientkira.mca.entity.VillagerEntityMCA person
+                && person.getAgeState() != com.ancientkira.mca.entity.ai.relationship.AgeState.BABY) {
+            for (Direction direction : Direction.Plane.HORIZONTAL) {
+                BlockPos landing = TerrainSafety.gapLanding(currentContext.level(), origin.asBlockPos(), direction);
+                if (landing == null || nodeCount >= nodes.length) continue;
+                Node jump = getNode(landing);
+                jump.type = PathType.WALKABLE;
+                jump.costMalus = Math.max(jump.costMalus, 6.0F);
+                if (!jump.closed) nodes[nodeCount++] = jump;
+            }
+        }
         if (!isClimbable(origin.x, origin.y, origin.z)) {
             return filterRoadNeighbors(nodes, nodeCount);
         }
@@ -212,9 +223,22 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
 
     @Override
     public PathType getPathType(PathfindingContext context, int x, int y, int z) {
-        return isClimbable(context, x, y, z)
-                ? PathType.WALKABLE
-                : super.getPathType(context, x, y, z);
+        BlockPos pos = new BlockPos(x, y, z);
+        if (isClimbable(context, x, y, z)) return PathType.WALKABLE;
+        PathType type = super.getPathType(context, x, y, z);
+        // Movement controls also query this evaluator after done() has cleared its mob.
+        boolean avoidWater = !context.level().getFluidState(context.mobPosition()).is(FluidTags.WATER);
+        if (type == PathType.LAVA
+                || avoidWater && type == PathType.WATER) return PathType.BLOCKED;
+        // A villager already beside a hazard must be able to follow dry tiles out.
+        if (TerrainSafety.dangerousEdge(context.level(), pos, avoidWater)
+                && !TerrainSafety.dangerousEdge(context.level(), context.mobPosition(), avoidWater)) {
+            return PathType.BLOCKED;
+        }
+        if (context.getBlockState(pos).is(BlockTags.RAILS) && TerrainSafety.solidFloor(context.level(), pos)) {
+            return PathType.WALKABLE;
+        }
+        return type;
     }
 
     private boolean isClimbable(BlockPos pos) {

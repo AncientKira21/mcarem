@@ -99,7 +99,7 @@ public class SkinCache {
             return -1;
         });
 
-        if (currentVersion == version) {
+        if (currentVersion == version && version >= 0) {
             // Up to date! Only load a resource if it's not loaded yet
             if (!textureIdentifiers.containsKey(contentid)) {
                 loadResources(contentid);

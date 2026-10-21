@@ -114,6 +114,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     private boolean skipHairWarning;
     private final List<LiteContent> remoteContents = new ArrayList<>();
     private final CompoundTag basePreviewData;
+    private final String selectedClothing;
 
     private record ContentQuery(int page, String search, SortingMode sorting, boolean filterInvalid, boolean filterHair, boolean filterClothing, boolean moderatorMode) {
         Map<String, String> parameters() {
@@ -152,6 +153,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 this.villagerVisualization.load(TagValueInput.create(ProblemReporter.DISCARDING, this.villagerVisualization.registryAccess(), saveEntityData(villager)));
             }
         }
+        selectedClothing = this.villagerVisualization.getClothes();
         basePreviewData = saveEntityData(this.villagerVisualization);
     }
 
@@ -1827,6 +1829,21 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         serverContent.clear();
         addServerContent(ClientSkinCatalog.clothing(), "clothing");
         addServerContent(ClientSkinCatalog.hair(), "hair");
+        // Use the edited person's outfit, not the dummy's last preview texture.
+        String currentClothing = previousScreen == null ? selectedClothing : previousScreen.getVillager().getClothes();
+        if (currentClothing.startsWith("immersive_library:")) {
+            try {
+                int selectedId = Integer.parseInt(currentClothing.substring(18));
+                if (serverContent.stream().noneMatch(content -> content.contentid() == selectedId)) {
+                    serverContent.add(new LiteContent(selectedId, -1, "unknown", 0,
+                            Set.of("clothing"), "", -1));
+                }
+                // Stable sorting preserves every other outfit's order before pagination.
+                serverContent.sort(Comparator.comparing(content -> content.contentid() != selectedId));
+            } catch (NumberFormatException ignored) {
+                // A malformed clothing identifier cannot be an online library entry.
+            }
+        }
     }
 
     public enum Page {

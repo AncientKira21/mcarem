@@ -27,6 +27,15 @@ public abstract class MixinItemInHandLayer<S extends ArmedEntityRenderState, M e
             int lightCoords
     );
 
+    @Inject(method = "useBabyOffset", at = @At("HEAD"), cancellable = true)
+    private void mca$useScaledHumanoidHandOffset(S state,
+            org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        if (state instanceof VillagerStateHolder holder && holder.mca$getVillagerRenderData() != null) {
+            // MCA scales the adult-shaped arms with the whole model; vanilla baby offsets put items at the shoulder.
+            cir.setReturnValue(false);
+        }
+    }
+
     @Inject(
             method = "submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/ArmedEntityRenderState;FF)V",
             at = @At("HEAD"),

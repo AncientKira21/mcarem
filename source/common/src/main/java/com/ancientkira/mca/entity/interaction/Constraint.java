@@ -23,7 +23,14 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public enum Constraint implements BiPredicate<VillagerLike<?>, ServerPlayer> {
+    WORK_ACCESS("work_access", (villager, player) -> (Relationship.IS_FAMILY.asConstraint().test(villager, player) && villager.getAgeState() != AgeState.BABY)
+            || !Relationship.IS_FAMILY.asConstraint().test(villager, player) && villager.getVillagerData().profession().value() == ProfessionsMCA.MERCENARY),
+    GUARD_ARCHER("guard_archer", (villager, player) -> villager.getVillagerData().profession().value() == ProfessionsMCA.GUARD || villager.getVillagerData().profession().value() == ProfessionsMCA.ARCHER),
+    ARMOR_REMOVED("armor_removed", (villager, player) -> villager instanceof VillagerEntityMCA p && p.isArmorRemovedByOrder()),
+    ARMOR_PRESENT("!armor_removed", (villager, player) -> villager instanceof VillagerEntityMCA p && !p.isArmorRemovedByOrder()),
+    UNEMPLOYED_ADULT("unemployed_adult", (villager, player) -> villager.getAgeState() == AgeState.ADULT && villager.getVillagerData().profession().is(VillagerProfession.NONE)),
     FAMILY("family", Relationship.IS_FAMILY.asConstraint()),
+    INVENTORY_ACCESS("inventory_access", (villager, player) -> Relationship.IS_FAMILY.asConstraint().test(villager, player) || villager.getVillagerData().profession().value() == ProfessionsMCA.MERCENARY),
     NOT_FAMILY("!family", Relationship.IS_FAMILY.negate().asConstraint()),
 
     RELATIVE("relative", Relationship.IS_RELATIVE.asConstraint()),
@@ -60,6 +67,17 @@ public enum Constraint implements BiPredicate<VillagerLike<?>, ServerPlayer> {
     NOT_CLERIC("!cleric", (villager, player) -> !villager.getVillagerData().profession().is(VillagerProfession.CLERIC)),
 
     RAIDER("raider", (villager, player) -> ProfessionsMCA.isRaider(villager.getVillagerData().profession().value())),
+    STAY_CANDIDATE("stay_candidate",(villager,player)->{
+        var profession=villager.getVillagerData().profession().value();
+        if(profession==ProfessionsMCA.ADVENTURER||profession==ProfessionsMCA.WANDERING_TRADER)return true;
+        if (ProfessionsMCA.isRaider(profession) || villager.getAgeState() == AgeState.BABY
+                || !(villager instanceof VillagerEntityMCA person)) return false;
+        var destination = VillageManager.get(player.level()).findNearestVillage(player);
+        // Visiting residents need not remain in Follow mode while talking or waiting.
+        // An unregistered home must not prevent a homeless visitor from settling.
+        return destination.isPresent() && person.getResidency().getHomeVillage()
+                .map(home -> home.getId() != destination.get().getId()).orElse(true);
+    }),
     TRAVELING_GUEST("traveling_guest", (villager, player) -> villager.getVillagerData().profession().value() == ProfessionsMCA.ADVENTURER || villager.getVillagerData().profession().value() == ProfessionsMCA.WANDERING_TRADER),
     ADVENTURER("adventurer", (villager, player) -> villager.getVillagerData().profession().value() == ProfessionsMCA.ADVENTURER),
     NOT_ADVENTURER("!adventurer", (villager, player) -> villager.getVillagerData().profession().value() != ProfessionsMCA.ADVENTURER),
@@ -94,8 +112,8 @@ public enum Constraint implements BiPredicate<VillagerLike<?>, ServerPlayer> {
     STAYING("staying", (villager, player) -> villager.getVillagerBrain().getMoveState() == MoveState.STAY),
     NOT_STAYING("!staying", (villager, player) -> villager.getVillagerBrain().getMoveState() != MoveState.STAY),
 
-    VILLAGE_HAS_SPACE("village_has_space", (villager, player) -> PlayerSaveData.get(player).getLastSeenVillage(VillageManager.get((ServerLevel) player.level())).filter(Village::hasSpace).isPresent()),
-    NOT_VILLAGE_HAS_SPACE("!village_has_space", (villager, player) -> PlayerSaveData.get(player).getLastSeenVillage(VillageManager.get((ServerLevel) player.level())).filter(Village::hasSpace).isEmpty()),
+    VILLAGE_HAS_SPACE("village_has_space", (villager, player) -> VillageManager.get(player.level()).findNearestVillage(player).filter(Village::hasSpace).isPresent()),
+    NOT_VILLAGE_HAS_SPACE("!village_has_space", (villager, player) -> VillageManager.get(player.level()).findNearestVillage(player).filter(Village::hasSpace).isEmpty()),
 
     HAS_VILLAGE("has_village", (villager, player) -> villager instanceof VillagerEntityMCA mcaVillager && mcaVillager.getResidency().getHomeVillage().isPresent()),
     NOT_HAS_VILLAGE("!has_village", (villager, player) -> villager instanceof VillagerEntityMCA mcaVillager && mcaVillager.getResidency().getHomeVillage().isEmpty()),
@@ -121,8 +139,8 @@ public enum Constraint implements BiPredicate<VillagerLike<?>, ServerPlayer> {
     }
 
     private static boolean isRankAtLeast(VillagerLike<?> villager, ServerPlayer player, Rank rank) {
-        return player != null && villager instanceof VillagerEntityMCA && ((VillagerEntityMCA) villager).getResidency().getHomeVillage()
-                .filter(village -> Tasks.getRank(village, player).isAtLeast(rank)).isPresent();
+        return player != null && (player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER) || villager instanceof VillagerEntityMCA && ((VillagerEntityMCA) villager).getResidency().getHomeVillage()
+                .filter(village -> Tasks.getRank(village, player).isAtLeast(rank)).isPresent());
     }
 
     public static Set<Constraint> all() {

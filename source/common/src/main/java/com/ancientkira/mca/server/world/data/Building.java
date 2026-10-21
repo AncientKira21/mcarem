@@ -512,8 +512,10 @@ public class Building {
         posZ = scanned.posZ;
         strictScan = scanned.strictScan;
         lastScan = gameTime;
-        isTypeForced = scanned.isTypeForced;
-        type = scanned.type;
+        if (!isTypeForced || scanned.isTypeForced) {
+            isTypeForced = scanned.isTypeForced;
+            type = scanned.type;
+        }
         blocks.clear();
         scanned.blocks.forEach((key, positions) -> blocks.put(key, new ArrayList<>(positions)));
     }

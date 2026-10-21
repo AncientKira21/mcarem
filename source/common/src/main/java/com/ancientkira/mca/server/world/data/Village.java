@@ -62,14 +62,20 @@ public class Village implements Iterable<Building> {
     private Map<UUID, String> residentNames = new HashMap<>();
     private Map<UUID, Long> residentHomes = new HashMap<>();
     private ListTag warCandidates = new ListTag();
+    private final List<CompoundTag> conqueredVillages = new ArrayList<>();
     private float taxes = 0;
+    private final com.ancientkira.mca.server.VillageMusic music = new com.ancientkira.mca.server.VillageMusic(this);
     private float populationThreshold = 0.75f;
     private float marriageThreshold = 0.5f;
+    private boolean ignoreBedCapacity, disableGraveMourning, disableTaxMourning;
+    private final Set<Integer> separateVillages=new HashSet<>();
     private boolean autoScan = Config.getInstance().enableAutoScanByDefault;
     private Identifier pathBlock = Identifier.withDefaultNamespace("dirt_path");
     private BlockBoxExtended box = new BlockBoxExtended(0, 0, 0, 0, 0, 0);
 
     public ServerLevel getWorld() { return world; }
+
+    public com.ancientkira.mca.server.VillageMusic getMusic() { return music; }
 
     public Village(int id, ServerLevel world) {
         this.id = id;
@@ -80,6 +86,9 @@ public class Village implements Iterable<Building> {
     public Village(CompoundTag v, ServerLevel world) {
         id = v.getInt("id").orElse(0);
         warCandidates = v.getList("WarCandidates").map(ListTag::copy).orElseGet(ListTag::new);
+        for (var entry : v.getListOrEmpty("conqueredVillages")) {
+            if (entry instanceof CompoundTag snapshot) conqueredVillages.add(snapshot.copy());
+        }
         name = v.getString("name").orElse(name);
         chatAIPrompt = v.getString("chatAIPrompt").orElse("");
         taxes = v.getFloat("taxesFloat").orElse(0.0f);
@@ -102,6 +111,10 @@ public class Village implements Iterable<Building> {
         this.world = world;
 
         autoScan = v.getBoolean("autoScan").orElse(true);
+        ignoreBedCapacity=v.getBooleanOr("ignoreBedCapacity",false);
+        disableGraveMourning=v.getBooleanOr("disableGraveMourning",false);
+        disableTaxMourning=v.getBooleanOr("disableTaxMourning",false);
+        for(var tag:v.getListOrEmpty("separateVillages")) tag.asInt().ifPresent(separateVillages::add);
         Identifier savedPathBlock = Identifier.tryParse(v.getString("pathBlock").orElse("minecraft:dirt_path"));
         if (savedPathBlock != null && isValidPathBlock(savedPathBlock)) {
             pathBlock = savedPathBlock;
@@ -559,10 +572,19 @@ public class Village implements Iterable<Building> {
         return id;
     }
 
+    public boolean isIgnoreBedCapacity(){return ignoreBedCapacity;}
+    public boolean isGraveMourningDisabled(){return disableGraveMourning;}
+    public boolean isTaxMourningDisabled(){return disableTaxMourning;}
+    public void setPolicy(String key,boolean value){
+        switch(key){case "beds"->ignoreBedCapacity=value;case "graves"->disableGraveMourning=value;case "taxes"->disableTaxMourning=value;default->throw new IllegalArgumentException("Unknown village policy");}if(world!=null)markDirty();
+    }
+    public void keepSeparateFrom(int id){separateVillages.add(id);}
+    public boolean isSeparateFrom(Village other){return separateVillages.contains(other.id)||other.separateVillages.contains(id);}
+
     public boolean hasSpace() {
         // Recruitment must see beds just placed, rather than the periodic cached count.
         updateMaxPopulation();
-        return getPopulation() < getMaxPopulation();
+        return ignoreBedCapacity || getPopulation() < getMaxPopulation();
     }
 
     public int getPopulation() {
@@ -618,7 +640,38 @@ public class Village implements Iterable<Building> {
         return buildings.values().stream().anyMatch(b -> b.getType().equals(building) && b.isComplete());
     }
 
+    /** Collapse exact duplicate room records without merging separate rooms or floors. */
+    public boolean removeDuplicateRooms() {
+        record RoomBounds(BlockPos min, BlockPos max, boolean strict, String type) {}
+        Map<RoomBounds, Building> seen = new HashMap<>();
+        Map<Integer, Integer> replacements = new HashMap<>();
+        for (Building room : buildings.values().stream().sorted(Comparator.comparingInt(Building::getId)).toList()) {
+            if (room.getBuildingType().grouped()) continue;
+            RoomBounds key = new RoomBounds(room.getPos0(), room.getPos1(), room.isStrictScan(), room.getType());
+            Building existing = seen.putIfAbsent(key, room);
+            if (existing != null) {
+                if (room.isTypeForced()) existing.setTypeForced(true);
+                replacements.put(room.getId(), existing.getId());
+            }
+        }
+        if (replacements.isEmpty()) return false;
+        replacements.keySet().forEach(buildings::remove);
+        for (Building room : buildings.values()) {
+            room.setStructureId(replacements.getOrDefault(room.getStructureId(), room.getStructureId()));
+        }
+        Map<Integer, Integer> overrides = new HashMap<>();
+        mainRoomOverrides.forEach((structure, room) -> overrides.put(
+                replacements.getOrDefault(structure, structure), replacements.getOrDefault(room, room)));
+        mainRoomOverrides.clear();
+        mainRoomOverrides.putAll(overrides);
+        normalizeFloorNumbers();
+        calculateDimensions();
+        return true;
+    }
+
     public void tick(ServerLevel world, long time) {
+        music.tick(time);
+        if (time % 200 == 0 && removeDuplicateRooms()) markDirty();
         if (time % 20 == 0 && repairOutpostTypes()) markDirty();
         // spread performance to avoid lag spikes
         time += getId();
@@ -710,6 +763,7 @@ public class Village implements Iterable<Building> {
 
     public CompoundTag save() {
         CompoundTag v = new CompoundTag();
+        v.put("conqueredVillages", NbtHelper.fromList(conqueredVillages, CompoundTag::copy));
         v.putInt("id", id);
         v.putString("name", name);
         v.putString("chatAIPrompt", chatAIPrompt);
@@ -724,6 +778,10 @@ public class Village implements Iterable<Building> {
             data.store("uuid", net.minecraft.core.UUIDUtil.CODEC, uuid);
             return data;
         }));
+        v.putBoolean("ignoreBedCapacity",ignoreBedCapacity);
+        v.putBoolean("disableGraveMourning",disableGraveMourning);
+        v.putBoolean("disableTaxMourning",disableTaxMourning);
+        ListTag separate=new ListTag();separateVillages.forEach(id->separate.add(IntTag.valueOf(id)));v.put("separateVillages",separate);
         v.put("residentNames", NbtHelper.fromMap(new CompoundTag(), residentNames, Object::toString, StringTag::valueOf));
         v.put("residentHomes", NbtHelper.fromMap(new CompoundTag(), residentHomes, Object::toString, LongTag::valueOf));
         v.putFloat("populationThresholdFloat", populationThreshold);
@@ -743,24 +801,126 @@ public class Village implements Iterable<Building> {
     public CompoundTag getBlueprintData() {
         updateMaxPopulation();
         CompoundTag data = save();
-        if (world != null) data.put("WarCandidates", com.ancientkira.mca.server.VillageWarfare.get(world).nearby(this));
+        if (world != null) {
+            ListTag choices = com.ancientkira.mca.server.VillageWarfare.get(world).nearby(this);
+            releaseRecords().forEach((key, snapshot) -> {
+                CompoundTag entry = new CompoundTag();
+                entry.putInt("Id", key); entry.putString("Name", snapshot.getStringOr("name", "Village"));
+                entry.putBoolean("Release", true); choices.add(entry);
+            });
+            data.put("WarCandidates", choices);
+        }
         return data;
     }
 
     public ListTag getWarCandidates() { return warCandidates.copy(); }
 
+    /** Historical conquests, plus disconnected districts from older merged saves. */
+    public Map<Integer, CompoundTag> releaseRecords() {
+        Map<Integer, CompoundTag> records = new LinkedHashMap<>();
+        Set<Integer> recordedStructures = new HashSet<>();
+        for (CompoundTag snapshot : conqueredVillages) {
+            records.put(snapshot.getIntOr("id", -1), snapshot.copy());
+            for (var tag : snapshot.getListOrEmpty("buildings")) if (tag instanceof CompoundTag room) {
+                recordedStructures.add(new Building(room).getStructureId());
+            }
+        }
+        List<List<Building>> groups = new ArrayList<>();
+        Set<Building> remaining = new HashSet<>(buildings.values());
+        while (!remaining.isEmpty()) {
+            Building seed = remaining.iterator().next(); remaining.remove(seed);
+            List<Building> group = new ArrayList<>(); group.add(seed);
+            for (int cursor = 0; cursor < group.size(); cursor++) {
+                Building member = group.get(cursor);
+                for (Building other : List.copyOf(remaining)) {
+                    BlockPos a = member.getSourceBlock(), b = other.getSourceBlock();
+                    long dx = (long) a.getX() - b.getX(), dz = (long) a.getZ() - b.getZ();
+                    if (member.getStructureId() == other.getStructureId() || dx * dx + dz * dz <= 64 * 64) {
+                        remaining.remove(other); group.add(other);
+                    }
+                }
+            }
+            groups.add(group);
+        }
+        if (groups.size() > 1) for (List<Building> group : groups) {
+            if (group.stream().anyMatch(room -> recordedStructures.contains(room.getStructureId()))) continue;
+            int key = -1 - group.stream().mapToInt(Building::getStructureId).min().orElseThrow();
+            BlockPos anchor = group.getFirst().getSourceBlock();
+            CompoundTag district = save();
+            district.putInt("id", key);
+            district.putString("name", "District (" + anchor.getX() + ", " + anchor.getZ() + ")");
+            district.put("buildings", NbtHelper.fromList(group, Building::save));
+            district.remove("conqueredVillages");
+            district.remove("residentNames"); district.remove("residentHomes");
+            records.put(key, district);
+        }
+        return records;
+    }
+
+    private static boolean belongsToReleasedDistrict(UUID resident,Set<UUID> originalResidents,boolean historicMembership,Long home,Village released){
+        return originalResidents.contains(resident) || !historicMembership && home!=null && released.getBuildingAt(BlockPos.of(home)).isPresent();
+    }
+    public void confirmVoluntaryResident(UUID resident){
+        for(CompoundTag snapshot:conqueredVillages){
+            snapshot.getCompoundOrEmpty("residentNames").remove(resident.toString());
+            snapshot.getCompoundOrEmpty("residentHomes").remove(resident.toString());
+        }
+        if(world!=null)markDirty();
+    }
+
+    public Village detachVillage(int key, int newId) {
+        CompoundTag snapshot = releaseRecords().get(key);
+        if (snapshot == null) return null;
+        snapshot = snapshot.copy(); snapshot.putInt("id", newId);
+        Village released = new Village(snapshot, world);
+        Set<Integer> structures = released.buildings.values().stream().map(Building::getStructureId).collect(Collectors.toSet());
+        List<Building> rooms = buildings.values().stream().filter(room -> structures.contains(room.getStructureId())).toList();
+        if (rooms.isEmpty() || rooms.size() == buildings.size()) return null;
+        Set<UUID> oldResidents = new HashSet<>(released.residentNames.keySet());
+        boolean historicMembership=key>=0 && !oldResidents.isEmpty();
+        released.buildings.clear(); released.residentNames.clear(); released.residentHomes.clear();
+        released.blueprintHiddenRaiders.clear();
+        released.mainRoomOverrides.clear();
+        for (Building room : rooms) { released.buildings.put(room.getId(), room); buildings.remove(room.getId()); }
+        for (int structure : structures) {
+            if (mainRoomOverrides.containsKey(structure)) released.mainRoomOverrides.put(structure, mainRoomOverrides.remove(structure));
+        }
+        released.calculateDimensions(); calculateDimensions();
+        keepSeparateFrom(newId);released.keepSeparateFrom(id);
+        for (UUID resident : List.copyOf(residentNames.keySet())) {
+            Long home = residentHomes.get(resident);
+            boolean belongs=belongsToReleasedDistrict(resident,oldResidents,historicMembership,home,released);
+            if (!belongs) continue;
+            released.residentNames.put(resident, residentNames.remove(resident));
+            if (home != null) released.residentHomes.put(resident, residentHomes.remove(resident));
+            if (blueprintHiddenRaiders.remove(resident)) released.blueprintHiddenRaiders.add(resident);
+        }
+        reputation.forEach((player, scores) -> {
+            Map<UUID, Integer> transferred = new HashMap<>();
+            scores.forEach((resident, value) -> { if (released.residentNames.containsKey(resident)) transferred.put(resident, value); });
+            if (!transferred.isEmpty()) released.reputation.put(player, transferred);
+        });
+        cleanReputation();
+        conqueredVillages.removeIf(tag -> tag.getIntOr("id", -1) == key);
+        released.updateMaxPopulation(); updateMaxPopulation();
+        markDirty(); released.markDirty();
+        return released;
+    }
+
     public void absorbConqueredVillage(Village loser) {
+        conqueredVillages.add(loser.save().copy());
         merge(loser);
-        residentNames.putAll(loser.residentNames);
-        residentHomes.putAll(loser.residentHomes);
-        blueprintHiddenRaiders.addAll(loser.blueprintHiddenRaiders);
-        storageBuffer.addAll(loser.storageBuffer);
-        loser.reputation.forEach((player, scores) -> reputation.computeIfAbsent(player, id -> new HashMap<>()).putAll(scores));
-        getCivilRegistry().ifPresent(registry -> loser.getCivilRegistry().ifPresent(registry::absorb));
         markDirty();
     }
 
     public void merge(Village village) {
+        separateVillages.addAll(village.separateVillages);separateVillages.remove(id);
+        residentNames.putAll(village.residentNames);
+        residentHomes.putAll(village.residentHomes);
+        blueprintHiddenRaiders.addAll(village.blueprintHiddenRaiders);
+        storageBuffer.addAll(village.storageBuffer);
+        village.reputation.forEach((player, scores) -> reputation.computeIfAbsent(player, id -> new HashMap<>()).putAll(scores));
+        getCivilRegistry().ifPresent(registry -> village.getCivilRegistry().ifPresent(registry::absorb));
         buildings.putAll(village.buildings);
         mainRoomOverrides.putAll(village.mainRoomOverrides);
         calculateDimensions();
@@ -822,7 +982,7 @@ public class Village implements Iterable<Building> {
         boolean changed = false;
         for (Building building : buildings.values()) {
             if (building.getType().equals("pillager_outpost")
-                    && (!building.isTypeForced() || !canRegisterOutpost(building))) {
+                    && !building.isTypeForced()) {
                 building.setTypeForced(false);
                 if (!building.determineType()) building.setType("house");
                 changed = true;

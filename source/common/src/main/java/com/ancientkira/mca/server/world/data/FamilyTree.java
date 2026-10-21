@@ -42,6 +42,23 @@ public class FamilyTree extends SavedData {
                 tag.read("uuid", net.minecraft.core.UUIDUtil.CODEC).ifPresent(permanentlyDeleted::add);
             }
         }));
+        rebuildChildLinks();
+        com.ancientkira.mca.entity.FamilyNames.fillMissingSurnames(this);
+    }
+
+    /** Parent fields are authoritative; old editor versions left stale reverse links behind. */
+    public void rebuildChildLinks() {
+        Map<UUID, Set<UUID>> expected = new HashMap<>();
+        entries.values().forEach(child -> child.streamParents().distinct().filter(parent -> !parent.equals(child.id()))
+                .forEach(parent -> expected.computeIfAbsent(parent, ignored -> new HashSet<>()).add(child.id())));
+        for (FamilyTreeNode node : entries.values()) {
+            Set<UUID> actual = expected.getOrDefault(node.id(), Set.of());
+            if (!node.children().equals(actual)) {
+                node.children().clear();
+                node.children().addAll(actual);
+                setDirty();
+            }
+        }
     }
 
     public static FamilyTree get(ServerLevel world) {
@@ -72,7 +89,7 @@ public class FamilyTree extends SavedData {
     }
 
     public Stream<FamilyTreeNode> getAllWithName(String name) {
-        return entries.values().stream().filter(n -> n.getName().toLowerCase(Locale.ROOT).equals(name.toLowerCase(Locale.ROOT)));
+        return entries.values().stream().filter(n -> com.ancientkira.mca.entity.FamilyNames.matchesName(n.getName(), name.strip(), true));
     }
 
     public Stream<FamilyTreeNode> getAllWithNameContaining(String name) {

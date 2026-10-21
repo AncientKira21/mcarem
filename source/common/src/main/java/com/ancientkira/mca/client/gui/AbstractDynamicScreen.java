@@ -18,6 +18,7 @@ public abstract class AbstractDynamicScreen extends Screen {
 
     // Tracks which page we're on in the GUI for sending button events
     private String activeScreen = "main";
+    private int actionPage;
 
     private int mouseX;
     private int mouseY;
@@ -80,12 +81,39 @@ public abstract class AbstractDynamicScreen extends Screen {
      * @param guiKey String key for the GUI's buttons
      */
     public void setLayout(String guiKey) {
+        if (!activeScreen.equals(guiKey)) actionPage = 0;
         activeScreen = guiKey;
 
         clearWidgets();
         MCAScreens.getInstance().getScreen(guiKey).ifPresent(buttons -> {
-            for (MCAButton b : buttons) {
-                addRenderableWidget(new ButtonEx(b, this));
+            if (guiKey.equals("locations")) {
+                var actions = Arrays.stream(buttons).filter(b -> !b.identifier().equals("gui.button.backarrow"))
+                        .filter(b -> !b.hideOnFail() || b.isValidForConstraint(getConstraints())).toList();
+                int perPage = Math.max(1, Math.min(6, (height - 65) / 21));
+                int pages = Math.max(1, (actions.size() + perPage - 1) / perPage);
+                actionPage = Math.clamp(actionPage, 0, pages - 1);
+                Arrays.stream(buttons).filter(b -> b.identifier().equals("gui.button.backarrow")).findFirst().ifPresent(b ->
+                        addRenderableWidget(new ButtonEx(new MCAButton(b.identifier(), "top_right", -136, 0, 10, 0, 20, 20,
+                                b.notifyServer(), b.targetServer(), b.constraints(), b.hideOnFail(), b.isInteraction()), this)));
+                for (int i = 0; i < perPage && actionPage * perPage + i < actions.size(); i++) {
+                    MCAButton b = actions.get(actionPage * perPage + i);
+                    addRenderableWidget(new ButtonEx(new MCAButton(b.identifier(), "top_right", -112, 0, 10, i, 104, 20,
+                            b.notifyServer(), b.targetServer(), b.constraints(), b.hideOnFail(), b.isInteraction()), this));
+                }
+                if (pages > 1) {
+                    int y = 16 + perPage * 21;
+                    Button previous = addRenderableWidget(Button.builder(Component.literal("<"), b -> { actionPage--; setLayout(guiKey); })
+                            .bounds(width - 112, y, 25, 20).build());
+                    previous.active = actionPage > 0;
+                    Button indicator = addRenderableWidget(Button.builder(Component.literal((actionPage + 1) + " / " + pages), b -> {})
+                            .bounds(width - 85, y, 50, 20).build());
+                    indicator.active = false;
+                    Button next = addRenderableWidget(Button.builder(Component.literal(">"), b -> { actionPage++; setLayout(guiKey); })
+                            .bounds(width - 33, y, 25, 20).build());
+                    next.active = actionPage + 1 < pages;
+                }
+            } else {
+                for (MCAButton b : buttons) addRenderableWidget(new ButtonEx(b, this));
             }
         });
     }

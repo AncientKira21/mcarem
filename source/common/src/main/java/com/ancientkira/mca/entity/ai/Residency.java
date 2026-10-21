@@ -32,6 +32,7 @@ import java.util.stream.Stream;
  */
 public class Residency {
     private static final CDataParameter<Integer> VILLAGE = CParameter.create("HomeVillage", -1);
+    private static final CDataParameter<Integer> RETURN_VILLAGE=CParameter.create("ReturnVillage",-1);
     private final VillagerEntityMCA entity;
 
     public Residency(VillagerEntityMCA entity) {
@@ -39,7 +40,7 @@ public class Residency {
     }
 
     public static <E extends Entity> CDataManager.Builder<E> createTrackedData(CDataManager.Builder<E> builder) {
-        return builder.addAll(VILLAGE);
+        return builder.addAll(VILLAGE,RETURN_VILLAGE);
     }
 
     public BlockPos getWorkplace() {
@@ -77,6 +78,8 @@ public class Residency {
                             }).findFirst();
                         }).ifPresent(profession -> {
                             VillagerProfession oldProfession = entity.getVillagerData().profession().value();
+                            // A workplace assignment replaces follow/stay orders, including for children.
+                            entity.getVillagerBrain().setMoveState(MoveState.MOVE, player);
                             if (oldProfession == profession) {
                                 return;
                             }
@@ -105,6 +108,11 @@ public class Residency {
                 .findNearestVillage(entity.blockPosition(), 32));
     }
 
+    /** Local defenders can draw supplies before their home registration completes. */
+    public Optional<Village> getEquipmentVillage() {
+        return getHomeVillage().or(() -> VillageManager.get((ServerLevel) entity.level()).findNearestVillage(entity));
+    }
+
     public Optional<Village> getHomeVillage() {
         VillageManager manager = VillageManager.get((ServerLevel) entity.level());
 
@@ -117,15 +125,18 @@ public class Residency {
     /**
      * Joins the closest village, if in range
      */
-    public void seekHome() {
+    public void seekHome() { seekHome(false); }
+
+    private void seekHome(boolean explicitRelocation) {
         if (entity.requiresHome()) {
             VillageManager manager = VillageManager.get((ServerLevel) entity.level());
             Optional<Village> current = getHomeVillage();
-            Optional<Village> target = getHome()
+            Optional<Village> target = (!explicitRelocation ? manager.getOrEmpty(entity.getTrackedValue(RETURN_VILLAGE)) : Optional.<Village>empty())
+                    .or(()-> (entity.isGuard() && current.isPresent() && !explicitRelocation ? current : getHome()
                     .filter(home -> home.dimension() == entity.level().dimension())
                     .flatMap(home -> manager.findNearestVillage(home.pos(), Village.BORDER_MARGIN))
                     .or(() -> current.filter(village -> village.isWithinBorder(entity)))
-                    .or(() -> manager.findNearestVillage(entity));
+                    .or(() -> manager.findNearestVillage(entity))));
 
             target.ifPresent(v -> {
                 if (current.filter(existing -> existing.getId() == v.getId()).isEmpty()) {
@@ -135,6 +146,37 @@ public class Residency {
                 entity.setTrackedValue(VILLAGE, v.getId());
             });
         }
+    }
+
+    public void returnAfterRelease(Village home,Village released){
+        entity.setTrackedValue(RETURN_VILLAGE,home.getId());
+        if(entity.getVillagerBrain().getCurrentJob()!=Chore.NONE)entity.getVillagerBrain().abandonJob();
+        for(var memory:java.util.List.of(MemoryModuleType.HOME,MemoryModuleType.JOB_SITE)){
+            var pos=entity.getBrain().getMemoryInternal(memory);
+            if(pos!=null && pos.filter(site->released.isWithinBorder(site.pos(),0)).isPresent()){
+                entity.releasePoi(memory);entity.getBrain().eraseMemory(memory);
+            }
+        }
+    }
+    public void tickReturn(){
+        int id=entity.getTrackedValue(RETURN_VILLAGE);
+        if(id<0||entity.tickCount%20!=0||entity.getVillagerBrain().getMoveState()!=MoveState.MOVE
+                ||entity.getVillagerBrain().isPanicking()||entity.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET))return;
+        var village=VillageManager.get((ServerLevel)entity.level()).getOrEmpty(id);
+        if(village.isEmpty()||village.get().isWithinBorder(entity.blockPosition(),0)){entity.setTrackedValue(RETURN_VILLAGE,-1);return;}
+        var claimed=entity.getBrain().getMemoryInternal(MemoryModuleType.HOME);
+        if(claimed!=null && claimed.filter(pos->!village.get().isWithinBorder(pos.pos(),0)).isPresent()){
+            entity.releasePoi(MemoryModuleType.HOME);entity.getBrain().eraseMemory(MemoryModuleType.HOME);
+        }
+        var target=net.minecraft.world.entity.ai.util.DefaultRandomPos.getPosTowards(entity,32,16,
+                net.minecraft.world.phys.Vec3.atBottomCenterOf(village.get().getCenter()),Math.PI*0.5);
+        if(target!=null)entity.getBrain().setMemory(MemoryModuleType.WALK_TARGET,new net.minecraft.world.entity.ai.memory.WalkTarget(target,0.5F,1));
+    }
+
+    public void joinVillage(Village village){entity.setTrackedValue(RETURN_VILLAGE,-1);entity.setTrackedValue(VILLAGE,village.getId());village.updateResident(entity);village.confirmVoluntaryResident(entity.getUUID());village.markDirty();}
+
+    public void remapVillage(int oldId, int newId) {
+        if (entity.getTrackedValue(VILLAGE) == oldId) entity.setTrackedValue(VILLAGE, newId);
     }
 
     public void leaveHome() {
@@ -234,6 +276,7 @@ public class Residency {
             entity.getBrain().eraseMemory(MemoryModuleType.HOME);
 
             entity.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(level.dimension(), claimedHome));
+            if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) com.ancientkira.mca.server.PortalHomecoming.rememberHome(person);
             entity.getBrain().setMemory(MemoryModuleTypeMCA.FORCED_HOME, true);
 
             seekHome();

@@ -37,13 +37,10 @@ public class FollowTask extends Behavior<VillagerEntityMCA> {
             if (villager.getVillagerBrain().isPanicking()
                     && villager.getBrain().getMemoryInternal(MemoryModuleType.HURT_BY_ENTITY)
                     .filter(livingEntity -> livingEntity == playerToFollow).isPresent()) {
-                villager.getBrain().eraseMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING);
+                // Flee the attacker temporarily without discarding the player's order.
                 return;
             }
 
-            if (shouldYieldToGuardCombat(villager)) {
-                return;
-            }
 
             float distance = villager.distanceTo(playerToFollow) - 2.0F;
             float speed = Math.min(1.0F, Math.max(0.6F, distance * 0.1F));
@@ -80,7 +77,4 @@ public class FollowTask extends Behavior<VillagerEntityMCA> {
                 : target.blockPosition();
     }
 
-    private boolean shouldYieldToGuardCombat(VillagerEntityMCA villager) {
-        return villager.isGuard() && villager.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET);
-    }
 }

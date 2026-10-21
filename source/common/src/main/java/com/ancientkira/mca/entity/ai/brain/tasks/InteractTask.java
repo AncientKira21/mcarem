@@ -28,7 +28,8 @@ public class InteractTask extends Behavior<VillagerEntityMCA> {
                && villager.getInteractions().getInteractingPlayer().filter(player -> villager.distanceToSqr(player) <= 25).isPresent()
                && !villager.isInWater()
                && !villager.hurtMarked
-               && villager.getVillagerBrain().getCurrentJob() == Chore.NONE;
+               && (villager.getVillagerBrain().getCurrentJob() == Chore.NONE
+                   || villager.getVillagerBrain().getCurrentJob() == Chore.PROSPECT);
     }
 
     @Override

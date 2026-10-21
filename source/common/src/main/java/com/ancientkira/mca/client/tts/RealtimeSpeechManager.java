@@ -33,14 +33,16 @@ public class RealtimeSpeechManager {
         this.url = url;
     }
 
-    public static void download(OutputStream output, String url, String payload, String key) {
+    public static boolean download(OutputStream output, String url, String payload, String key) {
         try {
             HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(15000);
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("xi-api-key", key);
+            connection.setRequestProperty("xi-api-key", key == null ? "" : key.strip());
             connection.setRequestProperty("player2-game-key", "minecraft-comes-alive-reborn");
 
             try (OutputStream os = connection.getOutputStream()) {
@@ -48,7 +50,7 @@ public class RealtimeSpeechManager {
             }
 
             if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
-                if (output == null) return;
+                if (output == null) return true;
                 try (InputStream inputStream = connection.getInputStream()) {
                     byte[] buffer = new byte[CHUNK_SIZE];
                     int bytesRead;
@@ -57,10 +59,27 @@ public class RealtimeSpeechManager {
                     }
                 }
             } else {
-                MCA.LOGGER.warn("Failed to get audio: {} - {}", connection.getResponseCode(), connection.getResponseMessage());
+                int status = connection.getResponseCode();
+                if (url.startsWith("https://api.elevenlabs.io/")) {
+                    String body = "";
+                    try (InputStream error = connection.getErrorStream()) {
+                        if (error != null) body = new String(error.readNBytes(16384), StandardCharsets.UTF_8);
+                    }
+                    String messageKey = ElevenlabsVoices.failureKey(status, body);
+                    MCA.LOGGER.warn("ElevenLabs speech request failed: HTTP {}, {}", status, messageKey);
+                    net.minecraft.client.Minecraft.getInstance().execute(() ->
+                            net.minecraft.client.Minecraft.getInstance().gui.setOverlayMessage(
+                                    net.minecraft.network.chat.Component.translatable(messageKey)
+                                            .append(" (HTTP " + status + ")"), false));
+                } else {
+                    MCA.LOGGER.warn("Failed to get audio: {} - {}", status, connection.getResponseMessage());
+                }
+                return false;
             }
+            return true;
         } catch (IOException | IllegalArgumentException e) {
             MCA.LOGGER.warn("Failed to download audio: {}", e.getMessage());
+            return false;
         }
     }
 
@@ -78,10 +97,14 @@ public class RealtimeSpeechManager {
         play(text, pitch, entity, cacheable, voices.get(tone));
     }
 
+    public String cacheKey(String voice, String text) {
+        return AudioCache.getHash(voice) + "/" + AudioCache.getHash(text);
+    }
+
     public void play(String phrase, float pitch, Entity entity, boolean cacheable, String voice) {
         CompletableFuture.runAsync(() -> {
             String text = cacheable ? OnlineSpeechManager.cleanPhrase(phrase) : phrase;
-            String hash = cacheable ? AudioCache.getHash(voice) + "/" + AudioCache.getHash(text) : "realtime";
+            String hash = cacheable ? cacheKey(voice, text) : "realtime";
             if (AudioCache.get(hash, output -> {
                 downloadAudio(output, voice, text);
             }, cacheable)) {
@@ -107,6 +130,8 @@ public class RealtimeSpeechManager {
     public Map<String, VoiceInfo> fetchVoices(String url) {
         try {
             HttpURLConnection connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(15000);
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Content-Type", "application/json");
             connection.setRequestProperty("Accept-Encoding", "gzip");
@@ -136,13 +161,13 @@ public class RealtimeSpeechManager {
         }
     }
 
-    public void downloadAudio(OutputStream output, String voiceId, String text) {
+    public boolean downloadAudio(OutputStream output, String voiceId, String text) {
         String url = this.url + "v1/tts/piper/speak";
         String payload = String.format(
                 "{\"text\": \"%s\", \"voice\": \"%s\"}",
                 text, voiceId
         );
-        download(output, url, payload, "");
+        return download(output, url, payload, "");
     }
 
     public static class VoiceInfo {

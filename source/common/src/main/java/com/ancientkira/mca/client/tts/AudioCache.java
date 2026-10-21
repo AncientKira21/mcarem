@@ -60,7 +60,7 @@ public class AudioCache {
     private static ByteBuffer retrieve(Consumer<OutputStream> retriever) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             retriever.accept(baos);
-            return ByteBuffer.wrap(baos.toByteArray());
+            return baos.size() > MIN_SIZE ? ByteBuffer.wrap(baos.toByteArray()) : null;
         } catch (IOException e) {
             return null;
         }
@@ -91,8 +91,9 @@ public class AudioCache {
                 }
                 return isSane(cacheFile);
             }
-        } catch (IOException e) {
-            MCA.LOGGER.error("Failed to cache audio file: {}", identifier, e);
+        } catch (IOException | RuntimeException e) {
+            new File(CACHE_DIR, identifier).delete();
+            MCA.LOGGER.warn("Failed to cache audio file: {}", identifier);
             return false;
         }
     }
@@ -101,7 +102,7 @@ public class AudioCache {
         return cacheFile.exists() && cacheFile.length() > MIN_SIZE;
     }
 
-    public static String getHash(String text) {
+    public static synchronized String getHash(String text) {
         MESSAGEDIGEST.update(text.getBytes());
         return toHex(MESSAGEDIGEST.digest()).toLowerCase(Locale.ROOT);
     }

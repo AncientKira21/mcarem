@@ -11,6 +11,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Raid.class)
 public abstract class MixinRaid {
+    @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "tick", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/server/level/ServerLevel;isVillage(Lnet/minecraft/core/BlockPos;)Z"))
+    private boolean mca$recognizeRegisteredVillage(boolean vanilla,
+            @com.llamalad7.mixinextras.sugar.Local(argsOnly = true) ServerLevel world) {
+        if (vanilla) return true;
+        Raid raid = (Raid) (Object) this;
+        return com.ancientkira.mca.server.world.data.VillageManager.get(world)
+                .findNearestVillage(raid.getCenter(), 0).isPresent();
+    }
+
     @Inject(method = "tick", at = @At("HEAD"))
     private void mca$updatePeople(ServerLevel world, CallbackInfo ci) {
         PillagerRaids.update((Raid) (Object) this, world);

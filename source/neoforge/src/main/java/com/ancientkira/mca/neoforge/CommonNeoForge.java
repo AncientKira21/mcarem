@@ -77,6 +77,7 @@ public final class CommonNeoForge {
         registerHelper(event, BuiltInRegistries.ACTIVITY, ActivitiesMCA::registerActivities);
         registerHelper(event, BuiltInRegistries.MEMORY_MODULE_TYPE, MemoryModuleTypeMCA::registerTypes);
         registerHelper(event, BuiltInRegistries.ENVIRONMENT_ATTRIBUTE, SchedulesMCA::registerSchedules);
+        registerHelper(event, BuiltInRegistries.POINT_OF_INTEREST_TYPE, PoiTypesMCA::register);
         registerHelper(event, BuiltInRegistries.VILLAGER_PROFESSION, ProfessionsMCA::registerProfessions);
         registerHelper(event, BuiltInRegistries.DATA_COMPONENT_TYPE, DataComponentsMCA::registerProfessions);
         registerHelper(event, BuiltInRegistries.TRIGGER_TYPES, CriterionMCA::registerCriteria);

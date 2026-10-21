@@ -51,6 +51,7 @@ import java.util.Optional;
 import java.util.Set;
 
 public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrackedEntity<E>, VillagerDataHolder, Infectable, Messenger {
+    CDataParameter<String> VOICE_ID = CParameter.create("VoiceId", "");
     CDataParameter<String> CLOTHES = CParameter.create("Clothes", "");
     CDataParameter<Boolean> CLOTHING_LOCKED = CParameter.create("ClothingLocked", false);
     CDataParameter<String> SKIN = CParameter.create("Skin", "");
@@ -72,7 +73,7 @@ public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrack
 
     static <E extends Entity> CDataManager.Builder<E> createTrackedData(CDataManager.Builder<E> builder) {
         return builder
-                .addAll(CLOTHES, SKIN, HAIR, HAIR_STYLE, HAIR_BASE, HAIR_BANGS, HAIR_BACK, HAIR_FRONT, HAIR_EXTRA,
+                .addAll(VOICE_ID, CLOTHES, SKIN, HAIR, HAIR_STYLE, HAIR_BASE, HAIR_BANGS, HAIR_BACK, HAIR_FRONT, HAIR_EXTRA,
                         SKIN_COLOR, HAIR_COLOR, EYE_COLOR, EYE_COLOR_LEFT, AGE_STATE, CLOTHING_LOCKED)
                 .add(Genetics::createTrackedData)
                 .add(Traits::createTrackedData)
@@ -123,7 +124,7 @@ public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrack
         }
 
         if (asEntity().getCustomName() == null) {
-            asEntity().setCustomName(Component.literal(Names.pickCitizenName(getGenetics().getGender(), asEntity())));
+            asEntity().setCustomName(Component.literal(FamilyNames.generated(Names.pickCitizenName(getGenetics().getGender(), asEntity()), asEntity().getUUID())));
         }
 
         validateClothes();

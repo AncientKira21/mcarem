@@ -137,6 +137,15 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
         if (entity instanceof VillagerEntityMCA villager) {
             return guard instanceof VillagerEntityMCA defender
                     && com.ancientkira.mca.server.VillageWarfare.isEnemy(defender, villager) ? 12 : villager.isHostile() ? 10 : -1;
+        } else if (com.ancientkira.mca.server.NeutralMobRules.passiveUntilProvoked(entity)) {
+            return com.ancientkira.mca.server.NeutralMobRules.threatensVillager(entity)
+                    || entity instanceof Mob neutral && (guard != null && neutral.getTarget() == guard
+                        || followedPlayer != null && neutral.getTarget() == followedPlayer) ? 9 : -1;
+        } else if (entity instanceof net.minecraft.world.entity.monster.piglin.Piglin piglin) {
+            if (piglin.isBaby()) return -1;
+            if (com.ancientkira.mca.server.NeutralMobRules.threatensVillager(piglin)
+                    || guard != null && piglin.getTarget() == guard || followedPlayer != null && piglin.getTarget() == followedPlayer) return 9;
+            return guard != null && com.ancientkira.mca.server.NeutralMobRules.wearingGold(guard) ? -1 : 3;
         } else if (guard != null && entity instanceof Mob mob && (mob.getTarget() == guard || followedPlayer != null && mob.getTarget() == followedPlayer)) {
             //priority is irrelevant if this entity is currently an active threat
             return 9;

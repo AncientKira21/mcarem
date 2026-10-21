@@ -1,6 +1,7 @@
 package com.ancientkira.mca.mixin.client;
 
 import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.ancientkira.mca.client.model.PlayerArmorExtendedModel;
 import com.ancientkira.mca.client.model.VillagerEntityModelMCA;
 import com.ancientkira.mca.client.render.VillagerStateHolder;
@@ -29,6 +30,21 @@ public abstract class MixinHumanoidArmorLayer {
     @Unique
     private static HumanoidModel<?> mca$createModel(MeshDefinition mesh) {
         return new PlayerArmorExtendedModel<>(LayerDefinition.create(mesh, 64, 32).bakeRoot());
+    }
+
+    @ModifyExpressionValue(
+            method = "renderArmorPiece",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/entity/state/HumanoidRenderState;isBaby:Z")
+    )
+    private boolean mca$useMatchingArmorTexture(boolean baby,
+            com.mojang.blaze3d.vertex.PoseStack poses,
+            net.minecraft.client.renderer.SubmitNodeCollector collector,
+            ItemStack stack, EquipmentSlot slot, int light, HumanoidRenderState state) {
+        // MCA scales its humanoid mesh with the body; vanilla baby UVs fit a different mesh.
+        if (state instanceof VillagerStateHolder holder && holder.mca$getVillagerRenderData() != null) {
+            return false;
+        }
+        return baby;
     }
 
     @ModifyReturnValue(

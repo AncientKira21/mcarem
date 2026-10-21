@@ -31,16 +31,33 @@ public final class SkinSelection {
                 || gender == Gender.MALE;
     }
 
+    public static boolean isEditorClothing(Clothing clothing) {
+        return !clothing.exclude || java.util.Set.of("mca:baby", "mca:toddler", "mca:child", "mca:teen")
+                .contains(clothing.profession == null ? "" : clothing.profession);
+    }
+
     public static List<Clothing> editorClothing(Collection<Clothing> available, Gender gender) {
         return available.stream()
                 .filter(clothing -> canWearClothing(clothing, gender))
-                .filter(clothing -> !clothing.exclude)
+                .filter(SkinSelection::isEditorClothing)
                 .sorted((a, b) -> SkinListEntry.compareIdentifiers(a.getIdentifier(), b.getIdentifier()))
                 .toList();
     }
 
     public static List<Clothing> clothingForVillager(Collection<Clothing> available, VillagerLike<?> villager, Map<String, String> professionConversions) {
+        available = available.stream().filter(c -> com.ancientkira.mca.Config.getInstance().enableSilvernaturalPack
+                || !"Silvernatural".equalsIgnoreCase(c.onlineAuthor)).toList();
         Gender gender = villager.getGenetics().getGender();
+        String actualProfession = BuiltInRegistries.VILLAGER_PROFESSION.getKey(villager.getVillagerData().profession().value()).toString();
+        if (com.ancientkira.mca.Config.getInstance().automaticOnlineClothing
+                && villager.getAgeState() != AgeState.BABY && !actualProfession.equals("mca:wandering_trader")) {
+            List<Clothing> online = available.stream().filter(clothing -> clothing.onlineAutomatic
+                    && clothing.onlineAvailableAfter <= System.currentTimeMillis()
+                    && actualProfession.equals(clothing.profession) && !clothing.exclude
+                    && canWearClothing(clothing, gender)).toList();
+            if (!online.isEmpty()) return online;
+        }
+        available = available.stream().filter(clothing -> !clothing.onlineAutomatic).toList();
         String agePool = agePool(villager.getAgeState());
         if (agePool != null) {
             return clothingForProfession(available, gender, agePool);
@@ -57,6 +74,10 @@ public final class SkinSelection {
     public static List<Clothing> clothingForProfession(Collection<Clothing> available, Gender gender, @Nullable String profession) {
         return available.stream()
                 .filter(clothing -> canWearClothing(clothing, gender))
+                .filter(clothing -> !clothing.onlineAutomatic
+                        || com.ancientkira.mca.Config.getInstance().automaticOnlineClothing
+                            && clothing.onlineAvailableAfter <= System.currentTimeMillis()
+                            && profession != null && profession.equals(clothing.profession))
                 .filter(clothing -> !"mca:wandering_trader".equals(profession)
                         || clothing.getIdentifier().contains("/cultist/"))
                 .filter(clothing -> clothing.profession == null

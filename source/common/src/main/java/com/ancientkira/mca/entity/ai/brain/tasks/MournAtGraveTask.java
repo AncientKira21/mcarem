@@ -22,6 +22,9 @@ public class MournAtGraveTask extends Behavior<VillagerEntityMCA> {
     private long nextDialogueTime;
     private boolean completed;
     private boolean hasArrived;
+    private ItemStack offering = ItemStack.EMPTY;
+    private boolean flowerPlaced;
+    private long nextPlacementAttempt;
 
     public MournAtGraveTask() {
         super(ImmutableMap.of(), Integer.MAX_VALUE - 1);
@@ -44,6 +47,7 @@ public class MournAtGraveTask extends Behavior<VillagerEntityMCA> {
 
     @Override
     protected boolean canStillUse(ServerLevel world, VillagerEntityMCA villager, long time) {
+        if(villager.getResidency().getHomeVillage().filter(com.ancientkira.mca.server.world.data.Village::isGraveMourningDisabled).isPresent())return false;
         return hasArrived
                 ? remainingDialogues > 0 && EnterGraveyardTask.isWithinMourningArea(villager)
                 : EnterGraveyardTask.hasValidMourningTarget(villager);
@@ -52,7 +56,10 @@ public class MournAtGraveTask extends Behavior<VillagerEntityMCA> {
     @Override
     protected void start(ServerLevel world, VillagerEntityMCA villager, long time) {
         remainingDialogues = DIALOGUE_COUNT;
-        villager.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(getFlower(villager)));
+        offering = new ItemStack(getFlower(villager));
+        flowerPlaced = false;
+        nextPlacementAttempt = time;
+        villager.setItemInHand(InteractionHand.MAIN_HAND, offering.copy());
     }
 
     @Override
@@ -68,6 +75,16 @@ public class MournAtGraveTask extends Behavior<VillagerEntityMCA> {
             nextDialogueTime = time + getDialogueDelay(villager);
         }
 
+        if (!flowerPlaced && time >= nextPlacementAttempt) {
+            nextPlacementAttempt = time + 20;
+            villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_SITE).ifPresent(grave -> {
+                if (com.ancientkira.mca.server.GraveFlowers.place(world, grave, villager, offering)) {
+                    flowerPlaced = true;
+                    villager.swing(InteractionHand.MAIN_HAND);
+                    villager.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                }
+            });
+        }
         lookAtGrave(villager);
         if (time >= nextDialogueTime) {
             villager.sendChatToAllAround("villager.grieving");

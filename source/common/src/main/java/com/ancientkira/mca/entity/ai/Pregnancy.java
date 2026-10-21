@@ -114,7 +114,10 @@ public class Pregnancy {
         child.getTraits().inherit(partner.getTraits());
         child.getTraits().inherit(mother.getTraits());
         child.setAge(getNaturalChildStartingAge());
+        child.setVillagerData(child.getVillagerData().withProfession(child.registryAccess(),
+                net.minecraft.world.entity.npc.villager.VillagerProfession.NONE));
         child.getRelationships().getFamilyEntry().replaceParents(mother.getRelationships(), partner.getRelationships());
+        com.ancientkira.mca.entity.FamilyNames.inheritSurname(child);
 
         // advancement
         child.getRelationships().getFamily(2, 0)

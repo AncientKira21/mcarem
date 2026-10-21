@@ -1,0 +1,10 @@
+{
+  "values": [
+    "mca:miner/1/buy_coal",
+    "mca:miner/1/buy_raw_iron",
+    "mca:miner/1/buy_raw_copper",
+    "mca:miner/1/sell_iron",
+    "mca:miner/1/sell_copper",
+    "mca:miner/1/sell_pickaxe"
+  ]
+}

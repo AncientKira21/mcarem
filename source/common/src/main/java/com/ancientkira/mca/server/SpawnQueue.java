@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class SpawnQueue {
     private static final SpawnQueue INSTANCE = new SpawnQueue();
     private final ConcurrentLinkedQueue<net.minecraft.world.entity.raid.Raider> raiderSpawnQueue = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader> traderSpawnQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Villager> villagerSpawnQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<ZombieVillager> zombieVillagerSpawnQueue = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Zombie> zombieSpawnList = new ConcurrentLinkedQueue<>();
@@ -52,6 +53,7 @@ public class SpawnQueue {
         com.ancientkira.mca.MCA.getServer().ifPresent(BulkRevival::tick);
         com.ancientkira.mca.MCA.getServer().ifPresent(server ->
                 com.ancientkira.mca.server.world.data.VillagerTrackerManager.get(server.overworld()).tickRescueRequests(server));
+        convertWanderingTrader();
         net.minecraft.world.entity.raid.Raider pillager = raiderSpawnQueue.poll();
         if (pillager != null && raiderProfession(pillager) == null) {
             pillager.level().addFreshEntity(pillager);
@@ -141,6 +143,41 @@ public class SpawnQueue {
         }
     }
 
+    private void convertWanderingTrader() {
+        var trader = traderSpawnQueue.poll();
+        if (trader == null) return;
+        ServerLevel world = (ServerLevel) trader.level();
+        if (!Config.getInstance().overwriteOriginalWanderingTraders) {
+            world.addFreshEntity(trader);
+            return;
+        }
+        VillagerEntityMCA person = VillagerFactory.newVillager(world)
+                .withUUID(trader.getUUID())
+                .withName(trader.hasCustomName() ? trader.getName().getString() : null)
+                .withAge(0).withPosition(trader)
+                .withProfession(com.ancientkira.mca.registry.ProfessionsMCA.WANDERING_TRADER)
+                .build(EntitySpawnReason.CONVERSION);
+        person.initialize(EntitySpawnReason.EVENT);
+        person.finalizeSpawn(world, world.getCurrentDifficultyAt(person.blockPosition()), EntitySpawnReason.CONVERSION, null);
+        person.setProfession(com.ancientkira.mca.registry.ProfessionsMCA.WANDERING_TRADER);
+        person.setOffers(trader.getOffers().copy());
+        person.setDespawnDelay(trader.getDespawnDelay());
+        person.setYRot(trader.getYRot());
+        person.setXRot(trader.getXRot());
+        person.setDeltaMovement(trader.getDeltaMovement());
+        person.setHealth(trader.getHealth());
+        copyPastaIntensifies(person, trader);
+        trader.getActiveEffects().forEach(effect -> person.addEffect(new net.minecraft.world.effect.MobEffectInstance(effect)));
+        if (world.addFreshEntity(person)) {
+            person.adoptTraderLlamas(trader);
+            Entity vehicle = trader.getVehicle();
+            trader.stopRiding();
+            if (vehicle != null) person.startRiding(vehicle);
+            for (Entity passenger : java.util.List.copyOf(trader.getPassengers())) passenger.startRiding(person);
+            trader.discard();
+        } else traderSpawnQueue.add(trader);
+    }
+
     private void copyPastaIntensifies(PathfinderMob villager, PathfinderMob entity) {
         if (entity.isPersistenceRequired()) {
             villager.setPersistenceRequired();
@@ -158,6 +195,12 @@ public class SpawnQueue {
     }
 
     public boolean addVillager(Entity entity) {
+        if (entity.getClass() == net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader.class
+                && Config.getInstance().overwriteOriginalWanderingTraders && entity.level() instanceof ServerLevel
+                && !Config.getInstance().villagerDimensionBlacklist.contains(entity.level().dimension().identifier().toString())) {
+            var trader = (net.minecraft.world.entity.npc.wanderingtrader.WanderingTrader) entity;
+            return traderSpawnQueue.contains(trader) || traderSpawnQueue.add(trader);
+        }
         if (entity instanceof net.minecraft.world.entity.raid.Raider raider
                 && raiderProfession(raider) != null && entity.level() instanceof ServerLevel
                 && !raiderSpawnQueue.contains(raider)) {

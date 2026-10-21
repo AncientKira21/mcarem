@@ -1,4 +1,4 @@
-package com.ancientkira.mca.fabric.datagen;
+package com.ancientkira.mca;
 
 import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.util.recipes.CribRecipeProvider;

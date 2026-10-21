@@ -23,9 +23,11 @@ public interface MemoryModuleTypeMCA {
     MemoryModuleType<Boolean> WEARS_ARMOR = register("wears_armor", Optional.of(Codec.BOOL));
     MemoryModuleType<Integer> SMALL_BOUNTY = register("small_bounty", Optional.of(Codec.INT));
     MemoryModuleType<LivingEntity> HIT_BY_PLAYER = register("hit_by_player", Optional.empty());
+    MemoryModuleType<java.util.UUID> MOURNING_PERSON = register("mourning_person", Optional.of(net.minecraft.core.UUIDUtil.CODEC));
     MemoryModuleType<Long> LAST_GRIEVE = register("last_grieve", Optional.of(Codec.LONG));
     MemoryModuleType<BlockPos> MOURNING_SITE = register("mourning_site", Optional.of(BlockPos.CODEC));
     MemoryModuleType<GlobalPos> MOURNING_POSITION = register("mourning_position", Optional.of(GlobalPos.CODEC));
+    MemoryModuleType<Boolean> RECOVERING_FROM_CAPTIVITY = register("recovering_from_captivity", Optional.of(Codec.BOOL));
     MemoryModuleType<Boolean> FORCED_HOME = register("forced_home", Optional.of(Codec.BOOL));
 
     static <U> MemoryModuleType<U> register(String name, Optional<Codec<U>> codec) {

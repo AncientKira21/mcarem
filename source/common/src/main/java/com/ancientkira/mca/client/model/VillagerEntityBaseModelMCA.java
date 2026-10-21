@@ -57,6 +57,7 @@ public class VillagerEntityBaseModelMCA extends HumanoidModel<VillagerRenderStat
 
     @Override
     public void setupAnim(VillagerRenderState state) {
+        CrossbowPoseGuard.prepare(state);
         float originalWalkAnimationPos = state.walkAnimationPos;
         float originalWalkAnimationSpeed = state.walkAnimationSpeed;
         float originalYRot = state.yRot;
@@ -86,7 +87,7 @@ public class VillagerEntityBaseModelMCA extends HumanoidModel<VillagerRenderStat
         state.yRot = originalYRot;
         state.isPassenger = originalIsPassenger;
 
-        float panicAnimationProgress = state.panicAnimationProgress;
+        float panicAnimationProgress = state.isVisuallySwimming ? 0 : state.panicAnimationProgress;
         if (panicAnimationProgress > 0.0F) {
             float toRadians = (float) Math.PI / 180;
 
@@ -110,6 +111,8 @@ public class VillagerEntityBaseModelMCA extends HumanoidModel<VillagerRenderStat
             leftArm.zRot = -2.3561945F;
         }
 
+        CpaVillagerAnimations.apply(this, state);
+        CrossbowPoseGuard.repair(this, state);
         applyVillagerDimensions(visuals);
         if (receivesDeferredAnimationPose && state instanceof VillagerStateHolder holder && holder.mca$getHumanoidModelPose() != null) {
             holder.mca$getHumanoidModelPose().applyTo(this);

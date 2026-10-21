@@ -36,6 +36,7 @@ public class WhistleScreen extends Screen {
     private int selectedIndex;
     private final List<Component> names = new ArrayList<>();
     private final List<ButtonWidget> nameOptions = new ArrayList<>();
+    private net.minecraft.client.gui.components.EditBox nameSearch;
     private boolean namesOpen;
     private int nameOffset;
 
@@ -43,6 +44,8 @@ public class WhistleScreen extends Screen {
         namesOpen = false;
         nameOptions.forEach(this::removeWidget);
         nameOptions.clear();
+        if (nameSearch != null) removeWidget(nameSearch);
+        nameSearch = null;
     }
 
     private int visibleNameCount() {
@@ -50,14 +53,29 @@ public class WhistleScreen extends Screen {
     }
 
     private void showNames() {
-        closeNames();
-        namesOpen = true;
-        int count = visibleNameCount();
-        nameOffset = Math.clamp(nameOffset, 0, Math.max(0, keys.size() - count));
-        int top = height / 2 + 65 - count * 22;
+        if (nameSearch == null) {
+            namesOpen = true;
+            nameSearch = addRenderableWidget(new net.minecraft.client.gui.components.EditBox(font,
+                    width / 2 - 100, 28, 200, 20, Component.translatable("gui.search")));
+            nameSearch.setHint(Component.translatable("gui.search"));
+            nameSearch.setResponder(query -> { nameOffset = 0; updateNameOptions(); });
+            setFocused(nameSearch);
+        }
+        updateNameOptions();
+    }
+
+    private void updateNameOptions() {
+        nameOptions.forEach(this::removeWidget);
+        nameOptions.clear();
+        String query = nameSearch.getValue().strip().toLowerCase(java.util.Locale.ROOT);
+        List<Integer> matches = java.util.stream.IntStream.range(0, names.size())
+                .filter(i -> names.get(i).getString().toLowerCase(java.util.Locale.ROOT).contains(query))
+                .boxed().toList();
+        int count = Math.min(matches.size(), Math.max(1, (height / 2 + 65 - 54) / 22));
+        nameOffset = Math.clamp(nameOffset, 0, Math.max(0, matches.size() - count));
         for (int row = 0; row < count; row++) {
-            int index = nameOffset + row;
-            ButtonWidget option = new ButtonWidget(width / 2 - 100, top + row * 22, 200, 20,
+            int index = matches.get(nameOffset + row);
+            ButtonWidget option = new ButtonWidget(width / 2 - 100, 54 + row * 22, 200, 20,
                     names.get(index), b -> {
                         selectedIndex = index;
                         closeNames();

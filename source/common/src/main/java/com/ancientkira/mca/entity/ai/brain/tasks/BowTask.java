@@ -56,19 +56,12 @@ public class BowTask<E extends Mob & CrossbowAttackMob> extends Behavior<E> {
 
     @Override
     protected void tick(ServerLevel level, E entity, long gameTime) {
+        if(entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isUsingCombatShield()) return;
         LivingEntity target = getAttackTarget(entity);
         InteractionHand bowHand = RangedWeaponHelper.getBowHoldingHand(entity);
         if (!RangedWeaponHelper.isValidAttackTarget(entity, target) || bowHand == null) {
             if (entity.isUsingItem()) {
                 logAction(entity, target, false, 0.0, "stop_using", "invalid_target");
-                entity.stopUsingItem();
-            }
-            return;
-        }
-
-        if (isEmergencyFleeing(entity)) {
-            if (entity.isUsingItem()) {
-                logAction(entity, target, false, entity.distanceToSqr(target), "stop_using", "emergency_fleeing");
                 entity.stopUsingItem();
             }
             return;

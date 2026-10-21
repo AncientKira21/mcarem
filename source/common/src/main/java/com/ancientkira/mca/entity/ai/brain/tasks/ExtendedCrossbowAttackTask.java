@@ -2,6 +2,8 @@ package com.ancientkira.mca.entity.ai.brain.tasks;
 
 import com.ancientkira.mca.entity.ai.RangedWeaponHelper;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.ChargedProjectiles;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
@@ -23,9 +25,14 @@ public final class ExtendedCrossbowAttackTask<E extends Mob & CrossbowAttackMob,
 
     @Override
     public void crossbowAttack(E entity, LivingEntity target) {
+        if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isUsingCombatShield()) return;
         if (this.crossbowState == CrossbowState.UNCHARGED) {
             InteractionHand hand = RangedWeaponHelper.getCrossbowHoldingHand(entity);
             if (hand == null) {
+                return;
+            }
+            if (!entity.getItemInHand(hand).getOrDefault(DataComponents.CHARGED_PROJECTILES, ChargedProjectiles.EMPTY).isEmpty()) {
+                this.crossbowState = CrossbowState.READY_TO_ATTACK;
                 return;
             }
             entity.startUsingItem(hand);
@@ -39,7 +46,11 @@ public final class ExtendedCrossbowAttackTask<E extends Mob & CrossbowAttackMob,
 
     @Override
     protected void stop(ServerLevel level, E entity, long gameTime) {
-        super.stop(level, entity, gameTime);
+        if (entity.isUsingItem()) {
+            entity.stopUsingItem();
+        }
+        // Keep loaded ammunition; the next attack resumes from the actual weapon state.
+        this.crossbowState = CrossbowState.UNCHARGED;
         entity.setChargingCrossbow(false);
     }
 
