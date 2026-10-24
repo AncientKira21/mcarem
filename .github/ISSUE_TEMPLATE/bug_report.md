@@ -10,15 +10,12 @@ assignees: ''
 **Describe the bug**
 A clear and concise description of what the bug is.
 
-Your answer: ---
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
----
 **Logs/Screenshots**
 If applicable, add screenshots or logs to help explain your problem.
 
----
 **Minecraft details (please complete the following information):**
  - Minecraft Version: [e.g. 26.1.2]
  - Loader: [e.g. NeoForge]
@@ -26,5 +23,3 @@ If applicable, add screenshots or logs to help explain your problem.
 
 **Additional context**
 Add any other context about the problem here.
-
----
