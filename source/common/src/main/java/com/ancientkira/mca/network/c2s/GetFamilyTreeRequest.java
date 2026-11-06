@@ -27,11 +27,24 @@ public record GetFamilyTreeRequest(UUID uuid) implements HandleablePayload {
 
     @Override
     public void handleServer(ServerPlayer player) {
-        FamilyTree.get(player.level()).getOrEmpty(uuid).ifPresent(entry -> {
+        FamilyTree tree = FamilyTree.get(player.level());
+        tree.purgeUnnamedAdventurers();
+        tree.getOrEmpty(uuid).ifPresent(entry -> {
             Map<UUID, FamilyTreeNode> familyEntries = Stream.concat(
                             entry.lookup(Stream.of(entry.id(), entry.partner())),
                             entry.lookup(entry.getRelatives(2, 1))
                     ).distinct()
+                    .peek(node -> {
+                        if (FamilyTree.isUnnamedAdventurer(node) || node.getName().startsWith("Unknown player ")) {
+                            for (var world : player.level().getServer().getAllLevels()) {
+                                var real = world.getEntity(node.id());
+                                if (real != null) { node.setName(real.getName().getString()); break; }
+                            }
+                            var online = player.level().getServer().getPlayerList().getPlayer(node.id());
+                            if (online != null) node.setName(online.getName().getString());
+                        }
+                    })
+                    .filter(node -> !FamilyTree.isUnnamedAdventurer(node) && !node.getName().startsWith("Unknown player "))
                     .collect(Collectors.toMap(FamilyTreeNode::id, Function.identity()));
 
             Network.sendToPlayer(new GetFamilyTreeResponse(uuid, familyEntries), player);

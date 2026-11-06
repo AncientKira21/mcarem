@@ -99,8 +99,19 @@ public final class MinerWork {
         if (fuel <= 0) {
             ItemStack coal = InventoryUtils.stream(person.getInventory())
                     .filter(stack -> stack.is(Items.COAL) || stack.is(Items.CHARCOAL)).findFirst().orElse(ItemStack.EMPTY);
-            if (coal.isEmpty()) return false;
+            if (coal.isEmpty()) {
+                var furnace = furnace(world, person).orElse(null);
+                if (furnace != null && world.getBlockEntity(furnace) instanceof net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity block) {
+                    ItemStack supplied = block.getItem(1);
+                    if (supplied.is(Items.COAL) || supplied.is(Items.CHARCOAL)) {
+                        supplied.shrink(1); block.setChanged();
+                        fuel = 8; state.putInt("FuelUses", fuel);
+                    }
+                }
+                if (fuel <= 0) return false;
+            } else {
             coal.shrink(1); fuel = 8; state.putInt("FuelUses", fuel);
+            }
         }
         int progress = state.getIntOr("Progress", 0) + 1;
         state.putInt("Progress", progress);

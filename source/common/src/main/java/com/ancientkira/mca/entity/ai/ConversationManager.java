@@ -101,6 +101,9 @@ public class ConversationManager {
         @Override
         public void deliver() {
             this.entity.sendChatToAllAround(text);
+            if (text.equals("welcomeFoe/2") && getReceiver() instanceof net.minecraft.server.level.ServerPlayer player) {
+                com.ancientkira.mca.server.VillageHelp.call(this.entity, player);
+            }
             super.deliver();
         }
     }

@@ -43,7 +43,7 @@ public final class RaiderSocial {
 
     public static boolean isFamily(VillagerEntityMCA raider, LivingEntity other) {
         var family = raider.getRelationships().getFamilyEntry();
-        return family.isRelative(other.getUUID()) || family.partner().equals(other.getUUID());
+        return family.isFamilyMember(other.getUUID()) || family.partner().equals(other.getUUID());
     }
 
     public static boolean isAngryAt(VillagerEntityMCA raider, Player player) {
@@ -98,9 +98,18 @@ public final class RaiderSocial {
 
     public static void redeem(VillagerEntityMCA person) {
         if (!ProfessionsMCA.isRaider(person.getProfession())) return;
+        person.releasePoi(MemoryModuleType.JOB_SITE);
+        person.getBrain().eraseMemory(MemoryModuleType.JOB_SITE);
+        person.getBrain().eraseMemory(MemoryModuleType.POTENTIAL_JOB_SITE);
         person.setProfession(net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION
                 .getValueOrThrow(net.minecraft.world.entity.npc.villager.VillagerProfession.NONE));
         person.setDespawnDelay(0);
+        person.setTarget(null);
+        for (var memory : new MemoryModuleType<?>[]{MemoryModuleType.ATTACK_TARGET, MemoryModuleType.HURT_BY_ENTITY,
+                MemoryModuleType.WALK_TARGET, MemoryModuleType.PATH}) person.getBrain().eraseMemory(memory);
+        person.getNavigation().stop();
+        RaiderCombat.clear(person);
+        person.getVillagerBrain().setMoveState(com.ancientkira.mca.entity.ai.MoveState.MOVE, null);
         person.getResidency().seekHome();
     }
 
@@ -143,6 +152,14 @@ public final class RaiderSocial {
 
     public static boolean tryKidnapFromAttack(net.minecraft.world.entity.Entity attacker, VillagerEntityMCA victim) {
         if (attacker instanceof VillagerEntityMCA captor) return tryKidnap(captor, victim);
+        if (attacker instanceof net.minecraft.world.entity.monster.Ravager ravager
+                && com.ancientkira.mca.Config.getInstance().enableRaiderKidnapping
+                && ravager.getTarget() == victim && ravager.hasLineOfSight(victim)
+                && ravager.distanceToSqr(victim) <= 16 && victim.beginKidnapping(ravager)) {
+            ravager.setTarget(null);
+            ravager.getNavigation().stop();
+            return true;
+        }
         if (attacker instanceof net.minecraft.world.entity.monster.Vex vex && vex.isAlive() && !vex.isNoAi()
                 && vex.getOwner() instanceof VillagerEntityMCA owner && owner.isAlive()
                 && tryKidnap(owner, victim)) {

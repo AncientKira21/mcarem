@@ -67,10 +67,19 @@ public class Village implements Iterable<Building> {
     private final com.ancientkira.mca.server.VillageMusic music = new com.ancientkira.mca.server.VillageMusic(this);
     private float populationThreshold = 0.75f;
     private float marriageThreshold = 0.5f;
-    private boolean ignoreBedCapacity, disableGraveMourning, disableTaxMourning;
+    private boolean ignoreBedCapacity, disableGraveMourning, disableTaxMourning, automaticGuards, clutchOverride;
+    private ListTag prisonInmates = new ListTag();
+    public ListTag getPrisonInmates() { return prisonInmates.copy(); }
+    private Boolean underwaterOverride = null;
+    private long nextUnderwaterCheck = Long.MIN_VALUE;
+    private boolean cachedUnderwater;
+    private Boolean blueprintUnderwater;
+    private String villageType = "plains";
+    private long nextVillageTypeCheck;
     private final Set<Integer> separateVillages=new HashSet<>();
     private boolean autoScan = Config.getInstance().enableAutoScanByDefault;
     private Identifier pathBlock = Identifier.withDefaultNamespace("dirt_path");
+    private boolean customPathBlock;
     private BlockBoxExtended box = new BlockBoxExtended(0, 0, 0, 0, 0, 0);
 
     public ServerLevel getWorld() { return world; }
@@ -85,6 +94,9 @@ public class Village implements Iterable<Building> {
 
     public Village(CompoundTag v, ServerLevel world) {
         id = v.getInt("id").orElse(0);
+        prisonInmates = v.getListOrEmpty("PrisonInmates").copy();
+        villageType = v.getString("VillageType").orElse("plains");
+        blueprintUnderwater = v.getBoolean("BlueprintUnderwater").orElse(null);
         warCandidates = v.getList("WarCandidates").map(ListTag::copy).orElseGet(ListTag::new);
         for (var entry : v.getListOrEmpty("conqueredVillages")) {
             if (entry instanceof CompoundTag snapshot) conqueredVillages.add(snapshot.copy());
@@ -111,10 +123,14 @@ public class Village implements Iterable<Building> {
         this.world = world;
 
         autoScan = v.getBoolean("autoScan").orElse(true);
+        automaticGuards=v.getBooleanOr("automaticGuards",false);
+        clutchOverride=v.getBooleanOr("clutchOverride",false);
         ignoreBedCapacity=v.getBooleanOr("ignoreBedCapacity",false);
         disableGraveMourning=v.getBooleanOr("disableGraveMourning",false);
         disableTaxMourning=v.getBooleanOr("disableTaxMourning",false);
+        if (v.contains("underwaterOverride")) underwaterOverride = v.getBoolean("underwaterOverride").orElse(false);
         for(var tag:v.getListOrEmpty("separateVillages")) tag.asInt().ifPresent(separateVillages::add);
+        customPathBlock = v.getBooleanOr("customPathBlock", v.contains("pathBlock") && !v.getStringOr("pathBlock", "minecraft:dirt_path").equals("minecraft:dirt_path"));
         Identifier savedPathBlock = Identifier.tryParse(v.getString("pathBlock").orElse("minecraft:dirt_path"));
         if (savedPathBlock != null && isValidPathBlock(savedPathBlock)) {
             pathBlock = savedPathBlock;
@@ -149,10 +165,12 @@ public class Village implements Iterable<Building> {
 
     public String getChatAIPrompt() { return chatAIPrompt; }
 
-    public Identifier getPathBlockId() { return pathBlock; }
+    public Identifier getPathBlockId() {
+        return !customPathBlock && isUnderwater() ? Identifier.withDefaultNamespace("prismarine") : pathBlock;
+    }
 
     public Block getPathBlock() {
-        return BuiltInRegistries.BLOCK.get(pathBlock).map(holder -> holder.value()).orElse(Blocks.DIRT_PATH);
+        return BuiltInRegistries.BLOCK.get(getPathBlockId()).map(holder -> holder.value()).orElse(Blocks.DIRT_PATH);
     }
 
     public static boolean isValidPathBlock(Identifier id) {
@@ -162,7 +180,8 @@ public class Village implements Iterable<Building> {
     }
 
     public void setPathBlock(Identifier id) {
-        if (isValidPathBlock(id) && !pathBlock.equals(id)) {
+        if (isValidPathBlock(id) && (!pathBlock.equals(id) || !customPathBlock)) {
+            customPathBlock = true;
             pathBlock = id;
             if (world != null) {
                 markDirty();
@@ -176,7 +195,9 @@ public class Village implements Iterable<Building> {
     }
 
     public boolean isWithinBorder(BlockPos pos, int margin) {
-        return box.inflatedBy(margin).isInside(pos);
+        return box.inflatedBy(margin).isInside(pos)
+                && pos.getY() >= box.minY() - Math.min(margin, 4)
+                && pos.getY() <= box.maxY() + Math.min(margin, 4);
     }
 
     @Override
@@ -478,6 +499,7 @@ public class Village implements Iterable<Building> {
     }
 
     public void calculateDimensions() {
+        nextUnderwaterCheck = Long.MIN_VALUE;
         int sx = Integer.MAX_VALUE;
         int sy = Integer.MAX_VALUE;
         int sz = Integer.MAX_VALUE;
@@ -572,11 +594,58 @@ public class Village implements Iterable<Building> {
         return id;
     }
 
+    public boolean isClutchOverride(){return clutchOverride;}
+    public boolean isAutomaticGuards(){return automaticGuards;}
     public boolean isIgnoreBedCapacity(){return ignoreBedCapacity;}
     public boolean isGraveMourningDisabled(){return disableGraveMourning;}
     public boolean isTaxMourningDisabled(){return disableTaxMourning;}
+
+    public boolean isUnderwater() {
+        if (underwaterOverride != null) return underwaterOverride;
+        if (world == null) return blueprintUnderwater != null ? blueprintUnderwater : villageType.equals("underwater");
+        if (world.getGameTime() < nextUnderwaterCheck) return cachedUnderwater;
+        nextUnderwaterCheck = world.getGameTime() + 200;
+        // Sample occupied building elevations, not an empty point between buildings.
+        // Surface houses can surround water while dry greenhouses can sit under an ocean.
+        int submerged = 0, sampled = 0;
+        for (Building building : buildings.values()) {
+            BlockPos anchor = building.getSourceBlock();
+            if (!world.hasChunkAt(anchor)) continue;
+            int wet = 0;
+            for (int[] offset : new int[][]{{0,0},{8,0},{-8,0},{0,8},{0,-8}}) {
+                BlockPos probe = anchor.offset(offset[0], 2, offset[1]);
+                if (world.hasChunkAt(probe) && world.isWaterAt(probe) && world.isWaterAt(probe.above(2))) wet++;
+            }
+            sampled++;
+            if (wet >= 3) submerged++;
+        }
+        return cachedUnderwater = sampled == 0 ? villageType.equals("underwater") : submerged * 2 > sampled;
+    }
+
+    public String getVillageType() {
+        if (world == null || world.getGameTime() < nextVillageTypeCheck) return villageType;
+        nextVillageTypeCheck = world.getGameTime() + 200;
+        var c = getCenter();
+        BlockPos center = new BlockPos(c.getX(), c.getY(), c.getZ());
+        if (isUnderwater()) return villageType = "underwater";
+        String biome = world.getBiome(center).unwrapKey().map(key -> key.identifier().getPath()).orElse("plains");
+        String landType = biome.contains("snow") || biome.contains("frozen") || biome.contains("ice") ? "snowy"
+                : biome.contains("desert") || biome.contains("badlands") ? "desert"
+                : biome.contains("savanna") ? "savanna" : biome.contains("taiga") ? "taiga"
+                : biome.contains("jungle") ? "jungle" : biome.contains("swamp") ? "swamp" : "plains";
+        int waterColumns = 0;
+        for (int[] offset : new int[][]{{0,0},{8,0},{-8,0},{0,8},{0,-8}}) {
+            for (int down = 1; down <= 24; down++) {
+                BlockPos pos = center.offset(offset[0], -down, offset[1]);
+                if (!world.hasChunkAt(pos)) break;
+                if (world.isWaterAt(pos)) { waterColumns++; break; }
+            }
+        }
+        return villageType = landType.equals("plains") && waterColumns >= 3 ? "overwater" : landType;
+    }
+
     public void setPolicy(String key,boolean value){
-        switch(key){case "beds"->ignoreBedCapacity=value;case "graves"->disableGraveMourning=value;case "taxes"->disableTaxMourning=value;default->throw new IllegalArgumentException("Unknown village policy");}if(world!=null)markDirty();
+        switch(key){case "underwater"->underwaterOverride=value;case "clutches"->clutchOverride=value;case "guards"->automaticGuards=value;case "beds"->ignoreBedCapacity=value;case "graves"->disableGraveMourning=value;case "taxes"->disableTaxMourning=value;default->throw new IllegalArgumentException("Unknown village policy");}if(world!=null)markDirty();
     }
     public void keepSeparateFrom(int id){separateVillages.add(id);}
     public boolean isSeparateFrom(Village other){return separateVillages.contains(other.id)||other.separateVillages.contains(id);}
@@ -589,6 +658,11 @@ public class Village implements Iterable<Building> {
 
     public int getPopulation() {
         return residentNames.size();
+    }
+
+    public Optional<String> randomResidentName(net.minecraft.util.RandomSource random) {
+        var names = residentNames.values().stream().filter(n -> n != null && !n.isBlank()).toList();
+        return names.isEmpty() ? Optional.empty() : Optional.of(names.get(random.nextInt(names.size())));
     }
 
     public Stream<UUID> getResidentsUUIDs() {
@@ -778,9 +852,13 @@ public class Village implements Iterable<Building> {
             data.store("uuid", net.minecraft.core.UUIDUtil.CODEC, uuid);
             return data;
         }));
+        v.putBoolean("automaticGuards",automaticGuards);
+        v.putBoolean("clutchOverride",clutchOverride);
         v.putBoolean("ignoreBedCapacity",ignoreBedCapacity);
         v.putBoolean("disableGraveMourning",disableGraveMourning);
         v.putBoolean("disableTaxMourning",disableTaxMourning);
+        v.putString("VillageType", getVillageType());
+        if (underwaterOverride != null) v.putBoolean("underwaterOverride", underwaterOverride);
         ListTag separate=new ListTag();separateVillages.forEach(id->separate.add(IntTag.valueOf(id)));v.put("separateVillages",separate);
         v.put("residentNames", NbtHelper.fromMap(new CompoundTag(), residentNames, Object::toString, StringTag::valueOf));
         v.put("residentHomes", NbtHelper.fromMap(new CompoundTag(), residentHomes, Object::toString, LongTag::valueOf));
@@ -789,6 +867,7 @@ public class Village implements Iterable<Building> {
         v.put("buildings", NbtHelper.fromList(buildings.values(), Building::save));
         v.putBoolean("autoScan", autoScan);
         v.putString("pathBlock", pathBlock.toString());
+        v.putBoolean("customPathBlock", customPathBlock);
         v.put("mainRoomOverrides", NbtHelper.fromList(mainRoomOverrides.entrySet(), entry -> {
             CompoundTag mainRoom = new CompoundTag();
             mainRoom.putInt("structureId", entry.getKey());
@@ -801,7 +880,9 @@ public class Village implements Iterable<Building> {
     public CompoundTag getBlueprintData() {
         updateMaxPopulation();
         CompoundTag data = save();
+        data.putBoolean("BlueprintUnderwater", isUnderwater());
         if (world != null) {
+            data.put("PrisonInmates", com.ancientkira.mca.server.GolemPolice.inmates(world, this));
             ListTag choices = com.ancientkira.mca.server.VillageWarfare.get(world).nearby(this);
             releaseRecords().forEach((key, snapshot) -> {
                 CompoundTag entry = new CompoundTag();
@@ -835,7 +916,9 @@ public class Village implements Iterable<Building> {
                 for (Building other : List.copyOf(remaining)) {
                     BlockPos a = member.getSourceBlock(), b = other.getSourceBlock();
                     long dx = (long) a.getX() - b.getX(), dz = (long) a.getZ() - b.getZ();
-                    if (member.getStructureId() == other.getStructureId() || dx * dx + dz * dz <= 64 * 64) {
+                    if (member.getStructureId() == other.getStructureId() || dx * dx + dz * dz <= 64 * 64
+                            && member.getPos0().getY() <= other.getPos1().getY() + 4
+                            && other.getPos0().getY() <= member.getPos1().getY() + 4) {
                         remaining.remove(other); group.add(other);
                     }
                 }
@@ -873,8 +956,11 @@ public class Village implements Iterable<Building> {
         if (snapshot == null) return null;
         snapshot = snapshot.copy(); snapshot.putInt("id", newId);
         Village released = new Village(snapshot, world);
-        Set<Integer> structures = released.buildings.values().stream().map(Building::getStructureId).collect(Collectors.toSet());
-        List<Building> rooms = buildings.values().stream().filter(room -> structures.contains(room.getStructureId())).toList();
+        List<Building> rooms = HistoricalDistrictRooms.select(buildings.values(), released.buildings.values(),
+                Building::getStructureId, (historic, current) ->
+                        historic.getSourceBlock().equals(current.getSourceBlock())
+                        || historic.containsPos(current.getSourceBlock()) && current.containsPos(historic.getSourceBlock()));
+        Set<Integer> structures = rooms.stream().map(Building::getStructureId).collect(Collectors.toSet());
         if (rooms.isEmpty() || rooms.size() == buildings.size()) return null;
         Set<UUID> oldResidents = new HashSet<>(released.residentNames.keySet());
         boolean historicMembership=key>=0 && !oldResidents.isEmpty();
@@ -981,6 +1067,13 @@ public class Village implements Iterable<Building> {
     public boolean repairOutpostTypes() {
         boolean changed = false;
         for (Building building : buildings.values()) {
+            if (building.isGeneratedOutpost()) {
+                Building root = buildings.getOrDefault(building.getStructureId(), building);
+                if (!root.isGeneratedOutpost()) { root.setGeneratedOutpost(true); changed = true; }
+                if (!root.isTypeForced()) {
+                    root.setType("pillager_outpost"); root.setTypeForced(true); changed = true;
+                }
+            }
             if (building.getType().equals("pillager_outpost")
                     && !building.isTypeForced()) {
                 building.setTypeForced(false);
@@ -992,6 +1085,8 @@ public class Village implements Iterable<Building> {
     }
 
     public boolean canRegisterOutpost(Building building) {
+        if (building.isGeneratedOutpost() || buildings.values().stream()
+                .anyMatch(room -> room.getStructureId() == building.getStructureId() && room.isGeneratedOutpost())) return true;
         return buildings.values().stream()
                 .filter(room -> room.getStructureId() == building.getStructureId())
                 .map(Building::getFloorNumber).distinct().count() >= 3;

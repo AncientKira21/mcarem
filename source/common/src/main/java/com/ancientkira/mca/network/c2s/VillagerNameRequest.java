@@ -21,7 +21,7 @@ public record VillagerNameRequest(Gender gender) implements HandleablePayload {
 
     @Override
     public void handleServer(ServerPlayer player) {
-        String name = Names.pickCitizenName(gender);
+        String name = Names.pickCitizenName(gender, player);
         Network.sendToPlayer(new VillagerNameResponse(name), player);
     }
 

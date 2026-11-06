@@ -1,0 +1,11 @@
+# Staff of Life repair
+
+One Nether Star fully repairs the Staff of Life in an anvil or grindstone. The shipped crafting recipe already produces a fresh ten-use staff from one Nether Star, an End Rod and a Scythe; full repairs keep the same ongoing star cost without requiring another Scythe. Anvils retain ordinary XP, repair-history, rename and enchantment behavior; the staff-specific material repair amount is changed to a full refill.
+
+A grindstone accepts a damaged staff and Nether Stars in either input order. Each result fully restores durability and consumes exactly one star, leaving unused stars in the input slot. The original staff's name and other components are copied. Normal grindstone disenchanting applies: non-curse enchantments are removed, curses remain, and the ordinary XP/sound/loader callbacks run. A full staff or incorrect material produces no custom repair. Normal two-tool and single-item grindstone operations retain their original behavior.
+
+The grindstone hook decorates native menu slots through the ordinary StaffRepairSlot class; no synthetic mixin inner class owns inventory state. If a loader take callback handles or cancels consumption, its resulting inputs are retained. Cinematic Interactions delegates input acceptance and result handling to the same native menu slots, so this repair does not need another Cinematic Interactions implementation.
+
+Validation: python3 source/tools/validate_staff_repairs.py (67 production recipe/menu checks), including full anvil repairs consuming one star, unchanged repair amounts for other items, both slot orders, star stacks of1/2/64, preview immutability, remainder consumption, shift-click-style taking, metadata, curses/disenchanting, native callbacks, handled cancellation and unaffected normal recipes. Native anvil/grindstone contracts were checked for Minecraft26.1.2/26.2/26.3. No game launch is part of these checks.
+
+Loader compatibility: vanilla/Fabric performs repair calculations in createResult; newer NeoForge uses createResultInternal behind a final event wrapper. Separate optional hooks cover these expected alternatives, so an absent alternative does not abort startup. validate_anvil_hooks.py audits both division sites in actual class files, including the installed NeoForge26.1.2.125 binary, without starting Minecraft.

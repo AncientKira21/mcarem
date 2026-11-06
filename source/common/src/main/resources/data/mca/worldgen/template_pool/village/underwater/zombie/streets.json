@@ -1,0 +1,149 @@
+{
+  "elements": [
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/corner_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/corner_02",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/corner_03",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/straight_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 4
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/straight_02",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 4
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/straight_03",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 7
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/straight_04",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 7
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/straight_05",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 3
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/straight_06",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 4
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/crossroad_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/crossroad_02",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/crossroad_03",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/crossroad_04",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/crossroad_05",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/crossroad_06",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 2
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/streets/turn_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 3
+    }
+  ],
+  "fallback": "mca:village/underwater/terminators"
+}

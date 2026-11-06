@@ -15,11 +15,16 @@ public class TextPage extends Page {
     private List<FormattedCharSequence> cachedPage;
 
     public TextPage(String name, int page) {
-        content = Component.translatable("mca.books." + name + "." + page);
+        content = com.ancientkira.mca.client.book.BookText.translated("mca.books." + name + "." + page);
     }
 
     public TextPage(Component content) {
         this.content = content;
+    }
+
+    @Override
+    public List<Component> writtenPages(boolean dynamic) {
+        return List.of(com.ancientkira.mca.client.book.BookText.paper(content.copy().withStyle(style)));
     }
 
     protected List<FormattedCharSequence> getCachedPage(ExtendedBookScreen screen) {

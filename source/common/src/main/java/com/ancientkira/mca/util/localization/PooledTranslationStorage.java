@@ -37,10 +37,14 @@ public class PooledTranslationStorage {
 
     @Nullable
     public McaPair<String, String> get(String key) {
+        return get(key, null);
+    }
+
+    public McaPair<String, String> get(String key, String resident) {
         List<McaPair<String, String>> options = getOptions(key);
         if (!options.isEmpty()) {
             McaPair<String, String> pair = PoolUtil.pickOne(options, new McaPair<>(key, key), rand);
-            return new McaPair<>(pair.getA(), TemplateSet.INSTANCE.replace(pair.getB()));
+            return new McaPair<>(pair.getA(), resident == null ? TemplateSet.INSTANCE.replace(pair.getB()) : TemplateSet.replaceResident(pair.getB(), resident));
         }
         return null;
     }

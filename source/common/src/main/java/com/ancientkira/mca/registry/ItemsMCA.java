@@ -26,6 +26,13 @@ import java.util.stream.Collectors;
 public interface ItemsMCA {
     Map<Identifier, Item> ITEMS = new LinkedHashMap<>();
 
+    Item CORPSE = register("corpse", new CorpseItem(unstackableProps("corpse")));
+    Item PLASTIC = register("plastic", new PlasticItem(baseProps("plastic")));
+
+    Item GOLEM_SPAWN_EGG = register("golem_spawn_egg", new SpawnEggItem(baseProps("golem_spawn_egg").spawnEgg(EntitiesMCA.GOLEM)));
+    Item RAIDER_GOLEM_SPAWN_EGG = register("raider_golem_spawn_egg", new SpawnEggItem(baseProps("raider_golem_spawn_egg").spawnEgg(EntitiesMCA.RAIDER_GOLEM)));
+    Item VANILLA_RAIDER_GOLEM_SPAWN_EGG = register("vanilla_raider_golem_spawn_egg", new com.ancientkira.mca.item.VanillaRaiderGolemSpawnEggItem(baseProps("vanilla_raider_golem_spawn_egg")));
+    Item BAKERS_TABLE = register("bakers_table", new BlockItem(BlocksMCA.BAKERS_TABLE, blockProps("bakers_table")));
     Item PERSON_SPAWN_EGG = register("person_spawn_egg", new SpawnEggItem(baseProps("person_spawn_egg").spawnEgg(EntitiesMCA.PERSON)));
 
     // Keep saved eggs usable; only the canonical egg appears in the creative tab.
@@ -190,6 +197,10 @@ public interface ItemsMCA {
     Item DEEPSLATE_UPRIGHT_HEADSTONE = register("deepslate_upright_headstone", new BlockItem(BlocksMCA.DEEPSLATE_UPRIGHT_HEADSTONE, blockProps("deepslate_upright_headstone")));
     Item DEEPSLATE_SLANTED_HEADSTONE = register("deepslate_slanted_headstone", new BlockItem(BlocksMCA.DEEPSLATE_SLANTED_HEADSTONE, blockProps("deepslate_slanted_headstone")));
 
+    Item PRISMARINE_GREENHOUSE_DOOR = register("prismarine_greenhouse_door", new BlockItem(BlocksMCA.PRISMARINE_GREENHOUSE_DOOR, blockProps("prismarine_greenhouse_door")));
+    Item UNDERWATER_PRISMARINE_DOOR = register("underwater_prismarine_door", new BlockItem(BlocksMCA.UNDERWATER_PRISMARINE_DOOR, blockProps("underwater_prismarine_door")));
+    Item UNDERWATER_TORCH = register("underwater_torch", new StandingAndWallBlockItem(BlocksMCA.UNDERWATER_TORCH, BlocksMCA.UNDERWATER_WALL_TORCH, net.minecraft.core.Direction.DOWN, blockProps("underwater_torch")));
+
     List<CribItem> CRIBS = registerAllCribTypes();
 
     static List<CribItem> registerAllCribTypes() {
@@ -227,11 +238,16 @@ public interface ItemsMCA {
     }
 
     static boolean isVisibleInCreative(Item item) {
+        if ((item == CORPSE || item == PLASTIC) && !com.ancientkira.mca.Config.getInstance().enableCorpses) return false;
         return item != MALE_VILLAGER_SPAWN_EGG && item != FEMALE_VILLAGER_SPAWN_EGG
                 && item != MALE_ZOMBIE_VILLAGER_SPAWN_EGG && item != FEMALE_ZOMBIE_VILLAGER_SPAWN_EGG;
     }
 
     static void registerItems(MCA.RegisterHelper<Item> helper) {
+        if (com.ancientkira.mca.compat.SickenedCompat.enabled()) {
+            ITEMS.computeIfAbsent(MCA.locate("sickened_person_spawn_egg"), id ->
+                    new com.ancientkira.mca.item.SickenedPersonSpawnEggItem(baseProps("sickened_person_spawn_egg")));
+        }
         ITEMS.forEach(helper::register);
     }
 }

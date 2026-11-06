@@ -26,11 +26,22 @@ public final class BulkRevival {
         }
         var tree = FamilyTree.get(player.level());
         List<UUID> ids = tree.getAllEntries().filter(node -> !node.isPlayer() && node.isDeceased())
-                .filter(node -> !villageOnly || (!ProfessionsMCA.isRaider(node.getProfession())
+                .filter(node -> !villageOnly || (!isRaider(node)
                         && belongsToVillage(node, village.getId(), player.level().dimension().identifier().toString())))
                 .map(FamilyTreeNode::id).toList();
-        queue.add(new Job(player.getUUID(), new ArrayDeque<>(ids)));
+        queue.add(new Job(player.getUUID(), new ArrayDeque<>(ids),villageOnly?village.getId():null,player.level().dimension().identifier().toString()));
     }
+    public static boolean isRaider(FamilyTreeNode node) {
+        return node.getRevivalData().map(data -> {
+            if(data.contains("MCARevivalRaider"))return data.getBooleanOr("MCARevivalRaider",false);
+            if(RevivalRaiderFilter.entity(data.getStringOr("id","")))return true;
+            String profession=data.getCompound("VillagerData").map(nbt -> nbt.getStringOr("profession","")).orElse("");
+            if(profession.isEmpty())profession=data.getCompound(VillagerEntityMCA.MCA_DATA_KEY)
+                    .flatMap(nbt -> nbt.getCompound("VillagerData")).map(nbt -> nbt.getStringOr("profession","")).orElse("");
+            return !profession.isEmpty()?RevivalRaiderFilter.profession(profession):ProfessionsMCA.isRaider(node.getProfession());
+        }).orElseGet(() -> ProfessionsMCA.isRaider(node.getProfession()));
+    }
+
     public static boolean belongsToVillage(FamilyTreeNode node, int village, String dimension) {
         return node.getRevivalData().map(data -> {
             int recorded = data.getIntOr("MCARevivalVillage", data.getCompound(VillagerEntityMCA.MCA_DATA_KEY)
@@ -50,6 +61,7 @@ public final class BulkRevival {
             UUID id = job.ids.remove();
             var node = tree.getOrEmpty(id).orElse(null);
             if (node == null || !node.isDeceased() || node.isPlayer()) continue;
+            if(job.village!=null && (isRaider(node) || !belongsToVillage(node,job.village,job.dimension)))continue;
             try {
                 new VillagerReviverActionMessage(id, VillagerReviverActionMessage.Action.REVIVE)
                         .reviveSingle(player, true, job.processed++);
@@ -67,7 +79,11 @@ public final class BulkRevival {
     private static final class Job {
         final UUID player;
         final ArrayDeque<UUID> ids;
+        final Integer village;
+        final String dimension;
         int processed, revived, failed;
-        Job(UUID player, ArrayDeque<UUID> ids) { this.player = player; this.ids = ids; }
+        Job(UUID player, ArrayDeque<UUID> ids,Integer village,String dimension) {
+            this.player=player;this.ids=ids;this.village=village;this.dimension=dimension;
+        }
     }
 }

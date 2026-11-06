@@ -24,6 +24,8 @@ import java.util.UUID;
 
 public class WhistleScreen extends Screen {
     private List<String> keys = new ArrayList<>();
+    private final List<String> originalKeys = new ArrayList<>();
+    private WhistleSort sort = WhistleSort.AZ;
     private CompoundTag villagerData = new CompoundTag();
 
     private VillagerEntityMCA dummy;
@@ -87,6 +89,7 @@ public class WhistleScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (com.ancientkira.mca.client.gui.widget.DropdownWidget.scroll(this, scrollY)) return true;
         if (namesOpen) {
             nameOffset += scrollY > 0 ? -1 : scrollY < 0 ? 1 : 0;
             showNames();
@@ -115,6 +118,7 @@ public class WhistleScreen extends Screen {
     @Override
     public void init() {
         closeNames();
+        com.ancientkira.mca.client.gui.widget.DropdownWidget.close(this);
         Network.sendToServer(new GetFamilyRequest());
 
         selectionLeftButton = addRenderableWidget(new ButtonWidget(width / 2 - 123, height / 2 + 65, 20, 20, Component.literal("<<"), b -> {
@@ -151,12 +155,19 @@ public class WhistleScreen extends Screen {
             }
         }));
 
-        callButton = addRenderableWidget(new ButtonWidget(width / 2 - 100, height / 2 + 90, 60, 20, Component.translatable("gui.button.call"), (b) -> {
+        callButton = addRenderableWidget(new ButtonWidget(width / 2 - 140, height / 2 + 90, 60, 20, Component.translatable("gui.button.call"), (b) -> {
             Network.sendToServer(new CallToPlayerMessage(UUID.fromString(keys.get(selectedIndex))));
             Objects.requireNonNull(this.minecraft).setScreen(null);
         }));
 
-        addRenderableWidget(new ButtonWidget(width / 2 + 40, height / 2 + 90, 60, 20, Component.translatable("gui.button.exit"), b -> Objects.requireNonNull(this.minecraft).setScreen(null)));
+        addRenderableWidget(new com.ancientkira.mca.client.gui.widget.DropdownWidget<>(this,
+                widget -> addRenderableWidget(widget), this::removeWidget,
+                width / 2 - 70, height / 2 + 90, 140, 20,
+                List.of(WhistleSort.values()), sort,
+                value -> Component.translatable("gui.whistle.sort", Component.translatable("gui.whistle.sort." + value.name().toLowerCase(java.util.Locale.ROOT))),
+                value -> { sort = value; sortVillagers(); }));
+
+        addRenderableWidget(new ButtonWidget(width / 2 + 80, height / 2 + 90, 60, 20, Component.translatable("gui.button.exit"), b -> Objects.requireNonNull(this.minecraft).setScreen(null)));
 
         toggleButtons(false);
     }
@@ -194,11 +205,50 @@ public class WhistleScreen extends Screen {
         closeNames();
         names.clear();
         villagerData = data;
-        keys = new ArrayList<>(data.keySet());
+        originalKeys.clear();
+        originalKeys.addAll(data.keySet());
         loadingAnimationTicks = -1;
         selectedIndex = 0;
+        keys.clear();
+        sortVillagers();
+    }
 
-        setVillagerData(0);
+    private void sortVillagers() {
+        String selected = keys.isEmpty() ? null : keys.get(selectedIndex);
+        closeNames();
+        keys = new ArrayList<>(originalKeys);
+        java.util.Map<String, Component> labels = new java.util.HashMap<>();
+        for (String key : keys) {
+            var data = villagerData.getCompoundOrEmpty(key);
+            labels.put(key, com.ancientkira.mca.entity.VillagerLike.parseCustomName(
+                    Objects.requireNonNull(minecraft.level).registryAccess(), data)
+                    .orElse(Component.translatable("entity.mca.male_villager")));
+        }
+        keys.sort(sort.comparator(key -> labels.get(key).getString(),
+                key -> villagerData.getCompoundOrEmpty(key).getIntOr("Age", 0)));
+        names.clear();
+        for (String key : keys) names.add(labels.get(key));
+        selectedIndex = selected == null ? 0 : Math.max(0, keys.indexOf(selected));
+        nameOffset = 0;
+        setVillagerData(selectedIndex);
+    }
+
+    @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        if (com.ancientkira.mca.client.gui.widget.DropdownWidget.click(this, event, doubleClick)) return true;
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if (com.ancientkira.mca.client.gui.widget.DropdownWidget.escape(this, event.key())) return true;
+        return super.keyPressed(event);
+    }
+
+    @Override
+    public void removed() {
+        com.ancientkira.mca.client.gui.widget.DropdownWidget.close(this);
+        super.removed();
     }
 
     private void setVillagerData(int index) {

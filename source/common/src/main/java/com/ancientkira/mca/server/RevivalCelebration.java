@@ -20,7 +20,18 @@ public final class RevivalCelebration {
         if (!(revived.level() instanceof ServerLevel level)) return;
         var tree = FamilyTree.get(level);
         UUID victim = revived.getUUID();
+        if (!revived.isAlive() || revived.isRemoved()) {
+            tree.getOrEmpty(victim).ifPresent(node -> node.setDeceased(true));
+            return;
+        }
+        Corpses.complete(revived);
+        if(revived instanceof net.minecraft.world.entity.LivingEntity living) {
+            ((com.ancientkira.mca.entity.RevivalState)living).mca$resetDeathState();
+            level.broadcastEntityEvent(living,com.ancientkira.mca.entity.Status.MCA_VILLAGER_REVIVED);
+        }
+        tree.getOrEmpty(victim).ifPresent(node -> node.setDeceased(false));
         tree.getOrEmpty(victim).ifPresent(node -> node.recordReviver(rescuer));
+        FamilyEmotions.revive(revived);
         tree.getAllEntries().filter(node -> !node.isPlayer() && !node.isDeceased()).forEach(node -> {
             if (node.id().equals(victim) || node.isRelative(victim) || node.partner().equals(victim)) {
                 node.queueRevivalThanks(victim, rescuer, node.id().equals(victim) ? 10 : 5);
@@ -33,6 +44,8 @@ public final class RevivalCelebration {
                         && grave.storesEntity(victim)) grave.cleanupAfterRevival();
             }
             for (Entity entity : world.getAllEntities()) {
+                if (entity instanceof net.minecraft.world.entity.item.ItemEntity item && revived instanceof VillagerEntityMCA returned)
+                    DeathDropRecovery.recover(item,returned);
                 if (entity instanceof VillagerEntityMCA person) {
                     var node = person.getRelationships().getFamilyEntry();
                     boolean mourning = person.getBrain().getMemory(MemoryModuleTypeMCA.MOURNING_PERSON)

@@ -20,8 +20,11 @@ public class CenteredListPage extends ListPage {
     }
 
     public CenteredListPage(String title, List<Component> text) {
-        this(Component.translatable(title).withStyle(ChatFormatting.BLACK).withStyle(ChatFormatting.BOLD), text);
+        this(com.ancientkira.mca.client.book.BookText.translated(title).withStyle(ChatFormatting.BLACK).withStyle(ChatFormatting.BOLD), text);
     }
+
+    @Override
+    protected Component writtenTitle() { return title; }
 
     private static void drawCenteredText(ExtendedBookScreen screen, GuiGraphicsExtractor context, Font textRenderer, Component text, int centerX, int y, int color) {
         FormattedCharSequence orderedText = text.getVisualOrderText();

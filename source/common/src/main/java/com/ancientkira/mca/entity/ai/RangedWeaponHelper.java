@@ -22,7 +22,9 @@ public final class RangedWeaponHelper {
         InteractionHand gunHand = GunCompatibility.hand(entity);
         if (gunHand != null) return gunHand;
         InteractionHand crossbowHand = findHoldingHand(entity, CrossbowItem.class);
-        return crossbowHand != null ? crossbowHand : findHoldingHand(entity, BowItem.class);
+        if(crossbowHand!=null)return crossbowHand;
+        InteractionHand trident=getTridentHoldingHand(entity);
+        return trident!=null?trident:findHoldingHand(entity,BowItem.class);
     }
 
     @Nullable
@@ -35,6 +37,13 @@ public final class RangedWeaponHelper {
         return getSelectedHoldingHand(entity, CrossbowItem.class);
     }
 
+    @Nullable
+    public static InteractionHand getTridentHoldingHand(LivingEntity entity) {
+        for(InteractionHand hand:InteractionHand.values())
+            if(entity.getItemInHand(hand).is(net.minecraft.world.item.Items.TRIDENT))return hand;
+        return null;
+    }
+
     public static double getAttackRangeSquared(LivingEntity entity, double maximumRangeSquared) {
         InteractionHand hand = getWeaponHoldingHand(entity);
         return hand == null ? 0.0D : getAttackRangeSquared(entity, hand, maximumRangeSquared);
@@ -42,11 +51,12 @@ public final class RangedWeaponHelper {
 
     public static double getAttackRangeSquared(LivingEntity entity, InteractionHand hand) {
         if (GunCompatibility.isGun(entity.getItemInHand(hand))) return 1024.0D;
+        if (entity.getItemInHand(hand).is(net.minecraft.world.item.Items.TRIDENT)) return 225.0D;
         if (!(entity.getItemInHand(hand).getItem() instanceof ProjectileWeaponItem weapon)) {
             return 0.0D;
         }
 
-        double range = weapon.getDefaultProjectileRange();
+        double range = entity.isInWater() ? 3.0D : weapon instanceof CrossbowItem ? 15.0D : weapon.getDefaultProjectileRange();
         return range * range;
     }
 
@@ -56,6 +66,7 @@ public final class RangedWeaponHelper {
 
     public static boolean isValidAttackTarget(Mob entity, @Nullable LivingEntity target) {
         return target != null
+               && (!(entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA guard) || GuardPerception.canLocate(guard,target))
                && target.isAlive()
                && target.level() == entity.level()
                && entity.canAttack(target);

@@ -497,6 +497,10 @@ public final class Config extends CommonConfig {
     public boolean enableOnlineTTS = false;
 
     /** Apply installed CPA animation resources to humanoid villagers on this client. */
+    /** Optional corpse feature; disabled unless explicitly enabled. */
+    public boolean enableCorpses = false;
+
+    public boolean eyesOverHair = true;
     public boolean usePlayerAnimationsForVillagers = false;
 
     /**
@@ -649,7 +653,7 @@ public final class Config extends CommonConfig {
     /**
      * If true, automatically scan for buildings. High CPU usage.
      */
-    public boolean enableAutoScanByDefault = false;
+    public boolean enableAutoScanByDefault = true;
 
     /**
      * URL for the immersive skin library.

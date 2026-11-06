@@ -11,7 +11,6 @@ import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.ai.Messenger;
 import com.ancientkira.mca.entity.ai.Relationship;
-import com.ancientkira.mca.entity.ai.chatAI.modules.*;
 import com.ancientkira.mca.entity.ai.relationship.AgeState;
 import com.ancientkira.mca.server.world.data.Village;
 import com.ancientkira.mca.util.McaPair;
@@ -36,8 +35,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private static final int MAX_MEMORY = 768;
     private static final int MAX_MEMORY_TIME = 20 * 60 * 45;
 
-    private static final Map<UUID, List<McaPair<String, String>>> memory = new HashMap<>();
-    private static final Map<UUID, Long> lastInteractions = new HashMap<>();
+    private final Map<UUID, List<McaPair<String, String>>> memory = new HashMap<>();
+    private final Map<UUID, Long> lastInteractions = new HashMap<>();
 
     public static String translate(String phrase) {
         return phrase.replace("_", " ").toLowerCase(Locale.ROOT).replace("mca.", "");
@@ -52,6 +51,8 @@ public class OpenAIChatAI implements ChatAIStrategy {
         con.setRequestProperty("Authorization", "Bearer " + token);
 
         // Enable input and output streams
+        con.setConnectTimeout(15000);
+        con.setReadTimeout(45000);
         con.setDoOutput(true);
         return con;
     }
@@ -197,164 +198,171 @@ public class OpenAIChatAI implements ChatAIStrategy {
         return parts[parts.length - 1].strip();
     }
 
-    public Optional<String> answer(ServerPlayer player, VillagerEntityMCA villager, String msg) {
+    private Request prepare(ServerPlayer player, VillagerEntityMCA villager, String msg) {
+        Config config = Config.getInstance();
+        boolean isInHouse = config.villagerChatAIEndpoint.contains("conczin.net");
+
+        String playerName = Messenger.getName(player);
+        String villagerName = villager.getName().getString();
+
+        // forgot about last conversation if it's too long ago
+        long time = villager.level().getGameTime();
+        if (time > lastInteractions.getOrDefault(player.getUUID(), 0L) + MAX_MEMORY_TIME) {
+            memory.remove(player.getUUID());
+        }
+        lastInteractions.put(player.getUUID(), time);
+
+        // remember phrase
+        List<McaPair<String, String>> pastDialogue = memory.computeIfAbsent(player.getUUID(), key -> new LinkedList<>());
+        while (pastDialogue.stream().mapToInt(v -> (v.getB().length() / 4)).sum() > MAX_MEMORY) {
+            pastDialogue.removeFirst();
+        }
+
+        // construct system message
+        StringBuilder sb = new StringBuilder();
+
+        // add control variables
+        if (isInHouse || config.villagerChatAIIncludeSessionInformation) {
+            long seed = player.level().getSeed();
+            sb.append("[world_id:").append(seed).append("]");
+
+            sb.append("[player_id:").append(player.getUUID()).append("]");
+            sb.append("[character_id:").append(villager.getUUID()).append("]");
+
+            if (config.villagerChatAIUseLongTermMemory) {
+                sb.append("[use_memory:true]");
+            }
+            if (config.villagerChatAIUseSharedLongTermMemory) {
+                sb.append("[shared_memory:true]");
+            }
+        }
+
+        if (!config.villagerChatAISystemPrompt.isEmpty()) {
+            // add user specified prompt
+            sb.append(config.villagerChatAISystemPrompt);
+            sb.append("\n");
+        } else if (!isInHouse) {
+            // when not using conczin.net, use some default prompt
+            String defaultPrompt = "You are a Minecraft character with the current role described below, fully immersed in their virtual world, unaware of its artificial nature. You respond based on your description, your role, and your knowledge of the world. You have no knowledge of the real world, and do not realize that you are within Minecraft. You are no assistant! You can be sarcastic, funny, or even rude when appropriate.";
+            sb.append(defaultPrompt);
+            sb.append("\n");
+
+        }
+
+        ChatAIContext.appendPrompts(sb, player, villager, Village.findNearest(villager).orElse(null));
+
+        sb.append("Current observations below take precedence over earlier dialogue, background and remembered facts. ")
+                .append("Use them for your current job, family and surroundings. Do not infer missing relatives.\n");
+
+        sb.append(ChatAIContext.currentFacts(player, villager));
+
+        if (villager.getAgeState() == AgeState.BABY || villager.getAgeState() == AgeState.TODDLER || villager.getAgeState() == AgeState.CHILD) {
+            sb.append("You are a child/baby and MUST NOT flirt with the player or use any romantic or suggestive language. Keep your responses innocent, child-like, and age-appropriate.\n");
+        } else if (Relationship.IS_RELATIVE.test(villager, player)) {
+            sb.append("You are related to the player and MUST NOT flirt with them or use romantic/suggestive language. Keep your responses strictly familial.\n");
+        }
+
+        // try to match player language
+        if (MCA.language != null) {
+            sb.append("Match the language of the player, and use ").append(MCA.language).append(" when unsure.");
+        }
+
+        // structure and commands (if available)
+        List<TriggerCommandInfo> validCommands;
+        if (config.villagerChatAIUseTools) {
+            validCommands = TriggerCommandInfos.triggerCommands.stream()
+                    .filter(c -> c.isActive == null || c.isActive.test(player, villager))
+                    .toList();
+            MCA.LOGGER.info("Valid commands: {}", validCommands.stream().map(c -> c.command).toList());
+        } else {
+            validCommands = List.of();
+        }
+        if (!validCommands.isEmpty()) {
+            String structureExample = new Gson().toJson(new StructuredResponse("example message to say", validCommands.getFirst().command));
+            sb.append("\n\n");
+            sb.append("The reply MUST be in this JSON format: ").append(structureExample).append("\n");
+            sb.append("The following commands are valid:\n");
+            for (TriggerCommandInfo command : validCommands) {
+                sb.append("  * ").append(command.command).append(": ").append(command.description).append("\n");
+            }
+            sb.append("Use a command only for an explicit request in the latest player message. ")
+                    .append("If no command applies, leave optionalCommand empty. ")
+                    .append("Only agree to start work you can request, and do not claim it is finished.");
+        }
+
+        String system = sb.toString();
+
+        // construct body
+        StringBuilder body = new StringBuilder();
+        body.append("{");
+        body.append("\"model\": ").append(jsonStringQuote(config.villagerChatAIModel)).append(",");
+        // START Messages
+        body.append("\"messages\": [");
+        // System Message
+        if (!config.villagerChatAIFuseSystemPrompt) {
+            body.append("{\"role\": \"system\", \"content\": ").append(jsonStringQuote(system)).append("},");
+        }
+        for (McaPair<String, String> pair : pastDialogue) {
+            String role = pair.getA();
+            String content = pair.getB();
+            String name = role.equals("user") ? playerName : villagerName;
+            body.append("{\"role\": \"").append(role)
+                    .append("\", \"name\": ").append(jsonStringQuote(name))
+                    .append(", \"content\": ").append(jsonStringQuote(content)).append("},");
+        }
+        // User Message
+        String userContent = config.villagerChatAIFuseSystemPrompt ? system + "\n\n" + msg : msg;
+        body.append("{\"role\": \"user\", \"name\": ").append(jsonStringQuote(playerName)).append(", \"content\": ").append(jsonStringQuote(userContent)).append("}");
+        // END Messages
+        body.append("]");
+        body.append("}");
+
+        // get access token
+        String token = config.villagerChatAIToken;
+        if (token.isEmpty() || config.villagerChatAIEndpoint.contains("conczin.net")) {
+            token = player.getName().getString();
+        }
+
+        return new Request(config.villagerChatAIEndpoint, body.toString(), token, pastDialogue, validCommands);
+    }
+
+    @Override
+    public synchronized Optional<String> answer(ServerPlayer player, VillagerEntityMCA villager, String msg) {
+        var server = player.level().getServer();
         try {
-            Config config = Config.getInstance();
-            boolean isInHouse = config.villagerChatAIEndpoint.contains("conczin.net");
+            Request request = server.submit(() -> ChatAI.canReply(player, villager)
+                    ? prepare(player, villager, msg) : null).join();
+            if (request == null) return Optional.empty();
 
-            String playerName = Messenger.getName(player);
-            String villagerName = villager.getName().getString();
+            Answer message = post(request.endpoint(), request.body(), request.token());
+            return server.submit(() -> ChatAI.canReply(player, villager)
+                    ? applyAnswer(player, villager, msg, request, message) : Optional.<String>empty()).join();
+        } catch (Exception e) {
+            MCA.LOGGER.error("Villager chat request failed", e);
+            return Optional.empty();
+        }
+    }
 
-            // forgot about last conversation if it's too long ago
-            long time = villager.level().getGameTime();
-            if (time > lastInteractions.getOrDefault(villager.getUUID(), 0L) + MAX_MEMORY_TIME) {
-                memory.remove(villager.getUUID());
-            }
-            lastInteractions.put(villager.getUUID(), time);
-
-            // remember phrase
-            List<McaPair<String, String>> pastDialogue = memory.computeIfAbsent(villager.getUUID(), key -> new LinkedList<>());
-            while (pastDialogue.stream().mapToInt(v -> (v.getB().length() / 4)).sum() > MAX_MEMORY) {
-                pastDialogue.removeFirst();
-            }
-
-            // construct context
-            List<String> input = new LinkedList<>();
-            PersonalityModule.apply(input, villager, player);
-            TraitsModule.apply(input, villager, player);
-            RelationModule.apply(input, villager, player);
-            VillageModule.apply(input, villager, player);
-            EnvironmentModule.apply(input, villager, player);
-            PlayerModule.apply(input, villager, player);
-
-            // gather variables
-            Map<String, String> variables = Map.of(
-                    "player", playerName,
-                    "villager", villagerName
-            );
-
-            // construct system message
-            StringBuilder sb = new StringBuilder();
-
-            // add control variables
-            if (isInHouse || config.villagerChatAIIncludeSessionInformation) {
-                long seed = player.level().getSeed();
-                sb.append("[world_id:").append(seed).append("]");
-
-                sb.append("[player_id:").append(player.getUUID()).append("]");
-                sb.append("[character_id:").append(villager.getUUID()).append("]");
-
-                if (config.villagerChatAIUseLongTermMemory) {
-                    sb.append("[use_memory:true]");
-                }
-                if (config.villagerChatAIUseSharedLongTermMemory) {
-                    sb.append("[shared_memory:true]");
-                }
-            }
-
-            if (!config.villagerChatAISystemPrompt.isEmpty()) {
-                // add user specified prompt
-                sb.append(config.villagerChatAISystemPrompt);
-                sb.append("\n");
-            } else if (!isInHouse) {
-                // when not using conczin.net, use some default prompt
-                String defaultPrompt = "You are a Minecraft character with the current role described below, fully immersed in their virtual world, unaware of its artificial nature. You respond based on your description, your role, and your knowledge of the world. You have no knowledge of the real world, and do not realize that you are within Minecraft. You are no assistant! You can be sarcastic, funny, or even rude when appropriate.";
-                sb.append(defaultPrompt);
-                sb.append("\n");
-
-            }
-
-            ChatAIContext.appendPrompts(sb, player, villager, Village.findNearest(villager).orElse(null));
-
-            // fill in variables and add to system message
-            for (String s : input) {
-                for (Map.Entry<String, String> entry : variables.entrySet()) {
-                    s = s.replaceAll("\\$" + entry.getKey(), entry.getValue());
-                }
-                sb.append(s);
-            }
-
-            if (villager.getAgeState() == AgeState.BABY || villager.getAgeState() == AgeState.TODDLER || villager.getAgeState() == AgeState.CHILD) {
-                sb.append("You are a child/baby and MUST NOT flirt with the player or use any romantic or suggestive language. Keep your responses innocent, child-like, and age-appropriate.\n");
-            } else if (Relationship.IS_RELATIVE.test(villager, player)) {
-                sb.append("You are related to the player and MUST NOT flirt with them or use romantic/suggestive language. Keep your responses strictly familial.\n");
-            }
-
-            // try to match player language
-            if (MCA.language != null) {
-                sb.append("Match the language of the player, and use ").append(MCA.language).append(" when unsure.");
-            }
-
-            // structure and commands (if available)
-            List<TriggerCommandInfo> validCommands;
-            if (config.villagerChatAIUseTools) {
-                validCommands = TriggerCommandInfos.triggerCommands.stream()
-                        .filter(c -> c.isActive == null || c.isActive.test(player, villager))
-                        .toList();
-                MCA.LOGGER.info("Valid commands: {}", validCommands.stream().map(c -> c.command).toList());
-            } else {
-                validCommands = List.of();
-            }
-            if (!validCommands.isEmpty()) {
-                String structureExample = new Gson().toJson(new StructuredResponse("example message to say", validCommands.getFirst().command));
-                sb.append("\n\n");
-                sb.append("The reply MUST be in this JSON format: ").append(structureExample).append("\n");
-                sb.append("The following commands are valid:\n");
-                for (TriggerCommandInfo command : validCommands) {
-                    sb.append("  * ").append(command.command).append(": ").append(command.description).append("\n");
-                }
-                sb.append("Only use a command when the player asks for it.");
-            }
-
-            String system = sb.toString();
-
-            // construct body
-            StringBuilder body = new StringBuilder();
-            body.append("{");
-            body.append("\"model\": \"").append(config.villagerChatAIModel).append("\",");
-            // START Messages
-            body.append("\"messages\": [");
-            // System Message
-            if (!config.villagerChatAIFuseSystemPrompt) {
-                body.append("{\"role\": \"system\", \"content\": ").append(jsonStringQuote(system)).append("},");
-            }
-            for (McaPair<String, String> pair : pastDialogue) {
-                String role = pair.getA();
-                String content = pair.getB();
-                String name = role.equals("user") ? playerName : villagerName;
-                body.append("{\"role\": \"").append(role)
-                        .append("\", \"name\": \"").append(name)
-                        .append("\", \"content\": ").append(jsonStringQuote(content)).append("},");
-            }
-            // User Message
-            String userContent = config.villagerChatAIFuseSystemPrompt ? system + "\n\n" + msg : msg;
-            body.append("{\"role\": \"user\", \"name\": \"").append(playerName).append("\", \"content\": ").append(jsonStringQuote(userContent)).append("}");
-            // END Messages
-            body.append("]");
-            body.append("}");
-
-            // get access token
-            String token = config.villagerChatAIToken;
-            if (token.isEmpty() || config.villagerChatAIEndpoint.contains("conczin.net")) {
-                token = player.getName().getString();
-            }
-
-            // encode and create url
-            Answer message = post(config.villagerChatAIEndpoint, body.toString(), token);
-
+    private Optional<String> applyAnswer(ServerPlayer player, VillagerEntityMCA villager,
+                                         String msg, Request request, Answer message) {
+        try {
             if (message.error == null) {
                 if (message.answer != null) {
-                    // remember
-                    pastDialogue.add(new McaPair<>("user", msg));
-                    pastDialogue.add(new McaPair<>("assistant", message.answer.message != null ? message.answer.message : "..."));
-
-                    // act
-                    if (message.answer.optionalCommand() != null && !message.answer.optionalCommand().isEmpty()) {
-                        Optional<TriggerCommandInfo> command = TriggerCommandInfos.findCommand(message.answer.optionalCommand(), player, villager);
-                        command.ifPresent(triggerCommandInfo -> triggerCommandInfo.call.accept(player, villager));
+                    String command = message.answer.optionalCommand();
+                    if (command != null && !command.isEmpty()) {
+                        if (!Config.getInstance().villagerChatAIUseTools
+                                || request.commands().stream().noneMatch(tool -> tool.command.equals(command))) {
+                            return Optional.of("I can't do that right now.");
+                        }
+                        var available = TriggerCommandInfos.findCommand(command, player, villager);
+                        if (available.isEmpty()) {
+                            return Optional.of("I can't do that right now.");
+                        }
+                        available.get().call.accept(player, villager);
                     }
+                    request.dialogue().add(new McaPair<>("user", msg));
+                    request.dialogue().add(new McaPair<>("assistant", message.answer.message != null ? message.answer.message : "..."));
                 }
-
                 return Optional.ofNullable(message.answer != null ? message.answer.message : null);
             } else if (message.error.equals("invalid_model")) {
                 player.sendSystemMessage(Component.literal("Invalid model!").withStyle(ChatFormatting.RED));
@@ -383,6 +391,9 @@ public class OpenAIChatAI implements ChatAIStrategy {
     private static MutableComponent formatFailureMessage(String error) {
         return Component.literal("Error: " + error + "\n\nThe villager failed to talk and is sad. Reason: " + error);
     }
+
+    private record Request(String endpoint, String body, String token,
+                           List<McaPair<String, String>> dialogue, List<TriggerCommandInfo> commands) {}
 
     public record StructuredResponse(@Nullable String message, String optionalCommand) {
 

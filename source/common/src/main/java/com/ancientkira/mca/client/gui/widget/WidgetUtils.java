@@ -57,6 +57,52 @@ public class WidgetUtils {
         context.tooltip(font, components, x, y, DefaultTooltipPositioner.INSTANCE, null);
     }
 
+    /** Extract an isolated GUI snapshot rather than inheriting world-only visibility and offsets. */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static void drawLibraryEntity(GuiGraphicsExtractor context, int x0, int y0, int x1, int y1,
+                                         int size, float mouseX, float mouseY, LivingEntity entity) {
+        com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.withoutSelections(() ->
+                PreviewEntityAnimation.withPreviewTime(entity, () -> {
+                    var dispatcher = net.minecraft.client.Minecraft.getInstance().getEntityRenderDispatcher();
+                    net.minecraft.client.renderer.entity.EntityRenderer renderer = dispatcher.getRenderer(entity);
+                    // Allocate and finalize a snapshot for each card before the deferred GUI draw.
+                    var state = renderer.createRenderState(entity, PreviewEntityAnimation.getActivePartialTick());
+                    state.isInvisible = false;
+                    state.shadowPieces.clear();
+                    state.outlineColor = 0;
+                    state.nameTag = null;
+                    state.displayFireAnimation = false;
+                    state.passengerOffset = null;
+                    float horizontalAngle = (float) Math.atan(((x0 + x1) * 0.5F - mouseX) / 40.0F);
+                    float verticalAngle = (float) Math.atan(((y0 + y1) * 0.5F - mouseY) / 40.0F);
+                    if (state instanceof net.minecraft.client.renderer.entity.state.LivingEntityRenderState living) {
+                        living.isInvisibleToPlayer = false;
+                        living.pose = net.minecraft.world.entity.Pose.STANDING;
+                        living.bedOrientation = null;
+                        living.deathTime = 0;
+                        living.scale = 1.0F;
+                        living.bodyRot = 180.0F + horizontalAngle * 20.0F;
+                        living.yRot = horizontalAngle * 20.0F;
+                        living.xRot = -verticalAngle * 20.0F;
+                    }
+                    if (state instanceof com.ancientkira.mca.client.render.VillagerRenderState villager) {
+                        villager.isPassenger = false;
+                        villager.mcaSleeping = false;
+                        villager.mcaCorpse = false;
+                        villager.isKidnapped = false;
+                        villager.panicAnimationProgress = 0;
+                    }
+                    // Use finite entity bounds directly; never divide GUI bounds by an inherited scale.
+                    state.boundingBoxWidth = Math.max(0.1F, entity.getBbWidth());
+                    state.boundingBoxHeight = Math.max(0.1F, entity.getBbHeight());
+                    var tilt = new org.joml.Quaternionf().rotateX(verticalAngle * (float) Math.PI / 9.0F);
+                    var rotation = new org.joml.Quaternionf().rotateZ((float) Math.PI).mul(tilt);
+                    context.entity(state, size, new org.joml.Vector3f(0, state.boundingBoxHeight / 2, 0),
+                            rotation, tilt, x0, y0, x1, y1);
+                    return null;
+                }));
+    }
+
     /**
      * The same as the Inventory function but with negative Z
      */

@@ -25,13 +25,13 @@ public class Traits {
     private static final CDataParameter<CompoundTag> TRAITS = CParameter.create("Traits", new CompoundTag());
 
     public static final Trait LACTOSE_INTOLERANCE = register(MCA.locate("lactose_intolerance"), 1.0F, 1.0F);
-    public static final Trait BISEXUAL = register(MCA.locate("bisexual"), 1.0F, 0.0F);
+    public static final Trait BISEXUAL = register(MCA.locate("bisexual"), 1.0F, 1.0F);
     public static final Trait ALBINISM = register(MCA.locate("albinism"), 1.0F, 1.0F);
     public static final Trait RAINBOW = register(MCA.locate("rainbow"), 0.05F, 0.0F);
     public static final Trait RAINBOW_EYES = register(MCA.locate("rainbow_eyes"), 0.05F, 0.0F);
     public static final Trait SIRBEN = register(MCA.locate("sirben"), 0.025F, 1.0F);
     public static final Trait DWARFISM = register(MCA.locate("dwarfism"), 1.0F, 1.0F);
-    public static final Trait HOMOSEXUAL = register(MCA.locate("homosexual"), 1.0F, 0.0F);
+    public static final Trait HOMOSEXUAL = register(MCA.locate("homosexual"), 1.0F, 1.0F);
     public static final Trait HETEROCHROMIA = register(MCA.locate("heterochromia"), 1.0F, 0.5F);
     public static final Trait ASEXUAL = register(MCA.locate("asexual"), 1.0F, 0.0F);
     public static final Trait COLOR_BLIND = register(MCA.locate("color_blind"), 1.0F, 0.5F);
@@ -44,6 +44,7 @@ public class Traits {
     public static final Trait VEGETARIAN = register(MCA.locate("vegetarian"), 1.0F, 1.0F, false); // TODO
     public static final Trait INFERTILE = register(MCA.locate("infertile"), 1.0F, 0.0F);
     public static final Trait ELECTRIFIED = register(MCA.locate("electrified"), 0.0F, 0.0F, false);
+    public static final Trait EXTREME_SLEEPER = register(MCA.locate("extreme_sleeper"), 0.1F, 0.5F, false);
     public static final Trait NO_AGING = register(MCA.locate("no_aging"), 0.0F, 0.0F, false);
     // public static final Trait UNKNOWN = register(MCA.locate("unknown"), 0.0F, 0.0F, false);
 

@@ -27,11 +27,11 @@ public class VillagerEntityModelMCA extends VillagerEntityBaseModelMCA {
 
     public VillagerEntityModelMCA(ModelPart tree) {
         super(tree);
-        bodyWear = body.getChild(PartNames.JACKET);
-        leftArmwear = leftArm.getChild("left_sleeve");
-        rightArmwear = rightArm.getChild("right_sleeve");
-        leftLegwear = leftLeg.getChild("left_pants");
-        rightLegwear = rightLeg.getChild("right_pants");
+        bodyWear = getChildOrEmpty(body, PartNames.JACKET);
+        leftArmwear = getChildOrEmpty(leftArm, "left_sleeve");
+        rightArmwear = getChildOrEmpty(rightArm, "right_sleeve");
+        leftLegwear = getChildOrEmpty(leftLeg, "left_pants");
+        rightLegwear = getChildOrEmpty(rightLeg, "right_pants");
 
         breastsWear = getChildOrEmpty(tree, BREASTPLATE);
     }
@@ -86,14 +86,27 @@ public class VillagerEntityModelMCA extends VillagerEntityBaseModelMCA {
 
     public void setupAnim(VillagerRenderState state) {
         super.setupAnim(state);
+        if (!hasDeferredPose(state)) applyDancePose(state);
+        syncWearParts();
+    }
+
+    public void applyDancePose(VillagerRenderState state) {
         if (state.isVillageDancing && !state.isKidnapped && state.panicAnimationProgress <= 0) {
-            float beat = (float)Math.sin(state.ageInTicks * 0.35F);
-            head.zRot += beat * 0.15F;
-            body.zRot += beat * 0.08F;
-            leftArm.zRot = -0.8F + beat * 0.35F;
-            rightArm.zRot = 0.8F + beat * 0.35F;
-            leftLeg.xRot = beat * 0.3F;
-            rightLeg.xRot = -beat * 0.3F;
+            float t = state.ageInTicks * .35F + state.dancePhase;
+            float beat = (float) Math.sin(t);
+            float counter = (float) Math.cos(t);
+            float energy = state.danceStyle == 3 ? 1.3F : .6F;
+            head.zRot = beat * .15F * energy;
+            body.zRot = beat * .12F * energy;
+            body.yRot = state.danceStyle == 1 ? beat * .35F : counter * .1F;
+            leftArm.xRot = state.danceStyle == 2 ? -1.2F + beat * .5F : counter * .4F * energy;
+            rightArm.xRot = state.danceStyle == 2 ? -1.2F - beat * .5F : -counter * .4F * energy;
+            leftArm.zRot = -.5F - (state.danceStyle == 3 ? .8F : 0) + beat * .35F;
+            rightArm.zRot = .5F + (state.danceStyle == 3 ? .8F : 0) + beat * .35F;
+            if (!com.ancientkira.mca.client.render.VillagerVisuals.require(state).baby()) {
+                leftLeg.xRot = beat * .3F * energy;
+                rightLeg.xRot = -beat * .3F * energy;
+            }
         }
         syncWearParts();
     }

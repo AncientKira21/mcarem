@@ -28,13 +28,17 @@ public class Nationality extends SavedData {
     };
     final RandomSource random = RandomSource.create();
     private Map<Long, Integer> map = new HashMap<>();
+    private String nameLanguage = "en_us";
 
     Nationality(ServerLevel level) {
 
     }
 
     Nationality(CompoundTag nbt, HolderLookup.Provider provider) {
-        map = NbtHelper.toMap(nbt, Long::valueOf, e -> e.asInt().orElse(0));
+        nameLanguage = nbt.getStringOr("NameLanguage", "en_us");
+        CompoundTag regions = nbt.copy();
+        regions.remove("NameLanguage");
+        map = NbtHelper.toMap(regions, Long::valueOf, e -> e.asInt().orElse(0));
     }
 
     public static Nationality get(ServerLevel world) {
@@ -47,7 +51,17 @@ public class Nationality extends SavedData {
 
     public CompoundTag save(CompoundTag nbt, HolderLookup.Provider provider) {
         NbtHelper.fromMap(nbt, map, String::valueOf, IntTag::valueOf);
+        nbt.putString("NameLanguage", nameLanguage);
         return nbt;
+    }
+
+    public String getNameLanguage() { return nameLanguage; }
+
+    public void rememberNameLanguage(String language) {
+        if (language != null && !language.isBlank() && !language.equals(nameLanguage)) {
+            nameLanguage = language;
+            setDirty();
+        }
     }
 
     public int getRegionId(BlockPos pos) {

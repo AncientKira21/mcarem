@@ -17,6 +17,13 @@ public class SkinLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
 
     @Override
     protected void prepareModel(S state) {
+        if (getParentModel() instanceof com.ancientkira.mca.client.model.VillagerEntityBaseModelMCA villagerModel
+                && state instanceof com.ancientkira.mca.client.render.VillagerRenderState villagerState) {
+            villagerModel.applyPanicPose(villagerState);
+            villagerModel.applyBabySitting(villagerState);
+        }
+        if (getParentModel() instanceof com.ancientkira.mca.client.model.VillagerEntityModelMCA dancer
+                && state instanceof com.ancientkira.mca.client.render.VillagerRenderState danceState) dancer.applyDancePose(danceState);
         com.ancientkira.mca.client.model.CrossbowPoseGuard.repair(getParentModel(), state);
         VillagerStateHolder.require(state).mca$setHumanoidModelPose(HumanoidModelPose.capture(getParentModel()));
     }
@@ -43,7 +50,7 @@ public class SkinLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
     public int getColor(VillagerVisuals visuals, float tickDelta) {
         int skinDye = visuals.skinDye();
         if (skinDye != 0xFF000000) {
-            return skinDye;
+            return visuals.sicknessProgress() > 0 ? ColorPalette.applyPurpleShift(skinDye, visuals.sicknessProgress()) : skinDye;
         }
 
         float albinism = visuals.albinism() ? 0.1f : 1.0f;
@@ -51,7 +58,7 @@ public class SkinLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
         return ColorPalette.SKIN.getColor(
                 visuals.melaninGene() * albinism,
                 visuals.hemoglobinGene() * albinism,
-                visuals.infectionProgress()
+                visuals.skinInfectionProgress()
         );
     }
 }

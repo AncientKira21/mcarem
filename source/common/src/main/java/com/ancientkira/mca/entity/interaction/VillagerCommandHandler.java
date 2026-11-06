@@ -45,7 +45,7 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
     }
 
     private static boolean canRideMount(Entity mount) {
-        return mount.getPassengers().size() < (mount instanceof Camel || mount instanceof AbstractBoat ? 2 : 1);
+        return mount.getPassengers().size() < (com.ancientkira.mca.server.VillagerMounts.saddled(mount) || mount instanceof AbstractBoat ? 2 : 1);
     }
 
     /**
@@ -102,12 +102,13 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 } else {
                     Entity playerVehicle = player.getVehicle();
                     if (playerVehicle != null
+                            && (com.ancientkira.mca.server.VillagerMounts.saddled(playerVehicle) || playerVehicle instanceof AbstractBoat)
                             && canRideMount(playerVehicle)
                             && entity.startRiding(playerVehicle, false, true)) {
                         entity.sendChatMessage(player, "interaction.ridehorse.success");
                     } else {
                         entity.level().getEntities(player, player.getBoundingBox().inflate(10), e ->
-                                        e instanceof AbstractHorse horse && horse.isSaddled() || e instanceof AbstractBoat)
+                                        com.ancientkira.mca.server.VillagerMounts.saddled(e) || e instanceof AbstractBoat)
                                 .stream()
                                 .filter(VillagerCommandHandler::canRideMount)
                                 .min(Comparator.comparingDouble(a -> a.distanceToSqr(entity)))
@@ -159,6 +160,7 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 FamilyTreeNode parentNode = FamilyTree.get((ServerLevel) player.level()).getOrCreate(player);
                 Optional<FamilyTreeNode> parentSpouse = FamilyTree.get((ServerLevel) player.level()).getOrEmpty(parentNode.partner());
                 entity.getRelationships().getFamilyEntry().replaceParents(parentNode, parentSpouse);
+                com.ancientkira.mca.server.AdoptionEffects.apply(entity, player);
                 com.ancientkira.mca.entity.FamilyNames.inheritSurname(entity);
             }
             case "procreate" -> {
@@ -208,18 +210,20 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                 return true;
             }
             case "pardon" -> {
-                entity.setProfession(BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(VillagerProfession.NONE).value());
+                com.ancientkira.mca.server.RaiderSocial.redeem(entity);
                 return true;
             }
             case "stay_in_village" -> {
                 var destination=com.ancientkira.mca.server.world.data.VillageManager.get(player.level()).findNearestVillage(player);
                 if(destination.isEmpty() || !destination.get().hasSpace())return true;
-                boolean guest=entity.getProfession()==ProfessionsMCA.ADVENTURER || entity.getProfession()==ProfessionsMCA.WANDERING_TRADER;
+                boolean guest=entity.getProfession()==ProfessionsMCA.ADVENTURER || entity.getProfession()==ProfessionsMCA.WANDERING_TRADER
+                        || ProfessionsMCA.isRaider(entity.getProfession());
                 entity.getResidency().leaveHome();
                 entity.releasePoi(MemoryModuleType.HOME);entity.getBrain().eraseMemory(MemoryModuleType.HOME);
                 entity.releasePoi(MemoryModuleType.JOB_SITE);entity.getBrain().eraseMemory(MemoryModuleType.JOB_SITE);
                 entity.getResidency().joinVillage(destination.get());
-                if(guest)entity.setProfession(BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(VillagerProfession.NONE).value());
+                if(ProfessionsMCA.isRaider(entity.getProfession()))com.ancientkira.mca.server.RaiderSocial.redeem(entity);
+                else if(guest)entity.setProfession(BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(VillagerProfession.NONE).value());
                 entity.setDespawnDelay(0);
                 return true;
             }
@@ -257,6 +261,10 @@ public class VillagerCommandHandler extends EntityCommandHandler<VillagerEntityM
                     case "none" -> {
                         entity.setProfession(BuiltInRegistries.VILLAGER_PROFESSION.getOrThrow(VillagerProfession.NONE).value());
                         entity.sendChatMessage(player, "profession.set.none");
+                    }
+                    case "firefighter" -> {
+                        entity.setProfession(ProfessionsMCA.FIREFIGHTER);
+                        entity.sendChatMessage(player, "profession.set.firefighter");
                     }
                     case "guard" -> {
 

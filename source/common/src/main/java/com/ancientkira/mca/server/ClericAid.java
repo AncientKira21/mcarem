@@ -23,6 +23,7 @@ import java.util.Map;
 /** Temporary rescue assignments leave normal cleric work and residence memories intact. */
 public final class ClericAid {
     private static final Map<VillagerEntityMCA, Assignment> ASSIGNMENTS = new com.google.common.collect.MapMaker().weakKeys().makeMap();
+    private static final Map<VillagerEntityMCA, ZombieAssignment> ZOMBIE_ASSIGNMENTS = new com.google.common.collect.MapMaker().weakKeys().makeMap();
     private static final Map<VillagerEntityMCA, Long> NEXT_CALL = new com.google.common.collect.MapMaker().weakKeys().makeMap();
     private static final int HELP_RADIUS = 128;
     private static final int ASSIGNMENT_TIMEOUT = 20 * 180;
@@ -31,6 +32,9 @@ public final class ClericAid {
     public static void onCaptured(VillagerEntityMCA person) {
         for (var entry : java.util.List.copyOf(ASSIGNMENTS.entrySet())) {
             if (entry.getKey() == person || entry.getValue().patient == person) finish(entry.getKey());
+        }
+        for (var entry : java.util.List.copyOf(ZOMBIE_ASSIGNMENTS.entrySet())) {
+            if (entry.getKey() == person) finishZombie(entry.getKey());
         }
         NEXT_CALL.remove(person);
         person.getBrain().eraseMemory(MemoryModuleTypeMCA.RECOVERING_FROM_CAPTIVITY);
@@ -41,7 +45,7 @@ public final class ClericAid {
         person.getBrain().setMemory(MemoryModuleTypeMCA.RECOVERING_FROM_CAPTIVITY, true);
     }
 
-    public static boolean isHelping(VillagerEntityMCA person) { return InfirmaryCare.isPatient(person) || ASSIGNMENTS.containsKey(person)
+    public static boolean isHelping(VillagerEntityMCA person) { return InfirmaryCare.isPatient(person) || ASSIGNMENTS.containsKey(person) || ZOMBIE_ASSIGNMENTS.containsKey(person)
             || ASSIGNMENTS.values().stream().anyMatch(a -> a.patient == person && a.seekingCure); }
 
     public static void tick(VillagerEntityMCA person) {
@@ -60,6 +64,15 @@ public final class ClericAid {
                     finish(cleric);
                 }
             }
+            for (var entry : java.util.List.copyOf(ZOMBIE_ASSIGNMENTS.entrySet())) {
+                VillagerEntityMCA cleric = entry.getKey();
+                ZombieAssignment aid = entry.getValue();
+                if (!cleric.isAlive() || cleric.isRemoved() || cleric.isKidnapped() || cleric.isNoAi()
+                        || !aid.patient.isAlive() || aid.patient.isRemoved()
+                        || cleric.level() != aid.patient.level() || cleric.level().getGameTime() >= aid.expires) {
+                    finishZombie(cleric);
+                }
+            }
         }
         if (!ProfessionsMCA.isRaider(person.getProfession()) && !person.isKidnapped() && !person.isNoAi()
                 && (person.isInfected() || person.hasEffect(MobEffects.WITHER) || person.getHealth() <= person.getMaxHealth() * 0.25F
@@ -68,7 +81,7 @@ public final class ClericAid {
                 && ASSIGNMENTS.values().stream().noneMatch(a -> a.patient == person)) {
             if (now >= NEXT_CALL.getOrDefault(person, 0L)) {
                 NEXT_CALL.put(person, now + 200);
-                person.sendChatToAllAround("villager.cleric_help");
+                person.sendChatToAllAround("villager.retreat/" + (14 + person.getRandom().nextInt(3)));
             }
             world.getEntitiesOfClass(VillagerEntityMCA.class, person.getBoundingBox().inflate(HELP_RADIUS),
                     cleric -> cleric != person && cleric.isAlive() && !cleric.isNoAi() && !cleric.isKidnapped() && cleric.getHealth() > cleric.getMaxHealth() * 0.25F
@@ -79,6 +92,28 @@ public final class ClericAid {
                         ASSIGNMENTS.put(cleric, new Assignment(person, now));
                         cleric.sendChatToAllAround("villager.cleric_response");
                     });
+        }
+        if (person.getVillagerData().profession().is(VillagerProfession.CLERIC)
+                && !person.isNoAi() && !person.isKidnapped() && person.getHealth() > person.getMaxHealth() * 0.25F
+                && person.tickCount % 20 == 0
+                && !ASSIGNMENTS.containsKey(person) && !ZOMBIE_ASSIGNMENTS.containsKey(person)
+                && !MedicalInsurance.isHelping(person)
+                && person.getInteractions().getInteractingPlayer().isEmpty()) {
+            world.getEntitiesOfClass(com.ancientkira.mca.entity.ZombieVillagerEntityMCA.class, person.getBoundingBox().inflate(HELP_RADIUS),
+                    zombie -> zombie.isAlive() && !zombie.isRemoved()
+                            && InfirmaryCare.isZombiePatient(zombie)
+                            && !zombie.isConverting()
+                            && ZOMBIE_ASSIGNMENTS.values().stream().noneMatch(za -> za.patient == zombie)
+                            && zombie.distanceToSqr(person) <= HELP_RADIUS * HELP_RADIUS)
+                    .stream().min(Comparator.comparingDouble(person::distanceToSqr)).ifPresent(zombie -> {
+                        ZOMBIE_ASSIGNMENTS.put(person, new ZombieAssignment(zombie, now));
+                        person.sendChatToAllAround("villager.cleric_response");
+                    });
+        }
+        ZombieAssignment zombieAssignment = ZOMBIE_ASSIGNMENTS.get(person);
+        if (zombieAssignment != null) {
+            tickZombieAid(person, zombieAssignment, world, now);
+            return;
         }
         Assignment assignment = ASSIGNMENTS.get(person);
         if (assignment == null) return;
@@ -171,6 +206,69 @@ public final class ClericAid {
             this.patient = patient;
             expires = now + ASSIGNMENT_TIMEOUT;
             nextPotion = now + 20;
+        }
+    }
+
+    private static void tickZombieAid(VillagerEntityMCA cleric, ZombieAssignment assignment, ServerLevel world, long now) {
+        var zombie = assignment.patient;
+        if (!cleric.getVillagerData().profession().is(VillagerProfession.CLERIC)
+                || cleric.isNoAi() || cleric.getHealth() <= cleric.getMaxHealth() * 0.25F
+                || cleric.isKidnapped() || !zombie.isAlive() || zombie.isRemoved()
+                || zombie.level() != world || zombie.distanceToSqr(cleric) > HELP_RADIUS * HELP_RADIUS
+                || now >= assignment.expires || (zombie.isConverting() && assignment.splashedWeakness)) {
+            finishZombie(cleric);
+            return;
+        }
+        if (cleric.isSleeping()) cleric.stopSleeping();
+        cleric.getBrain().setActiveActivityIfPossible(Activity.IDLE);
+        cleric.getBrain().setMemory(MemoryModuleType.LOOK_TARGET, new EntityTracker(zombie, true));
+
+        double reachDist = 3.5;
+        if (cleric.distanceToSqr(zombie) > reachDist * reachDist || !cleric.hasLineOfSight(zombie)) {
+            cleric.getBrain().setMemory(MemoryModuleType.WALK_TARGET,
+                    new WalkTarget(new EntityTracker(zombie, false), 0.65F, 2));
+            return;
+        }
+        cleric.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+        cleric.getNavigation().stop();
+        if (now < assignment.nextStep) return;
+
+        if (!assignment.splashedWeakness) {
+            RaiderCombat.throwPotion(world, cleric, zombie, Potions.WEAKNESS);
+            zombie.addEffect(new net.minecraft.world.effect.MobEffectInstance(MobEffects.WEAKNESS, 400, 0));
+            assignment.splashedWeakness = true;
+            assignment.nextStep = now + 40; // 2 seconds
+            return;
+        }
+
+        cleric.swing(InteractionHand.MAIN_HAND);
+        world.sendParticles(new ItemParticleOption(ParticleTypes.ITEM, Items.GOLDEN_APPLE),
+                zombie.getX(), zombie.getY() + zombie.getBbHeight() * 0.8, zombie.getZ(),
+                16, 0.2, 0.2, 0.2, 0.05);
+        zombie.playSound(SoundEvents.GENERIC_EAT.value(), 1.0F, 1.0F);
+        zombie.playSound(SoundEvents.ZOMBIE_VILLAGER_CURE, 1.0F, 1.0F);
+        zombie.startConvertingByCleric(cleric.getUUID(), world.getRandom().nextInt(1201) + 2400);
+        finishZombie(cleric);
+    }
+
+    private static void finishZombie(VillagerEntityMCA cleric) {
+        ZOMBIE_ASSIGNMENTS.remove(cleric);
+        cleric.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+        cleric.getBrain().eraseMemory(MemoryModuleType.LOOK_TARGET);
+        cleric.getNavigation().stop();
+        cleric.getBrain().updateActivityFromSchedule(cleric.level().environmentAttributes(),
+                cleric.level().getGameTime(), cleric.position());
+    }
+
+    private static final class ZombieAssignment {
+        final com.ancientkira.mca.entity.ZombieVillagerEntityMCA patient;
+        final long expires;
+        long nextStep;
+        boolean splashedWeakness;
+        ZombieAssignment(com.ancientkira.mca.entity.ZombieVillagerEntityMCA patient, long now) {
+            this.patient = patient;
+            this.expires = now + ASSIGNMENT_TIMEOUT;
+            this.nextStep = now + 10;
         }
     }
 }

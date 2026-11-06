@@ -102,7 +102,13 @@ public interface InventoryUtils {
 
     static Optional<ItemStack> getBestRanged(Container inv) {
         return stream(inv)
-                .filter(s -> s.getItem() instanceof ProjectileWeaponItem)
+                .filter(s -> s.getItem() instanceof ProjectileWeaponItem || s.is(net.minecraft.world.item.Items.TRIDENT))
+                .max(Comparator.comparingDouble(ItemStack::getMaxDamage));
+    }
+
+    static Optional<ItemStack> getBestCrossbow(Container inv) {
+        return stream(inv)
+                .filter(s -> s.getItem() instanceof net.minecraft.world.item.CrossbowItem)
                 .max(Comparator.comparingDouble(ItemStack::getMaxDamage));
     }
 
@@ -110,7 +116,9 @@ public interface InventoryUtils {
         for (int i = 0; i < inv.getContainerSize(); i++) {
             ItemStack stack = inv.getItem(i);
             if (entity.level() instanceof ServerLevel serverLevel) {
-                entity.spawnAtLocation(serverLevel, stack, 1.0F);
+                var dropped=entity.spawnAtLocation(serverLevel, stack, 1.0F);
+                if(dropped!=null && entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && !person.isAlive())
+                    com.ancientkira.mca.server.DeathDropRecovery.mark(dropped,person);
             }
         }
         inv.clearContent();

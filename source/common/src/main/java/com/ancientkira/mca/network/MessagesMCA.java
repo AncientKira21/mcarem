@@ -18,6 +18,7 @@ public interface MessagesMCA {
         c.register(GetFamilyRequest.TYPE, GetFamilyRequest.STREAM_CODEC, true);
         c.register(GetFamilyTreeRequest.TYPE, GetFamilyTreeRequest.STREAM_CODEC, true);
         c.register(GetInteractDataRequest.TYPE, GetInteractDataRequest.STREAM_CODEC, true);
+        c.register(FreePrisonerMessage.TYPE, FreePrisonerMessage.STREAM_CODEC, true);
         c.register(GetVillageRequest.TYPE, GetVillageRequest.STREAM_CODEC, true);
         c.register(GetVillagerRequest.TYPE, GetVillagerRequest.STREAM_CODEC, true);
         c.register(InteractionCloseRequest.TYPE, InteractionCloseRequest.STREAM_CODEC, true);
@@ -53,6 +54,7 @@ public interface MessagesMCA {
         c.register(InteractionDialogueQuestionResponse.TYPE, InteractionDialogueQuestionResponse.STREAM_CODEC, false);
         c.register(InteractionDialogueResponse.TYPE, InteractionDialogueResponse.STREAM_CODEC, false);
         c.register(OpenDestinyGuiRequest.TYPE, OpenDestinyGuiRequest.STREAM_CODEC, false);
+        c.register(OpenNativeSocial.TYPE, OpenNativeSocial.STREAM_CODEC, false);
         c.register(OpenGuiRequest.TYPE, OpenGuiRequest.STREAM_CODEC, false);
         c.register(PlayerDataMessage.TYPE, PlayerDataMessage.STREAM_CODEC, false);
         c.register(ShowToastRequest.TYPE, ShowToastRequest.STREAM_CODEC, false);

@@ -3,6 +3,8 @@ package com.ancientkira.mca.network;
 import com.ancientkira.mca.network.s2c.*;
 
 public interface ClientHandler {
+    void handleNativeSocial(com.ancientkira.mca.network.s2c.OpenNativeSocial message);
+
     void handleGuiRequest(OpenGuiRequest message);
 
     void handleChatAIContextResponse(ChatAIContextResponse message);

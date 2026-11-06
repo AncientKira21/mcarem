@@ -3,7 +3,7 @@
   "visible": true,
   "priority": 4,
   "blocks": {
-    "minecraft:bookshelf": 32,
+    "minecraft:bookshelf": 3,
     "minecraft:lectern": 1
   },
   "iconU": 7,

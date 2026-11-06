@@ -39,6 +39,7 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
     @Override
     public Set<MemoryModuleType<?>> requires() {
         return ImmutableSet.of(
+                MemoryModuleType.NEAREST_HOSTILE,
                 MemoryModuleType.NEAREST_LIVING_ENTITIES,
                 MemoryModuleType.NEAREST_VISIBLE_LIVING_ENTITIES,
                 MemoryModuleType.ATTACK_TARGET,
@@ -55,18 +56,14 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
             return;
         }
 
-        // Vanilla's villager-hostiles sensor recognizes vanilla pillagers by class only.
-        // Supply converted hostile people too, so civilians still flee and defend themselves.
+        // One sensor owns civilian danger memory so separate sensors cannot erase each other's threats.
         if (!villager.isHostile()) {
-            Optional<LivingEntity> hostilePerson = getVisibleMobs(villager).flatMap(visible -> visible
-                    .find(target -> target instanceof VillagerEntityMCA person && person.isHostile() && person.isAlive())
+            Optional<LivingEntity> danger = getVisibleMobs(villager).flatMap(visible -> visible
+                    .find(target -> com.ancientkira.mca.entity.ai.CivilianThreats.threatens(villager, target))
                     .min((a, b) -> compareDistances(villager, a, b)));
-            Optional<LivingEntity> existing = villager.getBrain().getMemoryInternal(MemoryModuleType.NEAREST_HOSTILE);
-            if (hostilePerson.isPresent() && (existing.isEmpty()
-                    || !existing.get().isAlive()
-                    || compareDistances(villager, hostilePerson.get(), existing.get()) < 0)) {
-                villager.getBrain().setMemory(MemoryModuleType.NEAREST_HOSTILE, hostilePerson.get());
-            }
+            villager.getBrain().setMemory(MemoryModuleType.NEAREST_HOSTILE, danger);
+        } else {
+            villager.getBrain().eraseMemory(MemoryModuleType.NEAREST_HOSTILE);
         }
 
         // Performance optimization: only scan if the villager is a guard,
@@ -134,7 +131,15 @@ public class GuardEnemiesSensor extends NearestLivingEntitySensor<LivingEntity> 
     }
 
     private static int getPriority(LivingEntity entity, LivingEntity guard, LivingEntity followedPlayer) {
-        if (entity instanceof VillagerEntityMCA villager) {
+        if (guard instanceof VillagerEntityMCA relative && com.ancientkira.mca.server.RaiderSocial.isFamily(relative, entity)) return -1;
+        if (entity.isSleeping() && (entity instanceof net.minecraft.world.entity.monster.zombie.Zombie || entity instanceof ZombieVillagerEntityMCA)) return -1;
+        if (entity instanceof ZombieVillagerEntityMCA z && com.ancientkira.mca.server.InfirmaryCare.isZombiePatient(z)) return -1;
+        if (guard instanceof VillagerEntityMCA person && !com.ancientkira.mca.entity.ai.GuardPerception.canLocate(person,entity)) return -1;
+        if (com.ancientkira.mca.server.GolemPolice.prisoner(entity)) return -1;
+        if (entity.getType() == EntityType.DROWNED) return 8;
+        if (entity instanceof net.minecraft.world.entity.animal.golem.IronGolem golem && guard instanceof VillagerEntityMCA defender) {
+            return com.ancientkira.mca.server.GolemAllies.enemyOfGuard(golem, defender) ? 12 : -1;
+        } else if (entity instanceof VillagerEntityMCA villager) {
             return guard instanceof VillagerEntityMCA defender
                     && com.ancientkira.mca.server.VillageWarfare.isEnemy(defender, villager) ? 12 : villager.isHostile() ? 10 : -1;
         } else if (com.ancientkira.mca.server.NeutralMobRules.passiveUntilProvoked(entity)) {

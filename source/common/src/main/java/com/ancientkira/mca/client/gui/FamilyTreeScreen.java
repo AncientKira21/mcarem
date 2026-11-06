@@ -51,7 +51,10 @@ public class FamilyTreeScreen extends Screen {
 
     public void setFamilyData(UUID uuid, Map<UUID, FamilyTreeNode> family) {
         this.focusedEntityId = uuid;
-        this.family.putAll(family);
+        this.family.clear();
+        family.forEach((id,node) -> {
+            if (!com.ancientkira.mca.server.world.data.FamilyTree.isUnnamedAdventurer(node) && !node.getName().startsWith("Unknown player ")) this.family.put(id,node);
+        });
         rebuildTree();
     }
 
@@ -203,9 +206,11 @@ public class FamilyTreeScreen extends Screen {
             this.id = node.id();
             this.deceased = node.isDeceased();
             this.relationship = node.getRelationshipState();
-            final MutableComponent text = Component.literal(MCA.isBlankString(node.getName()) ? defaultNodeName : node.getName());
+            final MutableComponent text = Component.literal(MCA.isBlankString(node.getName()) || com.ancientkira.mca.server.world.data.FamilyTree.isUnnamedAdventurer(node) ? "Unknown relative" : node.getName());
             this.label.add(text.setStyle(text.getStyle().withColor(node.gender().getColor())));
-            this.label.add(node.getProfessionText().withStyle(ChatFormatting.GRAY));
+            if (!node.isPlayer() && !com.ancientkira.mca.server.world.data.FamilyTree.isUnnamedAdventurer(node)) {
+                this.label.add(node.getProfessionText().withStyle(ChatFormatting.GRAY));
+            }
 
             FamilyTreeNode father = family.get(node.father());
             FamilyTreeNode mother = family.get(node.mother());

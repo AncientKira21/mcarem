@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "mca:plastic",
+    {"id":"#c:plastics","required":false},
+    {"id":"#forge:plastic","required":false}
+  ]
+}

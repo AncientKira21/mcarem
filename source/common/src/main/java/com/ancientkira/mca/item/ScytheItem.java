@@ -47,6 +47,19 @@ public class ScytheItem extends Item {
         BlockPos pos = context.getClickedPos();
         BlockState state = world.getBlockState(pos);
 
+        if (world.getBlockEntity(pos) instanceof com.ancientkira.mca.block.CorpseBlock.Data corpse) {
+            if (world.isClientSide()) return InteractionResult.SUCCESS;
+            if (!(context.getPlayer() instanceof ServerPlayer player)) return InteractionResult.FAIL;
+            try {
+                java.util.UUID victim = java.util.UUID.fromString(corpse.body.getStringOr("Victim", ""));
+                var tree = com.ancientkira.mca.server.world.data.FamilyTree.get(player.level());
+                if (!tree.getOrEmpty(victim).map(node -> node.isDeceased()).orElse(false)) return InteractionResult.FAIL;
+                new com.ancientkira.mca.network.c2s.VillagerReviverActionMessage(victim,
+                        com.ancientkira.mca.network.c2s.VillagerReviverActionMessage.Action.REVIVE).reviveSingle(player, true, 0);
+                return tree.getOrEmpty(victim).map(node -> !node.isDeceased()).orElse(false)
+                        ? InteractionResult.SUCCESS : InteractionResult.FAIL;
+            } catch (IllegalArgumentException invalid) { return InteractionResult.FAIL; }
+        }
         if (state.is(TagsMCA.Blocks.TOMBSTONES)) {
             return TombstoneBlock.Data.of(world.getBlockEntity(pos)).filter(TombstoneBlock.Data::hasEntity).map(data -> {
                 if (!context.getLevel().isClientSide()) {

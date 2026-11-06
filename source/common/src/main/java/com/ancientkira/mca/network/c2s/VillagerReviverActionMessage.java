@@ -71,24 +71,36 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
         }
 
         MinecraftServer server = player.level().getServer();
-        StoredVillager stored = findStoredVillager(server, villager);
+        StoredVillager stored = findStoredVillager(server, villager, player.level());
         Entity existing = findLoadedEntity(server, villager);
         if (existing instanceof VillagerLike<?>) {
-            BlockPos pos = existing.blockPosition();
-            restoreVillager(existing, pos);
+            if (!canPlaceAtPlayer(player, existing)) {
+                if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
+                return;
+            }
+            restoreVillager(existing, player.position());
+            if (!existing.teleportTo(player.level(), player.getX(), player.getY(), player.getZ(),
+                    java.util.Set.of(), existing.getYRot(), existing.getXRot(), true)) {
+                if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
+                return;
+            }
             node.setDeceased(false);
             com.ancientkira.mca.server.RevivalCelebration.complete(existing, player.getUUID());
-            TombstoneBlock.Data.playInstantRevivalEffect((ServerLevel) existing.level(), pos);
+            TombstoneBlock.Data.playInstantRevivalEffect((ServerLevel) existing.level(), existing.blockPosition());
             if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
             return;
         }
         if (stored != null) {
-            restoreVillager(stored.entity(), stored.pos());
+            restoreVillager(stored.entity(), player.position());
+            if (!canPlaceAtPlayer(player, stored.entity())) {
+                if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
+                return;
+            }
             if (stored.level().addFreshEntity(stored.entity())) {
                 stored.tombstone().cleanupAfterRevival();
                 node.setDeceased(false);
                 com.ancientkira.mca.server.RevivalCelebration.complete(stored.entity(), player.getUUID());
-                TombstoneBlock.Data.playInstantRevivalEffect(stored.level(), stored.pos());
+                TombstoneBlock.Data.playInstantRevivalEffect((ServerLevel) stored.entity().level(), stored.entity().blockPosition());
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
             } else {
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
@@ -97,7 +109,7 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
         }
 
         ServerLevel level = (ServerLevel) player.level();
-        var spawnPosition = player.position().add(player.getLookAngle().scale(2.0));
+        var spawnPosition = player.position();
         var revivalData = node.getRevivalData();
         Entity recordedVillager = revivalData
                 .flatMap(data -> EntityType.create(
@@ -110,14 +122,16 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
                 return;
             }
-            BlockPos revivePos = BlockPos.containing(spawnPosition);
             recordedVillager.setUUID(villager);
-            restoreVillager(recordedVillager, revivePos);
-            if (quiet && !placeBatchSpawn(player, recordedVillager, index)) return;
+            restoreVillager(recordedVillager, spawnPosition);
+            if (!canPlaceAtPlayer(player, recordedVillager)) {
+                if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
+                return;
+            }
             if (level.addFreshEntity(recordedVillager)) {
                 node.setDeceased(false);
                 com.ancientkira.mca.server.RevivalCelebration.complete(recordedVillager, player.getUUID());
-                TombstoneBlock.Data.playInstantRevivalEffect(level, revivePos);
+                TombstoneBlock.Data.playInstantRevivalEffect((ServerLevel) recordedVillager.level(), recordedVillager.blockPosition());
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
             } else {
                 if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
@@ -136,8 +150,7 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
         revived.finalizeSpawn(level, level.getCurrentDifficultyAt(revived.blockPosition()),
                 EntitySpawnReason.COMMAND, null);
         revived.setAge(0);
-        BlockPos revivePos = BlockPos.containing(spawnPosition);
-        restoreVillager(revived, revivePos);
+        restoreVillager(revived, spawnPosition);
         var appearanceData = node.getAppearanceData();
         if (appearanceData.isPresent()) {
             restoreAppearance(revived, appearanceData.get());
@@ -145,33 +158,28 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
             inheritRelativeGenetics(server, node, revived);
             revived.randomizeSkin();
         }
-        if (quiet && !placeBatchSpawn(player, revived, index)) return;
+        if (!canPlaceAtPlayer(player, revived)) {
+            if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
+            return;
+        }
         if (level.addFreshEntity(revived)) {
             node.setDeceased(false);
             com.ancientkira.mca.server.RevivalCelebration.complete(revived, player.getUUID());
-            TombstoneBlock.Data.playInstantRevivalEffect(level, revivePos);
+            TombstoneBlock.Data.playInstantRevivalEffect((ServerLevel) revived.level(), revived.blockPosition());
             if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.revive.success", node.getName()), true);
         } else {
             if (!quiet) player.sendSystemMessage(Component.translatable("gui.villager_reviver.error.spawn_failed"), true);
         }
     }
 
-    private static boolean placeBatchSpawn(ServerPlayer player, Entity entity, int index) {
-        ServerLevel world = player.level();
-        for (int attempt = 0; attempt < 128; attempt++) {
-            int cell = index + attempt;
-            BlockPos base = player.blockPosition().offset((cell % 21 - 10) * 2, 0, (cell / 21 - 10) * 2);
-            for (int dy : new int[] {0, 1, -1, 2, -2, 3, -3}) {
-                BlockPos pos = base.offset(0, dy, 0);
-                if (!world.hasChunkAt(pos) || !world.getBlockState(pos.below()).isSolid()) continue;
-                entity.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
-                if (world.noCollision(entity) && world.getEntities(entity, entity.getBoundingBox(), other -> other.isAlive()).isEmpty()) return true;
-            }
-        }
-        return false;
+    private static boolean canPlaceAtPlayer(ServerPlayer player, Entity entity) {
+        // Overlap with the player is intentional; only solid blocks should reject revival.
+        var box = entity.getDimensions(net.minecraft.world.entity.Pose.STANDING).makeBoundingBox(player.position());
+        return player.level().getWorldBorder().isWithinBounds(box)
+                && !player.level().getBlockCollisions(entity, box).iterator().hasNext();
     }
 
-    private static StoredVillager findStoredVillager(MinecraftServer server, UUID uuid) {
+    private static StoredVillager findStoredVillager(MinecraftServer server, UUID uuid, ServerLevel destination) {
         for (ServerLevel level : server.getAllLevels()) {
             for (BlockPos pos : GraveyardManager.get(level).findAll(GraveyardManager.TombstoneState.FILLED)) {
                 if (!level.getChunkSource().hasChunk(
@@ -182,20 +190,21 @@ public record VillagerReviverActionMessage(UUID villager, Action action) impleme
                 if (tombstone == null || !tombstone.storesEntity(uuid)) {
                     continue;
                 }
-                Entity entity = tombstone.createEntity(level, false).orElse(null);
+                Entity entity = tombstone.createEntity(destination, false).orElse(null);
                 if (entity != null) {
-                    return new StoredVillager(entity, level, pos, tombstone);
+                    return new StoredVillager(entity, destination, pos, tombstone);
                 }
             }
         }
         return null;
     }
 
-    private static void restoreVillager(Entity entity, BlockPos pos) {
-        entity.setPos(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+    private static void restoreVillager(Entity entity, net.minecraft.world.phys.Vec3 pos) {
+        entity.setPos(pos.x, pos.y, pos.z);
         entity.clearFire();
         entity.setPortalCooldown();
         if (entity instanceof LivingEntity living) {
+            ((com.ancientkira.mca.entity.RevivalState)living).mca$resetDeathState();
             living.setHealth(living.getMaxHealth());
             living.removeAllEffects();
             living.fallDistance = 0;

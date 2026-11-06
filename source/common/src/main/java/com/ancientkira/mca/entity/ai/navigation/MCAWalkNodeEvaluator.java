@@ -30,6 +30,8 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
     private BlockPos roadStart;
     private Set<BlockPos> roadTargets = Set.of();
     private boolean roadsOnly;
+    private boolean oceanFloorWalking;
+    private boolean villageWaterRoutes;
     private final Long2BooleanMap roadCache = new Long2BooleanOpenHashMap();
 
     public void configureRoads(Village village, BlockPos start, Set<BlockPos> targets, boolean roadsOnly) {
@@ -50,6 +52,13 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
 
     @Override
     public Node getStart() {
+        villageWaterRoutes = UnderwaterNavigation.canEnterVillageWater(this.mob);
+        oceanFloorWalking = this.mob instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && UnderwaterNavigation.floorWalking(person);
+        if (oceanFloorWalking) {
+            BlockPos.MutableBlockPos floor = this.mob.blockPosition().mutable();
+            for (int down = 0; down < 16 && currentContext.getBlockState(floor.below()).getCollisionShape(currentContext.level(), floor.below()).isEmpty(); down++) floor.move(Direction.DOWN);
+            return getStartNodeAtY(floor, floor.getY());
+        }
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int y = this.mob.getBlockY();
         BlockState state = this.currentContext.getBlockState(pos.set(this.mob.getX(), y, this.mob.getZ()));
@@ -226,8 +235,10 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
         BlockPos pos = new BlockPos(x, y, z);
         if (isClimbable(context, x, y, z)) return PathType.WALKABLE;
         PathType type = super.getPathType(context, x, y, z);
+        if (villageWaterRoutes && type == PathType.WATER && TerrainSafety.solidFloor(context.level(), pos)) return PathType.WALKABLE;
+        if (TrapdoorNavigation.canOpen(context.level(),pos)) return PathType.WALKABLE;
         // Movement controls also query this evaluator after done() has cleared its mob.
-        boolean avoidWater = !context.level().getFluidState(context.mobPosition()).is(FluidTags.WATER);
+        boolean avoidWater = !villageWaterRoutes && !context.level().getFluidState(context.mobPosition()).is(FluidTags.WATER);
         if (type == PathType.LAVA
                 || avoidWater && type == PathType.WATER) return PathType.BLOCKED;
         // A villager already beside a hazard must be able to follow dry tiles out.
@@ -239,6 +250,26 @@ public class MCAWalkNodeEvaluator extends WalkNodeEvaluator {
             return PathType.WALKABLE;
         }
         return type;
+    }
+
+    @Override
+    public PathType getPathTypeOfMob(PathfindingContext context, int x, int y, int z, net.minecraft.world.entity.Mob candidate) {
+        PathType original = super.getPathTypeOfMob(context, x, y, z, candidate);
+        if (original != PathType.BLOCKED || candidate != this.mob || context != this.currentContext
+                || getPathType(context, x, y, z) != PathType.WALKABLE) return original;
+        // Native volume checks round height up to whole blocks. A slab in that extra
+        // space is not an obstacle when the villager's real standing hitbox clears it.
+        for (PathType type : super.getPathTypeWithinMobBB(context, x, y, z)) {
+            if (type != PathType.BLOCKED && type != PathType.OPEN && type != PathType.WALKABLE
+                    && type != PathType.DOOR_OPEN) return original;
+        }
+        Node node = getNode(x, y, z);
+        AABB box = getMobBoxAt(node);
+        for (BlockPos pos : BlockPos.betweenClosed(BlockPos.containing(box.minX, box.minY, box.minZ),
+                BlockPos.containing(box.maxX - BOX_EPSILON, box.maxY - BOX_EPSILON, box.maxZ - BOX_EPSILON))) {
+            if (!context.level().getFluidState(pos).isEmpty()) return original;
+        }
+        return hasExactBlockClearance(box) ? PathType.WALKABLE : original;
     }
 
     private boolean isClimbable(BlockPos pos) {

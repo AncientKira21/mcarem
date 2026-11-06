@@ -11,7 +11,7 @@ public enum AgeState implements VillagerDimensions {
     UNASSIGNED(1, 0.9F, 1, 1, 1.0f, 1.0f),
     BABY(0.45F, 0.4F, 0, 1.5F, 0.0f, 1.6f),
     TODDLER(0.6F, 0.55F, 0, 1.3F, 0.65f, 1.4f),
-    CHILD(0.7F, 0.65F, 0, 1.2F, 0.9f, 1.2f),
+    CHILD(0.7F, 0.65F, 0, 1.2F, 1.0f, 1.2f),
     TEEN(0.85F, 0.85F, 0.5F, 1, 1.05f, 1.0f),
     ADULT(1, 1, 1, 1, 1.0f, 1.0f);
 

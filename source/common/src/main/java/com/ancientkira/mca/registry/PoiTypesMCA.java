@@ -8,6 +8,8 @@ import java.util.Set;
 public final class PoiTypesMCA {
     public static final ResourceKey<PoiType> MINER = ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, MCA.locate("miner"));
     public static final PoiType MINER_TYPE = new PoiType(Set.copyOf(Blocks.FURNACE.getStateDefinition().getPossibleStates()), 1, 1);
+    public static final ResourceKey<PoiType> BAKER = ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE, MCA.locate("baker"));
+    public static final PoiType BAKER_TYPE = new PoiType(Set.copyOf(BlocksMCA.BAKERS_TABLE.getStateDefinition().getPossibleStates()), 1, 1);
     private PoiTypesMCA() { }
-    public static void register(MCA.RegisterHelper<PoiType> helper) { helper.register(MCA.locate("miner"), MINER_TYPE); }
+    public static void register(MCA.RegisterHelper<PoiType> helper) { helper.register(MCA.locate("miner"), MINER_TYPE); helper.register(MCA.locate("baker"), BAKER_TYPE); }
 }

@@ -56,8 +56,11 @@ public class PersonalityModule {
         }
         if (villager.getAgeState() == AgeState.TEEN) {
             input.add("$villager is a teen. ");
-        } else if (!villager.getVillagerData().profession().is(VillagerProfession.NONE)) {
-            input.add("$villager is a " + translate(villager.getProfession().name().getString()) + ". ");
         }
+        String profession = villager.getVillagerData().profession().is(VillagerProfession.NONE)
+                ? "unemployed" : translate(villager.getProfession().name().getString());
+        input.add("Your current profession is " + profession + ". ");
+        input.add("Current health: " + villager.getHealth() + " out of " + villager.getMaxHealth() + ". ");
+        input.add("Current movement: " + translate(villager.getVillagerBrain().getMoveState().name()) + ". ");
     }
 }

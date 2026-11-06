@@ -34,7 +34,7 @@ public final class MinerBlasting {
         return path != null && path.canReach() ? new Plan(site.immutable(), retreat.immutable()) : null;
     }
     private static boolean clearArea(ServerLevel world, VillagerEntityMCA miner, BlockPos site) {
-        if (!world.getGameRules().get(GameRules.MOB_GRIEFING) || !world.isEmptyBlock(site)
+        if (!com.ancientkira.mca.server.VillagerGriefing.allowed(miner) || !world.isEmptyBlock(site)
                 || !world.getBlockState(site.below()).isFaceSturdy(world, site.below(), Direction.UP)) return false;
         if (!world.getEntitiesOfClass(LivingEntity.class, new AABB(site).inflate(16),
                 other -> other != miner && other.isAlive() && !other.isSpectator()).isEmpty()) return false;

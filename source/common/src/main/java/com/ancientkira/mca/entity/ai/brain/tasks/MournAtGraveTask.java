@@ -48,6 +48,8 @@ public class MournAtGraveTask extends Behavior<VillagerEntityMCA> {
     @Override
     protected boolean canStillUse(ServerLevel world, VillagerEntityMCA villager, long time) {
         if(villager.getResidency().getHomeVillage().filter(com.ancientkira.mca.server.world.data.Village::isGraveMourningDisabled).isPresent())return false;
+        if (villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_SITE)
+                .filter(grave -> EnterGraveyardTask.isMournableTombstone(villager,grave)).isEmpty()) return false;
         return hasArrived
                 ? remainingDialogues > 0 && EnterGraveyardTask.isWithinMourningArea(villager)
                 : EnterGraveyardTask.hasValidMourningTarget(villager);

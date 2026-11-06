@@ -91,6 +91,8 @@ public final class MCAFabric implements ModInitializer {
         registerHelper(BuiltInRegistries.POINT_OF_INTEREST_TYPE, PoiTypesMCA::register);
         com.ancientkira.mca.mixin.PoiTypesAccessor.mca$registerStates(
                 BuiltInRegistries.POINT_OF_INTEREST_TYPE.getOrThrow(PoiTypesMCA.MINER), PoiTypesMCA.MINER_TYPE.matchingStates());
+        com.ancientkira.mca.mixin.PoiTypesAccessor.mca$registerStates(
+                BuiltInRegistries.POINT_OF_INTEREST_TYPE.getOrThrow(PoiTypesMCA.BAKER), PoiTypesMCA.BAKER_TYPE.matchingStates());
         registerHelper(BuiltInRegistries.VILLAGER_PROFESSION, ProfessionsMCA::registerProfessions);
         registerHelper(BuiltInRegistries.DATA_COMPONENT_TYPE, DataComponentsMCA::registerProfessions);
         registerHelper(BuiltInRegistries.TRIGGER_TYPES, CriterionMCA::registerCriteria);

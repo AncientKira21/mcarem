@@ -1,0 +1,14 @@
+{
+  "fallback": "minecraft:empty",
+  "elements": [
+    {
+      "weight": 1,
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/facilities/outpost",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      }
+    }
+  ]
+}

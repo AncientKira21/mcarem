@@ -64,8 +64,8 @@ public class OnlineSpeechManager {
     }
 
     public void play(String phrase, String gameLang, String gender, float pitch, float gene, Entity entity, boolean translatable) {
-        if (!translatable) return;
         String text = OnlineSpeechManager.cleanPhrase(phrase);
+        if (text.isBlank()) return;
         String language = OnlineLanguageMap.LANGUAGE_MAP.getOrDefault(gameLang, "");
         if (language.isEmpty()) {
             // The language is not supported by the TTS server
@@ -77,7 +77,7 @@ public class OnlineSpeechManager {
             CompletableFuture.runAsync(() -> {
                 String hash = language + "-" + voice + "/" + AudioCache.getHash(text) + ".ogg";
                 if (AudioCache.cachedRetrieve(hash, output -> {
-                    downloadAudio(output, language, voice, text);
+                    downloadAudio(output, language, voice, text, false);
                 })) {
                     Identifier soundLocation = MCA.locate("tts_cache/" + hash);
                     SpeechManager.INSTANCE.playSound(pitch, entity, soundLocation);
@@ -94,6 +94,10 @@ public class OnlineSpeechManager {
     }
 
     public boolean downloadAudio(OutputStream output, String language, String voice, String text) {
+        return downloadAudio(output, language, voice, text, false);
+    }
+
+    public boolean downloadAudio(OutputStream output, String language, String voice, String text, boolean loadAsync) {
         Map<String, String> params = Map.of(
                 "text", text,
                 "language", language,
@@ -101,7 +105,7 @@ public class OnlineSpeechManager {
                 "file_format", "ogg",
                 "cache", "true",
                 "prepare_speakers", String.valueOf(TOTAL_VOICES),
-                "load_async", "true"
+                "load_async", String.valueOf(loadAsync)
         );
         String url = params.keySet().stream()
                 .map(key -> key + "=" + URLEncoder.encode(params.get(key), StandardCharsets.UTF_8))

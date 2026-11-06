@@ -66,13 +66,14 @@ public class MCAClient {
     }
 
     public static boolean renderArms(UUID uuid, String key) {
-        return useVillagerRenderer(uuid) &&
+        return useGeneticsRenderer(uuid) &&
                Config.getInstance().playerRendererBlacklist.entrySet().stream()
                        .filter(entry -> entry.getValue().equals("arms") || entry.getValue().equals(key))
                        .noneMatch(entry -> MCA.platformHelper.isModLoaded(entry.getKey()));
     }
 
     public static void tickClient(Minecraft client) {
+        com.ancientkira.mca.client.CollisionVisibilityRepairClient.tick(client);
         com.ancientkira.mca.client.DiscCordPlaybackMonitor.tick(client);
         destinyManager.tick(client);
 

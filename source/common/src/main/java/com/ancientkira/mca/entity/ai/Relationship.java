@@ -94,7 +94,10 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
         for (int y = -range; y <= range; y++) {
             // prefer center
             BlockPos pos = entityPos.offset(0, y, 0);
-            if (world.getBlockState(pos).isAir() && tombstoneState.canSurvive(world, pos)) {
+            if (world.getBlockState(pos).isAir() && tombstoneState.canSurvive(world, pos)
+                                && com.ancientkira.mca.server.Corpses.canBuryAt(world, pos)
+                                && world.getEntitiesOfClass(net.minecraft.world.entity.decoration.HangingEntity.class,
+                                        new net.minecraft.world.phys.AABB(pos).inflate(0.1)).isEmpty()) {
                 if (world.setBlockAndUpdate(pos, tombstoneState)) {
                     TombstoneBlock.Data.of(world.getBlockEntity(pos)).ifPresent(TombstoneBlock.Data::markAutomaticallyPlaced);
                     return Optional.of(pos);
@@ -105,7 +108,10 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
                 for (int z = -range; z <= range; z++) {
                     if (x != 0 || z != 0) {
                         pos = entityPos.offset(x, y, z);
-                        if (world.getBlockState(pos).isAir() && tombstoneState.canSurvive(world, pos)) {
+                        if (world.getBlockState(pos).isAir() && tombstoneState.canSurvive(world, pos)
+                                && com.ancientkira.mca.server.Corpses.canBuryAt(world, pos)
+                                && world.getEntitiesOfClass(net.minecraft.world.entity.decoration.HangingEntity.class,
+                                        new net.minecraft.world.phys.AABB(pos).inflate(0.1)).isEmpty()) {
                             if (world.setBlockAndUpdate(pos, tombstoneState)) {
                                 TombstoneBlock.Data.of(world.getBlockEntity(pos)).ifPresent(TombstoneBlock.Data::markAutomaticallyPlaced);
                                 return Optional.of(pos);
@@ -129,6 +135,7 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
     public void onDeath(DamageSource cause) {
         MinecraftServer server = entity.level().getServer();
         if (server != null) {
+            com.ancientkira.mca.server.Corpses.beginDeath((net.minecraft.world.entity.Entity) entity);
             FamilyTreeNode familyEntry = getFamilyEntry();
             familyEntry.setAppearanceData(entity);
             familyEntry.setRevivalData(entity);
@@ -191,12 +198,14 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
 
     @Override
     public void onTragedy(DamageSource cause, @Nullable BlockPos burialSite, RelationshipType type, Entity with) {
-        if (with instanceof VillagerEntityMCA victim && com.ancientkira.mca.registry.ProfessionsMCA.isRaider(victim.getProfession())) {
-            EntityRelationship.super.onTragedy(cause, burialSite, type, with);
+        if (!entity.getUUID().equals(with.getUUID()) && !getFamilyEntry().isFamilyMember(with.getUUID())) return;
+        if(entity instanceof VillagerEntityMCA observer && !com.ancientkira.mca.server.MourningAwareness.canSee(observer)
+                && !observer.getUUID().equals(with.getUUID())) {
+            com.ancientkira.mca.server.MourningAwareness.miss(observer,with.getUUID());
+            EntityRelationship.super.onTragedy(cause,burialSite,type,with);
             return;
         }
-        if (entity instanceof VillagerEntityMCA person && com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())
-                && !getFamilyEntry().isRelative(with.getUUID()) && !isMarriedTo(with.getUUID())) return;
+
         if (!cause.is(DamageTypes.FELL_OUT_OF_WORLD)) {
             int moodAffect = 5 * type.getProximityAmplifier();
             entity.level().broadcastEntityEvent(entity, Status.MCA_VILLAGER_TRAGEDY);
@@ -208,7 +217,9 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
             }
         }
 
-        if (burialSite != null && type != RelationshipType.STRANGER) {
+        boolean mourningDisabled = entity instanceof VillagerEntityMCA person && person.getResidency().getHomeVillage()
+                .filter(com.ancientkira.mca.server.world.data.Village::isGraveMourningDisabled).isPresent();
+        if (!mourningDisabled && burialSite != null && (type != RelationshipType.STRANGER || entity.distanceToSqr(with) <= 32*32)) {
             entity.getVillagerBrain().setGrieving();
             entity.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_PERSON, with.getUUID());
             entity.getBrain().setMemory(MemoryModuleTypeMCA.MOURNING_SITE, burialSite);
@@ -224,6 +235,7 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
 
     @Override
     public void marry(Entity spouse) {
+        if(getFamilyEntry().mourningSpouse() || getFamilyTree().getOrEmpty(spouse.getUUID()).map(FamilyTreeNode::mourningSpouse).orElse(false))return;
         boolean alreadyMarried = getFamilyEntry().partner().equals(spouse.getUUID()) && getRelationshipState().isMarried();
         boolean recordedByPartner = spouse instanceof VillagerEntityMCA
                 && getFamilyTree().getOrEmpty(spouse.getUUID())
@@ -232,6 +244,9 @@ public class Relationship<T extends Mob & VillagerLike<T>> implements EntityRela
             com.ancientkira.mca.server.RaiderSocial.onMarriage(person, spouse, !recordedByPartner);
         }
         EntityRelationship.super.marry(spouse);
+        if (entity instanceof VillagerEntityMCA person && spouse instanceof VillagerEntityMCA spousePerson) {
+            Residency.syncSpouseResidences(person, spousePerson);
+        }
         if (!alreadyMarried && !recordedByPartner && entity instanceof VillagerEntityMCA person) {
             person.getResidency().getRegistryVillage().flatMap(com.ancientkira.mca.server.world.data.Village::getCivilRegistry)
                     .ifPresent(registry -> registry.addText(net.minecraft.network.chat.Component.translatable(

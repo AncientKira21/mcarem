@@ -19,6 +19,8 @@ public class DestinyManager {
         this.allowTeleportation = allowTeleportation;
     }
 
+    public boolean isSettingUp() { return openDestiny; }
+
     public void allowClosing() {
         this.openDestiny = false;
     }

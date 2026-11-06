@@ -17,6 +17,17 @@ import org.spongepowered.asm.mixin.injection.At;
 
 @Mixin(SleepInBed.class)
 abstract class MixinSleepInBed {
+    @org.spongepowered.asm.mixin.injection.Inject(method = "checkExtraStartConditions", at = @At("HEAD"), cancellable = true)
+    private void mca$leavePlayerBedFree(ServerLevel world, LivingEntity entity,
+            org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> callback) {
+        var home = entity.getBrain().getMemoryInternal(MemoryModuleType.HOME).orElse(null);
+        if (home != null && com.ancientkira.mca.server.world.data.PlayerBedClaims.reserved(world, home.pos())) {
+            if (entity instanceof VillagerEntityMCA person) person.releasePoi(MemoryModuleType.HOME);
+            entity.getBrain().eraseMemory(MemoryModuleType.HOME);
+            callback.setReturnValue(false);
+        }
+    }
+
     @ModifyExpressionValue(
             method = "checkExtraStartConditions",
             at = @At(

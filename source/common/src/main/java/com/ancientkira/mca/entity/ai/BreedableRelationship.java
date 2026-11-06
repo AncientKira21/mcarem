@@ -5,6 +5,7 @@ import com.ancientkira.mca.MCA;
 import com.ancientkira.mca.entity.Status;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.interaction.gifts.GiftType;
+import com.ancientkira.mca.entity.interaction.gifts.FavoriteGiftBonus;
 import com.ancientkira.mca.entity.interaction.gifts.Response;
 import com.ancientkira.mca.item.SpecialCaseGift;
 import com.ancientkira.mca.network.Network;
@@ -149,6 +150,10 @@ public class BreedableRelationship extends Relationship<VillagerEntityMCA> {
             int satisfaction = (int) (component.nutrition() + component.saturation() * 3);
             return Optional.of(new GiftType(item, satisfaction, MCA.locate("food")));
         }
+        // Colored gifts (such as wool) are worthwhile even without a gift data entry.
+        if (FavoriteGiftBonus.colorBonus(entity, stack) > 0) {
+            return Optional.of(new GiftType(item, 1, MCA.locate("colors")));
+        }
         return Optional.empty();
     }
 
@@ -205,6 +210,7 @@ public class BreedableRelationship extends Relationship<VillagerEntityMCA> {
     }
 
     private boolean handleSpecialCaseGift(ServerPlayer player, ItemStack stack) {
+        if (com.ancientkira.mca.compat.SickenedCompat.cureGift(player, entity, stack)) return true;
         Item item = stack.getItem();
 
         if (item instanceof SpecialCaseGift specialCaseGift) {

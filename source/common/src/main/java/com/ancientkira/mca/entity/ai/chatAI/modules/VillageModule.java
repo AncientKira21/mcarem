@@ -36,19 +36,9 @@ public class VillageModule {
         // Probably completely over-detailed fact
         String biome = villager.level().getBiome(villager.blockPosition()).unwrapKey().map(v -> v.identifier().getPath()).orElse("plains");
 
-        String size = "small";
-        if (village.isPresent()) {
-            int population = village.get().getPopulation();
-            if (population > 45) {
-                size = "huge";
-            } else if (population > 30) {
-                size = "large";
-            } else if (population > 15) {
-                size = "medium-sized";
-            }
-        }
-
-        input.add("$villager lives in a " + size + ", medieval village in a " + biome.replace("_", " ") + " biom. ");
+        input.add("Current biome: " + biome.replace("_", " ") + ". ");
+        input.add(village.map(v -> "Your home village is " + v.getName() + ", a " + sizeDescription(v) + " village. ")
+                .orElse("You have no registered home village. "));
 
         // Buildings
         village.ifPresent(v -> {
@@ -62,5 +52,11 @@ public class VillageModule {
                 input.add("The village has a " + buildings + ". ");
             }
         });
+    }
+    private static String sizeDescription(Village village) {
+        int population = village.getPopulation();
+        if (population > 45) return "huge";
+        if (population > 30) return "large";
+        return population > 15 ? "medium-sized" : "small";
     }
 }

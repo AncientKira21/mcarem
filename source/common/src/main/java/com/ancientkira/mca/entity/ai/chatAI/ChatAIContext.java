@@ -2,6 +2,8 @@ package com.ancientkira.mca.entity.ai.chatAI;
 
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
+import com.ancientkira.mca.entity.ai.Messenger;
+import com.ancientkira.mca.entity.ai.chatAI.modules.*;
 import com.ancientkira.mca.server.world.data.PlayerSaveData;
 import com.ancientkira.mca.server.world.data.Village;
 import net.minecraft.commands.CommandSourceStack;
@@ -124,6 +126,19 @@ public final class ChatAIContext {
             "You believe a fair trade should leave both people satisfied.",
             "You believe promises made during difficult times matter the most."
     };
+
+    /** Collect on the server thread so each request sees one current game state. */
+    public static String currentFacts(ServerPlayer player, VillagerEntityMCA villager) {
+        List<String> facts = new ArrayList<>();
+        PersonalityModule.apply(facts, villager, player);
+        TraitsModule.apply(facts, villager, player);
+        RelationModule.apply(facts, villager, player);
+        VillageModule.apply(facts, villager, player);
+        EnvironmentModule.apply(facts, villager, player);
+        PlayerModule.apply(facts, villager, player);
+        return String.join("\n", facts).replace("$villager", villager.getName().getString())
+                .replace("$player", Messenger.getName(player));
+    }
 
     public static boolean canEdit(ServerPlayer player) {
         return player.permissions().hasPermission(new Permission.HasCommandLevel(

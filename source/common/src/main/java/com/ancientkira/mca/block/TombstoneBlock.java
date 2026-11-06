@@ -317,6 +317,7 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         private int resurrectionProgress;
         private boolean cure;
         private boolean automaticallyPlaced;
+        private boolean corpseCreated;
         private boolean revivalCleanupPending;
         private boolean decorationsRegistered;
         private CompoundTag mourningDecorations = new CompoundTag();
@@ -355,6 +356,10 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                 }
                 decorationsRegistered = true;
             }
+            if (!corpseCreated && hasEntity() && level.getGameTime() % 20 == Math.floorMod(worldPosition.asLong(), 20) && com.ancientkira.mca.Config.getInstance().enableCorpses) {
+                corpseCreated = com.ancientkira.mca.server.Corpses.create(this);
+                if (corpseCreated) setChanged();
+            }
             if (revivalCleanupPending) { cleanupAfterRevival(); return; }
             if (hasEntity() && level instanceof ServerLevel world && getStoredEntityUuid()
                     .flatMap(uuid -> FamilyTree.get(world).getOrEmpty(uuid)).filter(node -> !node.isDeceased()).isPresent()) {
@@ -382,12 +387,16 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                 if (resurrectionProgress > 500) {
                     resurrectionProgress = 0;
 
+                    BlockPos revivalLightning = level instanceof ServerLevel serverWorld
+                            ? getStoredEntityUuid().flatMap(id -> com.ancientkira.mca.server.Corpses.anchor(serverWorld, id)).orElse(worldPosition)
+                            : worldPosition;
                     createEntity(level, true).ifPresent(entity -> {
-                        generateLightning();
+                        generateLightning(level, revivalLightning);
                         entity.clearFire();
                         entity.setPortalCooldown();
                         entity.setPos(worldPosition.getX() + 0.5F, worldPosition.getY() + 0.5F, worldPosition.getZ() + 0.5F);
                         if (entity instanceof LivingEntity l) {
+                            ((com.ancientkira.mca.entity.RevivalState)l).mca$resetDeathState();
                             l.setHealth(l.getMaxHealth());
                             l.removeAllEffects();
                             l.fallDistance = 0.0f;
@@ -441,7 +450,10 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         }
 
         private void generateLightning() {
-            generateLightning(level, worldPosition);
+            BlockPos target = level instanceof ServerLevel world
+                    ? getStoredEntityUuid().flatMap(id -> com.ancientkira.mca.server.Corpses.anchor(world, id)).orElse(worldPosition)
+                    : worldPosition;
+            generateLightning(level, target);
         }
 
         private static void generateLightning(Level level, BlockPos pos) {
@@ -455,6 +467,7 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         }
 
         public void setEntity(@Nullable Entity entity) {
+            if (entity != null && !storesEntity(entity.getUUID())) corpseCreated = false;
             entityData = Optional.ofNullable(entity).map(e -> new EntityData(
                     writeEntityToNbt(e),
                     e.getName().getString(),
@@ -594,6 +607,7 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
         protected void loadAdditional(ValueInput input) {
             super.loadAdditional(input);
             entityData = input.read("EntityData", CompoundTag.CODEC).map(EntityData::new);
+            corpseCreated = input.getBooleanOr("CorpseCreated", false);
             automaticallyPlaced = input.getBooleanOr("AutomaticallyPlaced", false);
             revivalCleanupPending = input.getBooleanOr("RevivalCleanupPending", false);
             mourningDecorations = input.read("MourningDecorations", CompoundTag.CODEC).orElseGet(CompoundTag::new);
@@ -611,6 +625,7 @@ public class TombstoneBlock extends BaseEntityBlock implements SimpleWaterlogged
                 data.writeNbt(entityTag);
                 output.store("EntityData", CompoundTag.CODEC, entityTag);
             });
+            output.putBoolean("CorpseCreated", corpseCreated);
             output.putBoolean("AutomaticallyPlaced", automaticallyPlaced);
             output.putBoolean("RevivalCleanupPending", revivalCleanupPending);
             output.store("MourningDecorations", CompoundTag.CODEC, mourningDecorations);

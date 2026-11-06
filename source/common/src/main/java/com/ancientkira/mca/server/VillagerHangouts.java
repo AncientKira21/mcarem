@@ -28,19 +28,23 @@ public final class VillagerHangouts {
         @Override protected void tick(ServerLevel world,VillagerEntityMCA p,long time){control(p);}
     }
     private static void control(VillagerEntityMCA p){
-        if(p.isKidnapped()||p.getVillagerBrain().isPanicking()||p.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET))return;
+        if(p.isKidnapped()||p.getVillagerBrain().isPanicking()||p.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)
+                ||p.getBrain().hasMemoryValue(MemoryModuleType.NEAREST_HOSTILE)||p.getBrain().hasMemoryValue(MemoryModuleType.HURT_BY)
+                ||p.getBrain().hasMemoryValue(MemoryModuleType.HURT_BY_ENTITY)||com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isInDanger(p))return;
         if(p.getHangoutState().getBooleanOr("Active",false)){
             if(p.isSleeping())p.stopSleeping();
-            p.getBrain().setActiveActivityIfPossible(net.minecraft.world.entity.schedule.Activity.IDLE);
+            if(!p.getBrain().isActive(net.minecraft.world.entity.schedule.Activity.PANIC) && !p.getBrain().isActive(net.minecraft.world.entity.schedule.Activity.FIGHT)) {
+                p.getBrain().setActiveActivityIfPossible(net.minecraft.world.entity.schedule.Activity.IDLE);
+            }
         }
-        if(!available(p)||p.getVillagerBrain().getMoveState()!=MoveState.MOVE||p.getVillagerBrain().isPanicking()
-                ||p.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET))return;
+        if(!available(p)||p.getVillagerBrain().getMoveState()!=MoveState.MOVE)return;
         var s=p.getHangoutState();
         BlockPos target=s.contains("Work")?BlockPos.of(s.getLongOr("Work",0)):s.contains("ReturnHome")?BlockPos.of(s.getLongOr("ReturnHome",0)):spot(p);
-        if(p.distanceToSqr(Vec3.atBottomCenterOf(target))>4){p.moveTowards(target,.6F);return;}
+        if(p.distanceToSqr(Vec3.atBottomCenterOf(target))>16){p.moveTowards(target,.6F);return;}
         if(s.contains("Work")||s.contains("ReturnHome"))return;
-        p.getNavigation().stop();p.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
-        p.getMoveControl().setWantedPosition(p.getX(),p.getY(),p.getZ(),0);p.setXxa(0);p.setZza(0);p.setDeltaMovement(0,p.getDeltaMovement().y,0);
+        if(p.distanceToSqr(Vec3.atBottomCenterOf(target))>36){
+            p.moveTowards(target,.5F);
+        }
     }
     public static long nextTime(long clock,String period){
         long start=switch(period){case "morning"->1000;case "afternoon"->7000;case "evening"->13000;default->throw new IllegalArgumentException(period);};
@@ -146,7 +150,9 @@ public final class VillagerHangouts {
         var s=p.getHangoutState();long now=world.getGameTime(),clock=world.getOverworldClockTime();
         long scheduled=s.getLongOr("Due",Long.MAX_VALUE);
         if(s.getBooleanOr("Accepted",false)&&clock>=scheduled&&clock<=scheduled+DURATION&&p.isSleeping())p.stopSleeping();
-        if(!available(p)||p.getVillagerBrain().isPanicking()||p.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)||VillageWarfare.isFighting(p)){
+        if(!available(p)||p.getVillagerBrain().isPanicking()||p.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)||VillageWarfare.isFighting(p)
+                ||p.getBrain().hasMemoryValue(MemoryModuleType.NEAREST_HOSTILE)||p.getBrain().hasMemoryValue(MemoryModuleType.HURT_BY)
+                ||p.getBrain().hasMemoryValue(MemoryModuleType.HURT_BY_ENTITY)||com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isInDanger(p)){
             if(s.getBooleanOr("Active",false))finish(p,true);return;
         }
         if(s.contains("ReturnHome")){
@@ -176,13 +182,14 @@ public final class VillagerHangouts {
             }
             if(clock>due+DURATION){finish(p,true);return;}
             if(!s.getBooleanOr("Active",false)){p.getVillagerBrain().abandonJob();s.putBoolean("Active",true);}
-            if(p.distanceToSqr(Vec3.atBottomCenterOf(spot(p)))>4){
+            if(p.distanceToSqr(Vec3.atBottomCenterOf(spot(p)))>25){
                 if(p.tickCount%100==0){var path=p.getNavigation().createPath(spot(p),1);if(path==null||!path.canReach()){finish(p,true);return;}}
                 p.moveTowards(spot(p),.6F);
             }else{
-                s.putBoolean("Arrived",true);p.getNavigation().stop();p.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
-                p.getMoveControl().setWantedPosition(p.getX(),p.getY(),p.getZ(),0);p.setXxa(0);p.setZza(0);
-                p.setDeltaMovement(0,p.getDeltaMovement().y,0);
+                s.putBoolean("Arrived",true);
+                if(p.distanceToSqr(Vec3.atBottomCenterOf(spot(p)))>9 && !p.getBrain().hasMemoryValue(MemoryModuleType.WALK_TARGET)){
+                    p.moveTowards(spot(p),.5F);
+                }
                 if(guest!=null&&guest.level()==world&&p.distanceToSqr(guest)<=100){
                     p.getLookControl().setLookAt(guest,30,30);
                     if(p.tickCount%200==0)p.sendChatToAllAround("mca.hangout.chat/"+(1+p.getRandom().nextInt(3)));
@@ -204,7 +211,22 @@ public final class VillagerHangouts {
         }
         var neighbors=world.getEntitiesOfClass(VillagerEntityMCA.class,p.getBoundingBox().inflate(32),other->other!=p&&available(other)&&other.getVillagerBrain().getMoveState()==MoveState.MOVE&&!other.getHangoutState().contains("Due")&&!other.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)&&other.getVillagerBrain().getCurrentJob()==com.ancientkira.mca.entity.ai.Chore.NONE);
         if(!neighbors.isEmpty()){
-            var other=neighbors.get(p.getRandom().nextInt(neighbors.size()));BlockPos meeting=spot(p);
+            VillagerEntityMCA preferred = null;
+            for (VillagerEntityMCA candidate : neighbors) {
+                if (p.getRelationships().isMarriedTo(candidate.getUUID())) {
+                    preferred = candidate;
+                    break;
+                }
+            }
+            if (preferred == null) {
+                for (VillagerEntityMCA candidate : neighbors) {
+                    if (p.getRelationships().getFamilyEntry().isFamilyMember(candidate.getUUID())) {
+                        preferred = candidate;
+                        break;
+                    }
+                }
+            }
+            var other=preferred!=null?preferred:neighbors.get(p.getRandom().nextInt(neighbors.size()));BlockPos meeting=spot(p);
             schedule(p,other.getUUID(),period,false,true);schedule(other,p.getUUID(),period,false,true);
             for(var participant:List.of(p,other)){participant.getHangoutState().putLong("MeetingSpot",meeting.asLong());participant.getHangoutState().putString("MeetingDimension",world.dimension().identifier().toString());}
         }

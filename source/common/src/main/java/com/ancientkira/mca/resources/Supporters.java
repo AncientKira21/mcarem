@@ -16,6 +16,7 @@ public class Supporters extends SimpleJsonResourceReloadListener<JsonElement> {
     public static final Identifier ID = MCA.locate("api/supporters");
     static final RandomSource rng = RandomSource.create();
     private static Supporters INSTANCE;
+    private static final Map<String,List<String>> BUNDLED_GROUPS=new java.util.concurrent.ConcurrentHashMap<>();
     private final List<String> supporters = new ArrayList<>();
     private final Map<String, List<String>> supporterGroups = new HashMap<>();
 
@@ -29,7 +30,19 @@ public class Supporters extends SimpleJsonResourceReloadListener<JsonElement> {
     }
 
     public static List<String> getSupporterGroup(String group) {
-        return INSTANCE.supporterGroups.getOrDefault(group, new LinkedList<>());
+        if(INSTANCE!=null)return INSTANCE.supporterGroups.getOrDefault(group,List.of());
+        // Dedicated servers do not load client resource listeners. Use the bundled credits there.
+        return BUNDLED_GROUPS.computeIfAbsent(group,key -> {
+            Identifier id=Identifier.parse(key);
+            try(var stream=Supporters.class.getResourceAsStream("/assets/"+id.getNamespace()+"/api/supporters/"+id.getPath()+".json")) {
+                if(stream==null)return List.of();
+                try(var reader=new java.io.InputStreamReader(stream,java.nio.charset.StandardCharsets.UTF_8)) {
+                    var names=new ArrayList<String>();
+                    for(var entry:com.google.gson.JsonParser.parseReader(reader).getAsJsonArray())names.add(entry.getAsString());
+                    return List.copyOf(names);
+                }
+            } catch(java.io.IOException | RuntimeException exception){return List.of();}
+        });
     }
 
     @Override

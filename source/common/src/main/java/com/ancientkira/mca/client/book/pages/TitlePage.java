@@ -26,13 +26,19 @@ public class TitlePage extends Page {
     }
 
     public TitlePage(String title, String subtitle, ChatFormatting color) {
-        this(Component.translatable(title).withStyle(color).withStyle(ChatFormatting.BOLD),
-                Component.translatable(subtitle).withStyle(color).withStyle(ChatFormatting.ITALIC));
+        this(com.ancientkira.mca.client.book.BookText.translated(title).withStyle(color).withStyle(ChatFormatting.BOLD),
+                com.ancientkira.mca.client.book.BookText.translated(subtitle).withStyle(color).withStyle(ChatFormatting.ITALIC));
     }
 
     public TitlePage(Component title, Component subtitle) {
         this.title = title;
         this.subtitle = subtitle;
+    }
+
+    @Override
+    public List<Component> writtenPages(boolean dynamic) {
+        return List.of(title.copy().withStyle(ChatFormatting.BLACK).append("\n\n")
+                .append(subtitle.copy().withStyle(ChatFormatting.BLACK)));
     }
 
     private static void drawCenteredText(ExtendedBookScreen screen, GuiGraphicsExtractor context, Font textRenderer, Component text, int centerX, int y, int color) {

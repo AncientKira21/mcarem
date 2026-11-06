@@ -75,6 +75,27 @@ public final class MedicalInsurance {
         }
         return !covered ? "none" : village.get().getReputation(player) < 0 ? "suspended" : "active";
     }
+    public static net.minecraft.nbt.ListTag details(ServerPlayer player) {
+        var list = new net.minecraft.nbt.ListTag();
+        var policies = PlayerSaveData.get(player).medicalPolicies();
+        Set<UUID> added = new HashSet<>();
+        for (ServerLevel level : player.level().getServer().getAllLevels()) for (var entity : level.getAllEntities()) {
+            if (!(entity instanceof VillagerEntityMCA cleric) || !cleric.isAlive()
+                    || !cleric.getVillagerData().profession().is(VillagerProfession.CLERIC) || !insured(cleric, player)) continue;
+            CompoundTag entry = new CompoundTag(); entry.putString("Name", cleric.getName().getString());
+            entry.putString("Village", cleric.getResidency().getHomeVillage().map(Village::getName).orElse(""));
+            entry.putString("Status", eligible(cleric, player) ? "active" : "suspended");
+            entry.putBoolean("Family", !policies.contains(cleric.getUUID()));
+            list.add(entry); added.add(cleric.getUUID());
+        }
+        var family = com.ancientkira.mca.server.world.data.FamilyTree.get(player.level());
+        for (UUID id : policies) if (!added.contains(id)) {
+            CompoundTag entry = new CompoundTag();
+            entry.putString("Name", family.getOrEmpty(id).map(com.ancientkira.mca.server.world.data.FamilyTreeNode::getName).orElse(id.toString()));
+            entry.putString("Status", "unavailable"); list.add(entry);
+        }
+        return list;
+    }
     private static boolean needsCare(ServerPlayer player) {
         return player.isAlive() && !player.isSpectator() && (player.getHealth() < player.getMaxHealth() * .85F
                 || player.hasEffect(MobEffects.WITHER) || player.isOnFire());

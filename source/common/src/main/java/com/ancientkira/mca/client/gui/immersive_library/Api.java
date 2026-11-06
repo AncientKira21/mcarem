@@ -45,6 +45,8 @@ public class Api {
 
             HttpURLConnection con = (HttpURLConnection) URI.create(fullUrl).toURL().openConnection();
 
+            con.setConnectTimeout(10_000);
+            con.setReadTimeout(20_000);
             // Set request method
             con.setRequestMethod(httpMethod.name());
 
@@ -66,23 +68,21 @@ public class Api {
                 con.getOutputStream().write(jsonBody.getBytes(StandardCharsets.UTF_8));
             }
 
-            // Send the request and read response
-            if (con.getErrorStream() != null) {
-                int responseCode = con.getResponseCode();
-                String error = IOUtils.toString(con.getErrorStream(), StandardCharsets.UTF_8);
-                JsonObject object = gson.fromJson(error, JsonObject.class);
-                return new ErrorResponse(responseCode, object.get("message").getAsString());
-            }
-
-            // Parse answer
-            String response;
-            if ("gzip".equals(con.getContentEncoding())) {
-                response = IOUtils.toString(new GZIPInputStream(con.getInputStream()), StandardCharsets.UTF_8);
-            } else {
-                response = IOUtils.toString(con.getInputStream(), StandardCharsets.UTF_8);
-            }
-
-            return gson.fromJson(response, expectedAnswer);
+            // Read the status first and always release the response stream/connection.
+            try {
+                int status = con.getResponseCode();
+                java.io.InputStream stream = status >= 400 ? con.getErrorStream() : con.getInputStream();
+                if (stream == null) return new ErrorResponse(status, "Empty library response");
+                String response;
+                try (java.io.InputStream input = "gzip".equals(con.getContentEncoding()) ? new GZIPInputStream(stream) : stream) {
+                    response = IOUtils.toString(input, StandardCharsets.UTF_8);
+                }
+                if (status >= 400) {
+                    JsonObject object = gson.fromJson(response, JsonObject.class);
+                    return new ErrorResponse(status, object != null && object.has("message") ? object.get("message").getAsString() : response);
+                }
+                return gson.fromJson(response, expectedAnswer);
+            } finally { con.disconnect(); }
         } catch (IOException e) {
             MCA.LOGGER.warn(e);
             return new ErrorResponse(-1, e.toString());

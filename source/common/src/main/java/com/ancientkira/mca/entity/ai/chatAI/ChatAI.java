@@ -28,7 +28,7 @@ public class ChatAI {
     /**
      * Map of villager UUIDs to strategies (i.e. managed by InworldAI or GPT3)
      */
-    private static final Map<UUID, ChatAIStrategy> strategies = new HashMap<>();
+    private static final Map<UUID, ChatAIStrategy> strategies = new ConcurrentHashMap<>();
 
     /**
      * Current conversation of player. <p>
@@ -46,15 +46,14 @@ public class ChatAI {
      * @return {@code Optional.EMPTY} if answer couldn't be generated, Optional containing answer String otherwise.
      */
     public static Optional<String> answer(ServerPlayer player, VillagerEntityMCA villager, String msg) {
-        // Get villager-specific strategy
-        ChatAIStrategy strategy = computeStrategyIfAbsent(villager.getUUID());
-
-        // Update the current conversation
-        long time = villager.level().getGameTime();
-        currentConversations.put(player.getUUID(), new OpenConversation(villager.getUUID(), time));
-
-        // Get answer
-        return strategy.answer(player, villager, msg);
+        var server = player.level().getServer();
+        ChatAIStrategy strategy = server.submit(() -> {
+            if (!canReply(player, villager)) return null;
+            currentConversations.put(player.getUUID(), new OpenConversation(
+                    villager.getUUID(), villager.level().getGameTime()));
+            return computeStrategyIfAbsent(villager.getUUID());
+        }).join();
+        return strategy == null ? Optional.empty() : strategy.answer(player, villager, msg);
     }
 
     /**
@@ -79,6 +78,13 @@ public class ChatAI {
         strategies.remove(villagerID);
     }
 
+    public static boolean canReply(ServerPlayer player, VillagerEntityMCA villager) {
+        return Config.getInstance().enableVillagerChatAI && player.isAlive() && villager.isAlive()
+                && !villager.isRemoved() && player.level() == villager.level()
+                && player.level().getServer().getPlayerList().getPlayer(player.getUUID()) == player
+                && villager.distanceToSqr(player) <= VILLAGER_SEARCH_RANGE * VILLAGER_SEARCH_RANGE;
+    }
+
     private static String getName(VillagerEntityMCA villager) {
         return normalizeString(villager.getName().getString());
     }
@@ -96,40 +102,40 @@ public class ChatAI {
         // Get nearby villagers
         List<VillagerEntityMCA> nearbyVillagers = WorldUtils.getCloseEntities(player.level(), player, VILLAGER_SEARCH_RANGE, VillagerEntityMCA.class);
 
-        // Find name in message
         String normalizedMsg = normalizeString(msg);
-        for (VillagerEntityMCA villager : nearbyVillagers) {
-            String nickname = villager.getNickname(playerUUID);
+        OpenConversation conversation = currentConversations.get(playerUUID);
+        Optional<VillagerEntityMCA> current = conversation == null ? Optional.empty() : nearbyVillagers.stream()
+                .filter(villager -> conversation.villagerUUID.equals(villager.getUUID()))
+                .filter(villager -> isInConversationWith(player, villager))
+                .findFirst();
 
-            if (!nickname.isEmpty() &&
-                    containsWholeWord(normalizedMsg, normalizeString(nickname))) {
+        for (VillagerEntityMCA villager : nearbyVillagers) {
+            String nickname = normalizeString(villager.getNickname(playerUUID));
+            String name = getName(villager);
+            if (addresses(normalizedMsg, nickname) || addresses(normalizedMsg, name)
+                    || addresses(normalizedMsg, name.split(" ", 2)[0])) {
                 return Optional.of(villager);
             }
-
-            String normalizedName = getName(villager);
-            String[] nameParts = normalizedName.split(" ");
-            for (String part : nameParts) {
-                if (containsWholeWord(normalizedMsg, part)) {
-                    return Optional.of(villager);
-                }
-            }
         }
+        if (current.isPresent()) return current;
 
-        // Otherwise get current open conversation of player
-        OpenConversation conv = currentConversations.getOrDefault(playerUUID, new OpenConversation(playerUUID, 0L));
-
-        // Find first nearby villager matching the UUID of the conversation
-        Optional<VillagerEntityMCA> optionalVillager = nearbyVillagers.stream().filter(v -> conv.villagerUUID.equals(v.getUUID())).findFirst();
-        // Return if found
-        if (optionalVillager.isPresent() && isInConversationWith(player, optionalVillager.get())) {
-            return optionalVillager;
+        for (VillagerEntityMCA villager : nearbyVillagers) {
+            String nickname = normalizeString(villager.getNickname(playerUUID));
+            if (containsWholeWord(normalizedMsg, nickname)) return Optional.of(villager);
+            for (String part : getName(villager).split(" ")) {
+                if (containsWholeWord(normalizedMsg, part)) return Optional.of(villager);
+            }
         }
 
         return Optional.empty();
     }
 
+    private static boolean addresses(String message, String name) {
+        return !name.isBlank() && (message.startsWith(name + ",") || message.startsWith(name + ":"));
+    }
+
     private static boolean containsWholeWord(String text, String word) {
-        return Pattern.compile("\\b" + Pattern.quote(word) + "\\b")
+        return !word.isBlank() && Pattern.compile("\\b" + Pattern.quote(word) + "\\b")
                 .matcher(text)
                 .find();
     }

@@ -22,6 +22,13 @@ public final class EditorLibraryCatalog {
     private static boolean loading;
     private static String loadedToken;
     private EditorLibraryCatalog() { }
+    public static java.util.List<net.minecraft.network.chat.Component> tooltip(String id,String kind) {
+        Entry entry=entries.get(id);
+        if(entry!=null)return java.util.List.of(net.minecraft.network.chat.Component.literal(entry.title),net.minecraft.network.chat.Component.literal(kind),net.minecraft.network.chat.Component.literal(entry.author));
+        var local=com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.contents().stream().filter(c->id.equals("immersive_library:"+c.contentid())).findFirst();
+        return local.map(c->java.util.List.<net.minecraft.network.chat.Component>of(net.minecraft.network.chat.Component.literal(c.title()),net.minecraft.network.chat.Component.literal(kind),net.minecraft.network.chat.Component.literal(c.username())))
+                .orElseGet(()->java.util.List.of(net.minecraft.network.chat.Component.literal(id.substring(id.lastIndexOf('/')+1).replace(".png","").replace('_',' ')),net.minecraft.network.chat.Component.literal(kind)));
+    }
     public static boolean isOwn(String id) { return entries.containsKey(id) && entries.get(id).own; }
     public static boolean visible(String id) {
         Entry entry = entries.get(id);
@@ -30,13 +37,18 @@ public final class EditorLibraryCatalog {
     }
     public static boolean matches(String id, String query) {
         Entry entry = entries.get(id);
-        return entry != null && (entry.title + " " + entry.author).toLowerCase(Locale.ROOT).contains(query);
+        return entry != null && (entry.title + " " + entry.author).toLowerCase(Locale.ROOT).contains(query)
+                || com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.contents().stream()
+                    .anyMatch(c->id.equals("immersive_library:"+c.contentid()) && (c.title()+" "+c.username()).toLowerCase(Locale.ROOT).contains(query));
     }
     public static Map<String, Clothing> clothing() {
         Map<String, Clothing> result = new HashMap<>();
         entries.values().stream().filter(e -> !e.hair && visible(e.id)).forEach(e -> {
             try { result.put(e.id, new Clothing(e.id, e.meta)); } catch (RuntimeException ignored) { }
         });
+        for(var local:com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.contents())if(local.hasTag("clothing")) {
+            JsonObject meta=new JsonObject();meta.addProperty("name",local.title());meta.addProperty("onlineAuthor",local.username());result.put("immersive_library:"+local.contentid(),new Clothing("immersive_library:"+local.contentid(),meta));
+        }
         return result;
     }
     public static Map<String, HairStyle> hairStyles() {
@@ -44,6 +56,7 @@ public final class EditorLibraryCatalog {
         entries.values().stream().filter(e -> e.hair && visible(e.id)).forEach(e -> {
             try { result.put(e.id, HairStyle.fromHair(new Hair(e.id, e.meta))); } catch (RuntimeException ignored) { }
         });
+        for(var local:com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.contents())if(local.hasTag("hair"))result.put("immersive_library:"+local.contentid(),HairStyle.fromHair(new Hair("immersive_library:"+local.contentid())));
         return result;
     }
     public static void refresh(Runnable changed) {

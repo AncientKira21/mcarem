@@ -42,7 +42,7 @@ public class GreetPlayerTask extends Behavior<VillagerEntityMCA> {
             // first check relationships, only family, friends and foes will greet you
             if (Relationship.IS_MARRIED.test(villager, player)
                 || Relationship.IS_RELATIVE.test(villager, player)
-                || Math.abs(memories.getHearts()) >= Config.getInstance().greetHeartsThreshold) {
+                || Math.abs((long) memories.getHearts()) >= Config.getInstance().greetHeartsThreshold) {
                 long diff = day - memories.getLastSeen();
 
                 if (diff > Config.getInstance().greetAfterDays && memories.getLastSeen() > 0) {
@@ -80,7 +80,8 @@ public class GreetPlayerTask extends Behavior<VillagerEntityMCA> {
             int day = (int) (villager.level().getOverworldClockTime() / 24000L);
             memories.setLastSeen(day);
 
-            String phrase = memories.getHearts() < 0 ? "welcomeFoe" : "welcome";
+            String phrase = memories.getHearts() < 0
+                    ? "welcomeFoe/" + (villager.getRandom().nextInt(2) + 1) : "welcome";
 
             villager.conversationManager.addMessage(new ConversationManager.PhraseText(player, phrase));
         });

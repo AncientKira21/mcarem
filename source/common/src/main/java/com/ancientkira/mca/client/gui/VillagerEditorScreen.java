@@ -105,7 +105,29 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     ButtonWidget widgetFeminine;
     private int villagerBreedingAge;
     private int traitPage = 0;
+    private final Map<net.minecraft.client.gui.components.AbstractWidget,Integer> miscRows=new java.util.IdentityHashMap<>();
+    private int miscScroll, miscScrollMax;
+    private int miscTop(){return height/2-80;}
+    private int miscBottom(){return height-16;}
+    private void scrollMisc(int delta){
+        miscScroll=Math.max(0,Math.min(miscScrollMax,miscScroll+delta));
+        miscRows.forEach((widget,base)->{int y=base-miscScroll;widget.setY(y);widget.visible=y>=miscTop() && y+widget.getHeight()<=miscBottom();});
+    }
+    private void configureMiscScroll(){
+        miscRows.clear();miscScrollMax=0;
+        if(!"misc".equals(page))return;
+        for(var child:children())if(child instanceof net.minecraft.client.gui.components.AbstractWidget widget
+                && widget.getX()>=width/2 && widget.getX()<width/2+DATA_WIDTH && widget.getY()>=miscTop()){
+            miscRows.put(widget,widget.getY());miscScrollMax=Math.max(miscScrollMax,widget.getY()+widget.getHeight()-miscBottom());
+        }
+        scrollMisc(0);
+        if(miscScrollMax>0){
+            addRenderableWidget(new ButtonWidget(width/2+DATA_WIDTH+3,miscTop(),14,16,Component.literal("▲"),b->scrollMisc(-18)));
+            addRenderableWidget(new ButtonWidget(width/2+DATA_WIDTH+3,miscBottom()-16,14,16,Component.literal("▼"),b->scrollMisc(18)));
+        }
+    }
     private EditBox villagerNameField;
+    private boolean nameEdited;
     private boolean hsvColoredSkin;
     private boolean hsvColoredHair;
     private int eyeColorTarget = 0; // 0 = Hair, 1 = Left/Both Eye, 2 = Right Eye
@@ -159,6 +181,8 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     public VillagerEditorScreen(UUID villagerUUID, UUID playerUUID, boolean allowPlayerModel, boolean allowVillagerModel) {
         super(Component.translatable("gui.VillagerEditorScreen.title"));
         this.villagerUUID = villagerUUID;
+        this.villager.setUUID(villagerUUID);
+        this.villagerVisualization.setUUID(villagerUUID);
         this.playerUUID = playerUUID;
         this.allowPlayerModel = allowPlayerModel;
         this.allowVillagerModel = allowVillagerModel;
@@ -234,14 +258,17 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                     Component.translatable("gui.villager_editor.accent_number", i + 1).getString()));
         }
         var screen = new SearchableChoiceScreen(this, Component.translatable("gui.villager_editor.accent"), choices, choice -> {
+            hasVisualChange = true;
             if (choice.id().equals("auto")) villager.setTrackedValue(VillagerLike.VOICE_ID, "");
             else if (elevenlabs || voicebox) villager.setTrackedValue(VillagerLike.VOICE_ID, choice.id());
             else {
                 villager.setTrackedValue(VillagerLike.VOICE_ID, "");
                 villager.getGenetics().setGene(Genetics.VOICE_TONE, (Integer.parseInt(choice.id()) + 0.5F) / 10.0F);
             }
+            if (villagerData != null) getOrCreateMcaData(villagerData).putString("VoiceId", villager.getTrackedValue(VillagerLike.VOICE_ID));
+            syncVillagerData();
         });
-        String currentVoice = villager.getTrackedValue(VillagerLike.VOICE_ID);
+        String currentVoice = villager.getTrackedValue(VillagerLike.VOICE_ID).strip();
         screen.setSelectedId(elevenlabs || voicebox ? currentVoice.isBlank() ? "auto" : currentVoice
                 : Integer.toString(Math.clamp((int) Math.floor(villager.getGenetics().getGene(Genetics.VOICE_TONE) * 10), 0, 9)));
         if (elevenlabs) screen.setReload(() -> {
@@ -344,36 +371,55 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     private float getNonGeneticVerticalScaleFactor() {
         return villager.getTraits().getVerticalScaleFactor()
-               * villager.getVillagerDimensions().getHeight()
                * villager.getGenetics().getGender().getScaleFactor();
     }
 
     private float getNonGeneticHorizontalScaleFactor() {
         return villager.getTraits().getHorizontalScaleFactor()
-               * villager.getVillagerDimensions().getWidth()
                * villager.getGenetics().getGender().getHorizontalScaleFactor();
     }
 
-    private int integerChanger(int y, IntConsumer onClick, Supplier<Component> content) {
+    private Integer editedHearts;
+    private Integer editedMood;
+
+    private int integerChanger(int y, java.util.function.IntSupplier value, IntConsumer setValue, Component label) {
         int bw = 22;
-        ButtonWidget current = addRenderableWidget(new ButtonWidget(width / 2 + bw * 2, y, DATA_WIDTH - bw * 4, 20, content.get(), b -> {
-        }));
-        addRenderableWidget(new ButtonWidget(width / 2, y, bw, 20, Component.literal("-5"), b -> {
-            onClick.accept(-5);
-            current.setMessage(content.get());
-        }));
-        addRenderableWidget(new ButtonWidget(width / 2 + bw, y, bw, 20, Component.literal("-50"), b -> {
-            onClick.accept(-50);
-            current.setMessage(content.get());
-        }));
-        addRenderableWidget(new ButtonWidget(width / 2 + DATA_WIDTH - bw * 2, y, bw, 20, Component.literal("+50"), b -> {
-            onClick.accept(50);
-            current.setMessage(content.get());
-        }));
-        addRenderableWidget(new ButtonWidget(width / 2 + DATA_WIDTH - bw, y, bw, 20, Component.literal("+5"), b -> {
-            onClick.accept(5);
-            current.setMessage(content.get());
-        }));
+        int centerX = width / 2 + bw * 2;
+        int centerWidth = DATA_WIDTH - bw * 4;
+        var caption = addRenderableWidget(new ButtonWidget(centerX, y, centerWidth / 2, 20, label, b -> {}));
+        caption.active = false;
+        EditBox input = addRenderableWidget(new EditBox(font, centerX + centerWidth / 2, y + 1,
+                centerWidth - centerWidth / 2, 18, label) {
+            @Override
+            public void setFocused(boolean focused) {
+                super.setFocused(focused);
+                if (!focused && !getValue().equals(Integer.toString(value.getAsInt()))) {
+                    setValue(Integer.toString(value.getAsInt()));
+                }
+            }
+        });
+        input.setMaxLength(11);
+        input.setValue(Integer.toString(value.getAsInt()));
+        input.setResponder(text -> {
+            try {
+                setValue.accept(Integer.parseInt(text));
+                input.setTextColor(0xFFE0E0E0);
+            } catch (NumberFormatException ignored) {
+                input.setTextColor(0xFFFF5555);
+                // Empty/minus-only and out-of-range input leave the last valid value intact.
+            }
+        });
+        int[] steps = {-5, -50, 50, 5};
+        int[] positions = {width / 2, width / 2 + bw, width / 2 + DATA_WIDTH - bw * 2, width / 2 + DATA_WIDTH - bw};
+        for (int i = 0; i < steps.length; i++) {
+            int step = steps[i];
+            addRenderableWidget(new ButtonWidget(positions[i], y, bw, 20,
+                    Component.literal(step > 0 ? "+" + step : Integer.toString(step)), b -> {
+                long next = (long) value.getAsInt() + step;
+                setValue.accept((int) Math.clamp(next, Integer.MIN_VALUE, Integer.MAX_VALUE));
+                input.setValue(Integer.toString(value.getAsInt()));
+            }));
+        }
         return y + 22;
     }
 
@@ -400,8 +446,10 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
             presetsBackupNbt = null;
         }
 
+        if (!page.equals(this.page)) miscScroll=0;
         this.page = page;
 
+        com.ancientkira.mca.client.gui.widget.DropdownWidget.close(this);
         clearWidgets();
 
         if (page.equals("loading")) {
@@ -534,6 +582,17 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                     textFieldWidget.setValue(villagerUUID.toString());
                 }
             }
+            case "appearances" -> {
+                int row=height/2-80;
+                for(var kind:SkinLibraryScreen.SkinType.values()) {
+                    var type=kind;
+                    addRenderableWidget(new ButtonWidget(width/2,row,DATA_WIDTH,20,type.text(),b->Minecraft.getInstance().setScreen(new SkinLibraryScreen(this,villagerVisualization).category(type))));row+=22;
+                }
+                addRenderableWidget(new ButtonWidget(width/2,row,DATA_WIDTH,20,Component.translatable("gui.appearance.reset"),b->{
+                    com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.clear(villager.getUUID());
+                    villager.setClassicSkin("");for(int slot=0;slot<4;slot++)villager.setAccessory(slot,"");syncVillagerData();
+                }));
+            }
             case "body" -> {
                 addCharacterSubpageTabs(y, "body");
                 y += 24;
@@ -606,6 +665,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 }
             }
             case "clothing_style" -> {
+                addRenderableWidget(new ButtonWidget(width/2,y,DATA_WIDTH,20,Component.translatable("gui.appearance.library"),b->setPage("appearances")));y+=22;
                 addCharacterSubpageTabs(y, "clothing_style");
                 y += 24;
 
@@ -667,6 +727,20 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
             case "eyes" -> {
                 addCharacterSubpageTabs(y, "eyes");
                 y += 24;
+                addRenderableWidget(new ButtonWidget(width/2,y,DATA_WIDTH/2,20,
+                        Component.translatable("gui.villager_editor.eyes_over_skin", villager.getTrackedValue(VillagerLike.EYES_OVER_SKIN)?"ON":"OFF"),b->{
+                    villager.setTrackedValue(VillagerLike.EYES_OVER_SKIN,!villager.getTrackedValue(VillagerLike.EYES_OVER_SKIN));
+                    syncVillagerData();init();
+                }));
+                addRenderableWidget(new ButtonWidget(width/2+DATA_WIDTH/2,y,DATA_WIDTH/2-22,20,
+                        Component.translatable("gui.skin_library.kind.eyes"),b->minecraft.setScreen(new SkinLibraryScreen(this,villagerVisualization).category(SkinLibraryScreen.SkinType.EYES))));
+                addRenderableWidget(new TooltipButtonWidget(width/2+DATA_WIDTH-22,y,22,20,Component.literal("×"),
+                        Component.translatable("gui.villager_editor.reset_eyes"),b->{
+                    villager.setTrackedValue(VillagerLike.EYE_TEXTURE,"");
+                    com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.select(villager.getUUID(),SkinLibraryScreen.SkinType.EYES,null);
+                    syncVillagerData();init();
+                }));
+                y+=22;
 
                 boolean hasHetero = villager.getTraits().hasTrait(Traits.HETEROCHROMIA);
                 int maxTarget = hasHetero ? 2 : 1;
@@ -751,6 +825,8 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                         row++;
                     }
                 }
+                y += 26;
+                addFavoriteSelectors(width / 2, y);
             }
             case "traits" -> {
                 //traits
@@ -787,6 +863,8 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                         BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.NITWIT),
                         ProfessionsMCA.GUARD,
                         ProfessionsMCA.ARCHER,
+                        ProfessionsMCA.FIREFIGHTER,
+                        ProfessionsMCA.BAKER,
                         ProfessionsMCA.OUTLAW,
                         ProfessionsMCA.ADVENTURER,
                         ProfessionsMCA.WANDERING_TRADER,
@@ -816,19 +894,56 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
                 //infection
                 addRenderableWidget(new GeneSliderWidget(width / 2, y, DATA_WIDTH, 20, Component.translatable("gui.villager_editor.infection"), villager.getInfectionProgress(), b -> {
-                    villager.setInfected(b > 0);
                     villager.setInfectionProgress(b.floatValue());
+                    villagerVisualization.setInfectionProgress(b.floatValue());
+                    if (villagerData != null) {
+                        var mca = NbtHelper.getOrCreateCompound(villagerData, VillagerEntityMCA.MCA_DATA_KEY);
+                        mca.putFloat("InfectionProgress", b.floatValue());
+                    }
                 }));
                 y += 22;
+
+                if (com.ancientkira.mca.compat.SickenedCompat.enabled()) {
+                    addRenderableWidget(new GeneSliderWidget(width / 2, y, DATA_WIDTH, 20,
+                            Component.translatable("gui.villager_editor.sickness_infection"),
+                            com.ancientkira.mca.compat.SickenedCompat.progress(villager), b -> {
+                                com.ancientkira.mca.compat.SickenedCompat.setProgress(villager, b.floatValue());
+                                com.ancientkira.mca.compat.SickenedCompat.setProgress(villagerVisualization, b.floatValue());
+                                if (villagerData != null) {
+                                    var mca = NbtHelper.getOrCreateCompound(villagerData, VillagerEntityMCA.MCA_DATA_KEY);
+                                    mca.putFloat("SicknessProgress", b.floatValue());
+                                    mca.putBoolean("Sickened", b > 0);
+                                    if (b > 0) {
+                                        mca.putString("SickenedId", villager.getTrackedValue(VillagerLike.SICKENED_ID));
+                                    }
+                                }
+                            }));
+                    y += 22;
+                }
 
                 //hearts
                 if (minecraft.player != null) {
                     Memories player = villager.getVillagerBrain().getMemoriesForPlayer(minecraft.player);
-                    y = integerChanger(y, player::modHearts, () -> Component.translatable("gui.blueprint.reputation", player.getHearts()));
+                    y = integerChanger(y, () -> editedHearts == null ? player.getHearts() : editedHearts, value -> editedHearts = value, Component.translatable("gui.villager_editor.hearts"));
+                    addRenderableWidget(new StringWidget(width / 2, y, DATA_WIDTH, 12,
+                            Component.translatable("gui.villager_editor.hearts_limit", Memories.MAX_HEARTS), font));
+                    y += 14;
+                    addRenderableWidget(new StringWidget(width / 2, y, DATA_WIDTH, 12,
+                            Component.translatable("gui.villager_editor.hearts_minimum_limit", Memories.MIN_HEARTS), font));
+                    y += 14;
                 }
 
                 //mood
-                integerChanger(y, v -> villager.getVillagerBrain().modifyMoodValue(v), () -> Component.translatable("gui.interact.label.mood", villager.getVillagerBrain().getMoodValue()));
+                y = integerChanger(y, () -> editedMood == null ? villager.getVillagerBrain().getMoodValue() : editedMood,
+                        value -> editedMood = value,
+                        Component.translatable("gui.villager_editor.mood"));
+                if (villager.getTrackedValue(VillagerLike.FAMILY_MOOD) != 0) {
+                    addRenderableWidget(new ButtonWidget(width / 2, y, DATA_WIDTH, 20,
+                            Component.translatable("gui.villager_editor.end_family_mood"), button -> {
+                        editedMood = 0;
+                        setPage("misc");
+                    }));
+                }
             }
             case "hair_advanced" -> {
                 addRenderableWidget(new ButtonWidget(width / 2, y, DATA_WIDTH, 20, Component.translatable("gui.villager_editor.randLayeredHair"), b -> randomLayeredHair()));
@@ -883,7 +998,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 }));
                 if (page.equals("clothing") || page.equals("hair")) {
                     addRenderableWidget(new ButtonWidget(width / 2 + 128, y, 64, 20, Component.translatable("gui.button.library"), b -> {
-                        Minecraft.getInstance().setScreen(new SkinLibraryScreen(this, villagerVisualization));
+                        Minecraft.getInstance().setScreen(new SkinLibraryScreen(this, villagerVisualization).category(page.equals("hair")?SkinLibraryScreen.SkinType.HAIR:SkinLibraryScreen.SkinType.CLOTHING));
                     }));
                 }
                 widgetMasculine = addRenderableWidget(new ButtonWidget(width / 2 - 32 - 96 - 64, y, 64, 20, Component.translatable("gui.villager_editor.masculine"), b -> {
@@ -968,6 +1083,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 addRenderableWidget(new ButtonWidget(width / 2, yVal, DATA_WIDTH, 20, Component.translatable("gui.back"), b -> setPage(presetsReturnPage)));
             }
         }
+        configureMiscScroll();
     }
 
     private void addPreviewRotationWidgets() {
@@ -1351,7 +1467,9 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     private void refreshAppearanceForCurrentGender() {
         SkinSelection.pickWeightedId(getBodySkinChoices()).ifPresent(villager::setSkin);
-        SkinSelection.pickWeightedId(getRandomClothingChoices()).ifPresent(villager::setClothes);
+        if (MCA.isBlankString(villager.getClothes())) {
+            SkinSelection.pickWeightedId(getRandomClothingChoices()).ifPresent(villager::setClothes);
+        }
     }
 
     private void randomLayeredHair() {
@@ -1558,7 +1676,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     protected String[] getPages() {
         if (villagerUUID.equals(playerUUID)) {
-            return new String[]{"general", "body", "traits"};
+            return new String[]{"general", "body", "personality", "traits"};
         } else {
             return new String[]{"general", "body", "personality", "traits", "misc"};
         }
@@ -1604,46 +1722,42 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
         villagerNameField.setMaxLength(32);
         surname.setMaxLength(48);
         String full = getName().getString();
-        villagerNameField.setValue(com.ancientkira.mca.entity.FamilyNames.firstName(full));
-        surname.setValue(com.ancientkira.mca.entity.FamilyNames.lastName(full));
+        villagerNameField.setValue(com.ancientkira.mca.entity.FamilyNames.firstName(villager));
+        surname.setValue(com.ancientkira.mca.entity.FamilyNames.lastName(villager));
         villagerNameField.setHint(Component.translatable("gui.villager_editor.first_name"));
         surname.setHint(Component.translatable("gui.villager_editor.last_name"));
         EditBox first = villagerNameField;
-        first.setResponder(value -> onChanged.accept(com.ancientkira.mca.entity.FamilyNames.fullName(value, surname.getValue())));
-        surname.setResponder(value -> onChanged.accept(com.ancientkira.mca.entity.FamilyNames.fullName(first.getValue(), value)));
+        first.setResponder(value -> { updateNameParts(value, surname.getValue()); onChanged.accept(com.ancientkira.mca.entity.FamilyNames.fullName(value, surname.getValue())); });
+        surname.setResponder(value -> { updateNameParts(first.getValue(), value); onChanged.accept(com.ancientkira.mca.entity.FamilyNames.fullName(first.getValue(), value)); });
         addRenderableWidget(new ButtonWidget(x + DATA_WIDTH / 3 * 2 + 1, y - 1, DATA_WIDTH / 3 - 2, 20, Component.translatable("gui.button.random"), b ->
                 Network.sendToServer(new VillagerNameRequest(villager.getGenetics().getGender()))
         ));
     }
 
     public Component getName() {
-        Component villagerName = null;
-        boolean isPlayer = villagerUUID.equals(playerUUID);
-        if (isPlayer) {
-            if (minecraft.player != null) {
-                villagerName = minecraft.player.getCustomName();
-            }
-        } else if (villager.hasCustomName()) {
-            villagerName = villager.getCustomName();
+        if (villager.hasCustomName() && !MCA.isBlankString(villager.getCustomName().getString())) {
+            return villager.getCustomName();
         }
-
-        if (villagerName == null || MCA.isBlankString(villagerName.getString())) {
-            if (isPlayer) {
-                if (minecraft.player != null) {
-                    villagerName = minecraft.player.getName();
-                }
-                if (villagerName != null && !MCA.isBlankString(villagerName.getString())) {
-                    updateName(villagerName.getString());
-                }
-            } else {
-                String familyTreeName = villagerData == null ? "" : villagerData.getString("FamilyTreeName").orElse("");
-                villagerName = !MCA.isBlankString(familyTreeName)
-                        ? Component.literal(familyTreeName)
-                        : Component.empty();
-            }
+        if (villagerData != null) {
+            var saved = com.ancientkira.mca.entity.VillagerLike.parseCustomName(villager.registryAccess(),villagerData);
+            if (saved.isPresent() && !MCA.isBlankString(saved.get().getString())) return saved.get();
+            String familyTreeName = villagerData.getStringOr("FamilyTreeName", "");
+            if (!MCA.isBlankString(familyTreeName)) return Component.literal(familyTreeName);
         }
+        if (villagerUUID.equals(playerUUID) && minecraft.player != null) {
+            Component custom = minecraft.player.getCustomName();
+            return custom != null ? custom : minecraft.player.getName();
+        }
+        return Component.empty();
+    }
 
-        return villagerName;
+    private void updateNameParts(String first, String last) {
+        com.ancientkira.mca.entity.FamilyNames.setParts(villager, first, last);
+        if (villagerData != null) {
+            getOrCreateMcaData(villagerData).putString("FirstName", first.strip());
+            getOrCreateMcaData(villagerData).putString("LastName", last.strip());
+            getOrCreateMcaData(villagerData).putBoolean("SurnameDisabled", com.ancientkira.mca.entity.NameParts.disablesSurname(last));
+        }
     }
 
     public void updateName(String name) {
@@ -1652,16 +1766,14 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
             boolean isPlayer = villagerUUID.equals(playerUUID);
             if (isPlayer) {
                 if (minecraft.player != null) {
-                    final Component realName = minecraft.player.getName();
-                    if (realName.getString().equals(name)) {
-                        // Remove Custom name if it is the same as our actual name
-                        newName = null;
-                    }
                     minecraft.player.setCustomName(newName);
                     minecraft.player.setCustomNameVisible(newName != null);
                 }
             }
             villager.setCustomName(newName);
+            nameEdited = true;
+            if (villagerData != null) villagerData.store("CustomName", net.minecraft.network.chat.ComponentSerialization.CODEC,
+                    villager.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE), newName);
         }
     }
 
@@ -1764,6 +1876,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if(com.ancientkira.mca.client.gui.widget.DropdownWidget.click(this,event,doubleClick))return true;
         if (nameField != null) {
             double mx = event.x();
             double my = event.y();
@@ -1779,6 +1892,12 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
         if (page.equals("clothing") && (hoveredClothingId >= 0 && filteredClothing.size() > hoveredClothingId)) {
             String selectedClothing = filteredClothing.get(hoveredClothingId);
+            var localId=com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(selectedClothing);
+            if(localId.isPresent() && localId.getAsInt()<0) {
+                com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.select(villager.getUUID(),SkinLibraryScreen.SkinType.CLOTHING,selectedClothing);
+                setPage("clothing_style");return true;
+            }
+            com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.select(villager.getUUID(),SkinLibraryScreen.SkinType.CLOTHING,null);
             villager.setClothes(selectedClothing);
             villagerVisualization.setClothes(selectedClothing);
             markClothingSelected();
@@ -1790,6 +1909,12 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
         if (page.equals("hair") && (hoveredClothingId >= 0 && filteredHairStyles.size() > hoveredClothingId)) {
             String selectedHairStyle = filteredHairStyles.get(hoveredClothingId);
+            var localId=com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(selectedHairStyle);
+            if(localId.isPresent() && localId.getAsInt()<0) {
+                com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.select(villager.getUUID(),SkinLibraryScreen.SkinType.HAIR,selectedHairStyle);
+                setPage("hair_style");return true;
+            }
+            com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.select(villager.getUUID(),SkinLibraryScreen.SkinType.HAIR,null);
             applyHairStyle(villager, selectedHairStyle);
             applyHairStyle(villagerVisualization, selectedHairStyle);
             setPage("hair_style");
@@ -1839,6 +1964,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if(com.ancientkira.mca.client.gui.widget.DropdownWidget.escape(this,event.key()))return true;
         if (acceptsPreviewRotationInput()) {
             if (event.key() == GLFW.GLFW_KEY_A || event.key() == GLFW.GLFW_KEY_LEFT) {
                 rotatePreviewLeft = true;
@@ -1892,6 +2018,11 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if(com.ancientkira.mca.client.gui.widget.DropdownWidget.scroll(this,scrollY))return true;
+        if("misc".equals(page) && miscScrollMax>0 && mouseX>=width/2 && mouseX<=width/2+DATA_WIDTH+18
+                && mouseY>=miscTop() && mouseY<=miscBottom()){
+            scrollMisc((int)Math.round(-scrollY*18));return true;
+        }
         if (isMouseOverMainPreview(mouseX, mouseY)) {
             zoomPreview((float) scrollY * 0.1F);
             return true;
@@ -2064,7 +2195,10 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
                 int size = layeredHairSelection ? (hovered ? 45 : 40) : (hovered ? 35 : 30);
 
-                extractEntityPreview(context, x0 - previewPadding, y0 - previewPadding, x1 + previewPadding, y1 + previewPadding, size, 0, mouseX, mouseY, delta, villagerVisualization, rotationOffset);
+                com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.withoutSelections(()->{
+                    extractEntityPreview(context, x0 - previewPadding, y0 - previewPadding, x1 + previewPadding, y1 + previewPadding, size, 0, mouseX, mouseY, delta, villagerVisualization, rotationOffset);
+                    return null;
+                });
             }
         }
 
@@ -2077,6 +2211,11 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 if (!outfit.onlineAuthor.isBlank()) tooltip.add(Component.literal(outfit.onlineAuthor).withStyle(ChatFormatting.GRAY));
                 WidgetUtils.drawTooltip(context, font, tooltip, mouseX, mouseY);
             }
+        }
+
+        if(page.equals("hair") && hoveredClothingId>=0 && hoveredClothingId<filteredHairStyles.size()) {
+            String id=filteredHairStyles.get(hoveredClothingId);
+            WidgetUtils.drawTooltip(context,font,com.ancientkira.mca.client.resources.EditorLibraryCatalog.tooltip(id,"Hairstyle"),mouseX,mouseY);
         }
 
         if (page.equals("presets")) {
@@ -2105,11 +2244,19 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
 
     public void setVillagerName(String name) {
         String surname = villagerLastNameField == null ? "" : villagerLastNameField.getValue();
-        villagerNameField.setValue(com.ancientkira.mca.entity.FamilyNames.firstName(name));
-        updateName(com.ancientkira.mca.entity.FamilyNames.fullName(com.ancientkira.mca.entity.FamilyNames.firstName(name), surname));
+        villagerNameField.setValue(name);
+        updateNameParts(name, surname);
+        updateName(com.ancientkira.mca.entity.FamilyNames.fullName(name, surname));
     }
 
     public void setVillagerData(CompoundTag villagerData) {
+        if (nameEdited && this.villagerData != null) {
+            villagerData = villagerData.copy();
+            if (this.villagerData.contains("CustomName")) villagerData.put("CustomName", this.villagerData.get("CustomName").copy());
+            var from = getMcaData(this.villagerData);
+            var target = getOrCreateMcaData(villagerData);
+            for (String key : new String[]{"FirstName", "LastName", "SurnameDisabled"}) if (from.contains(key)) target.put(key, from.get(key).copy());
+        }
         if (commandsInFlightCount > 0) {
             commandsInFlightCount--;
         }
@@ -2167,8 +2314,28 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     }
 
     public void syncVillagerData() {
+        nameEdited = false;
         CompoundTag patch = VillagerEditorSyncRequest.createEditorPatch(createEditorData());
+        if (editedHearts != null) patch.putInt("EditorHearts", editedHearts);
+        if (editedMood != null) patch.putInt("EditorMood", editedMood);
+        editedHearts = null;
+        editedMood = null;
         Network.sendToServer(new VillagerEditorSyncRequest("sync", villagerUUID, patch));
+    }
+
+    @Override
+    public void onClose() {
+        if (nameEdited && villagerData != null) {
+            CompoundTag namePatch = new CompoundTag();
+            if (villagerData.contains("CustomName")) namePatch.put("CustomName", villagerData.get("CustomName").copy());
+            CompoundTag fields = new CompoundTag();
+            var source = getMcaData(villagerData);
+            for (String key : new String[]{"FirstName", "LastName", "SurnameDisabled"}) if (source.contains(key)) fields.put(key, source.get(key).copy());
+            namePatch.put(VillagerEntityMCA.MCA_DATA_KEY, fields);
+            Network.sendToServer(new VillagerEditorSyncRequest("sync", villagerUUID, namePatch));
+            nameEdited = false;
+        }
+        super.onClose();
     }
 
     private CompoundTag createEditorData() {
@@ -2179,12 +2346,49 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 "FamilyTreeNewSpouseName",
                 "VillagerDataFinalized"
         );
-        copyEditorMcaFields(nbt, "PlayerModel");
+        copyEditorMcaFields(nbt, "FirstName", "LastName", "SurnameDisabled", "PlayerModel", "FavoriteFood", "FavoriteColor", "InfectionProgress", "SicknessProgress");
+        var mcaData = getOrCreateMcaData(nbt);
+        mcaData.putFloat("InfectionProgress", villager.getInfectionProgress());
+        mcaData.putFloat("SicknessProgress", villager.getTrackedValue(VillagerLike.SICKNESS_PROGRESS));
+        mcaData.putFloat("SicknessZombieProgress", villager.getTrackedValue(VillagerLike.SICKNESS_ZOMBIE_PROGRESS));
+        mcaData.putBoolean("Sickened", villager.getTrackedValue(VillagerLike.SICKENED));
+        mcaData.putString("SickenedId", villager.getTrackedValue(VillagerLike.SICKENED_ID));
+        mcaData.putString("VoiceId", villager.getTrackedValue(VillagerLike.VOICE_ID));
         nbt.putInt("Age", villagerBreedingAge);
         return nbt;
     }
 
+    private void addFavoriteSelectors(int x, int y) {
+        addRenderableWidget(new com.ancientkira.mca.client.gui.widget.DropdownWidget<>(this,
+                widget -> addRenderableWidget(widget), this::removeWidget, x,y,DATA_WIDTH,20,
+                java.util.List.of(VillagerLike.FAVORITE_FOODS),villager.getFavoriteFood(),
+                food -> Component.translatable("gui.interact.label.favorite_food",Component.translatable("item.minecraft."+food)),
+                food -> {
+                    villager.setTrackedValue(VillagerLike.FAVORITE_FOOD,food);
+                    if(villagerData!=null)NbtHelper.getOrCreateCompound(villagerData,VillagerEntityMCA.MCA_DATA_KEY).putString("FavoriteFood",food);
+                }));
+        addRenderableWidget(new com.ancientkira.mca.client.gui.widget.DropdownWidget<>(this,
+                widget -> addRenderableWidget(widget), this::removeWidget, x,y+24,DATA_WIDTH,20,
+                java.util.List.of(VillagerLike.FAVORITE_COLORS),villager.getFavoriteColor(),
+                color -> Component.translatable("gui.interact.label.favorite_color",Component.translatable("mca.color."+color)),
+                color -> {
+                    villager.setTrackedValue(VillagerLike.FAVORITE_COLOR,color);
+                    if(villagerData!=null)NbtHelper.getOrCreateCompound(villagerData,VillagerEntityMCA.MCA_DATA_KEY).putString("FavoriteColor",color);
+                }));
+    }
+
+    private Component getFavoriteFoodComponent() {
+        return Component.translatable("gui.interact.label.favorite_food",
+                Component.translatable("item.minecraft." + villager.getFavoriteFood()));
+    }
+
+    private Component getFavoriteColorComponent() {
+        return Component.translatable("gui.interact.label.favorite_color",
+                Component.translatable("mca.color." + villager.getFavoriteColor()));
+    }
+
     void markClothingSelected() {
+        villager.setClassicSkin("");
         villager.setClothingLocked(true);
     }
 
@@ -2306,6 +2510,7 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
     }
 
     void applyLibraryHair(String hairId) {
+        villager.setClassicSkin("");
         villager.setHairStyle(HairStyle.singleLayer(hairId, villager.getGenetics().getGender(), 1.0F));
         if (isLayeredHairPage()) {
             setPage("hair_advanced");
@@ -2459,6 +2664,23 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
         try {
             CompoundTag tag = villager.toNbtForConversion();
             tag.putString("VoiceId", villager.getTrackedValue(VillagerLike.VOICE_ID));
+            var hairVisuals = com.ancientkira.mca.client.render.VillagerVisuals.capture(villager);
+            java.util.Set<String> untinted = new java.util.LinkedHashSet<>(villager.getTrackedValue(VillagerLike.UNTINTED_HAIR_TEXTURES).lines().toList());
+            for (var category : com.ancientkira.mca.resources.data.skin.LayeredHair.Category.values()) {
+                String texture = hairVisuals.layeredHair(category);
+                if (com.ancientkira.mca.client.gui.immersive_library.SkinCache.isUntinted(texture)) untinted.add(texture);
+            }
+            tag.putString("UntintedHairTextures", String.join("\n", untinted));
+            String selectedHair = com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.selected(villager.getUUID(), SkinLibraryScreen.SkinType.HAIR, "");
+            if (!selectedHair.isBlank()) {
+                tag.putString("HairStyle", selectedHair); tag.putString("Hair", "");
+                tag.putString("HairBase", selectedHair);
+                for (String layer : new String[]{"HairBangs", "HairBack", "HairFront", "HairExtra"}) tag.putString(layer, "");
+            }
+            tag.putString("EyeTexture", com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.selected(villager.getUUID(),SkinLibraryScreen.SkinType.EYES,villager.getTrackedValue(VillagerLike.EYE_TEXTURE)));
+            tag.putBoolean("EyesOverSkin", villager.getTrackedValue(VillagerLike.EYES_OVER_SKIN));
+            tag.putString("FavoriteFood", villager.getFavoriteFood());
+            tag.putString("FavoriteColor", villager.getFavoriteColor());
 
             // Extract PlayerModel from villagerData NBT if present
             if (villagerData != null) {
@@ -2528,7 +2750,12 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
                 String json = FileUtils.readFileToString(presetFile, StandardCharsets.UTF_8);
                 CompoundTag tag = PresetCodec.fromJsonString(json);
 
+                String presetHair = tag.getStringOr("HairBase", tag.getStringOr("HairStyle", ""));
+                var localId = com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(presetHair);
+                com.ancientkira.mca.client.gui.immersive_library.LocalLibrary.select(villager.getUUID(), SkinLibraryScreen.SkinType.HAIR,
+                        localId.isPresent() && localId.getAsInt() < 0 ? presetHair : null);
                 villager.readNbtForConversion(tag);
+                tag.getString("VoiceId").ifPresent(voice -> villager.setTrackedValue(VillagerLike.VOICE_ID, voice));
                 villager.refreshDimensions();
 
                 if (tag.contains("PlayerModel")) {
@@ -2565,6 +2792,8 @@ public class VillagerEditorScreen extends Screen implements SkinListUpdateListen
         }
         return file;
     }
+
+    public String getPage() {return page;}
 
     public VillagerEntityMCA getVillager() {
         return villager;

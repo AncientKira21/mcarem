@@ -37,10 +37,7 @@ public record DestinyMessage(String location, boolean isClosing) implements Hand
     @Override
     public void handle(Player player) {
         if (!(player instanceof ServerPlayer sp)) return;
-        if (isClosing) {
-            sp.removeEffect(MobEffects.INVISIBILITY);
-            sp.removeEffect(MobEffects.HEALTH_BOOST);
-        }
+        if (isClosing) com.ancientkira.mca.server.FirstJoinSetup.finish(sp);
         if (Config.getInstance().allowDestinyTeleportation && !location.isEmpty() && !isNoTeleportLocation()) {
             MCA.executorService.execute(() -> {
                 if (location.charAt(0) == '#') {

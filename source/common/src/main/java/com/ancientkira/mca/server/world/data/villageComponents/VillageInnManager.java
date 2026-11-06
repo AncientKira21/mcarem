@@ -85,7 +85,7 @@ public class VillageInnManager {
     private VillagerEntityMCA spawnInnVillager(ServerLevel world, BlockPos blockPos, Gender gender) {
         VillagerEntityMCA adventurer = gender.getVillagerType().spawn(world, blockPos, EntitySpawnReason.EVENT);
         if (adventurer != null) {
-            adventurer.setCustomName(Component.literal(Names.pickCitizenName(gender)));
+            adventurer.setCustomName(Component.literal(Names.pickCitizenName(gender, adventurer)));
         }
         return adventurer;
     }

@@ -16,6 +16,11 @@ public class DynamicListPage extends CenteredListPage {
     }
 
     @Override
+    public List<Component> writtenPages(boolean dynamic) {
+        return dynamic ? writtenPages(generator.apply(this)) : super.writtenPages(false);
+    }
+
+    @Override
     public void open(boolean back) {
         text.clear();
         text.addAll(generator.apply(this));

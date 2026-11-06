@@ -51,19 +51,27 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
             }
             world.setBlock(pos, state.setValue(BlockStateProperties.OPEN, open), Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
             world.gameEvent(entity, open ? GameEvent.BLOCK_OPEN : GameEvent.BLOCK_CLOSE, pos);
-            playOpenCloseSound(entity, world, pos, open);
+            playOpenCloseSound(entity, world, state, pos, open);
             return true;
         } else {
             return false;
         }
     }
 
-    private static void playOpenCloseSound(@Nullable Entity entity, Level world, BlockPos pos, boolean open) {
+    private static void playOpenCloseSound(@Nullable Entity entity, Level world, BlockState state, BlockPos pos, boolean open) {
+        if (state.getBlock() instanceof com.ancientkira.mca.mixin.TrapDoorBlockAccessor trapdoor) {
+            trapdoor.mca$playSound(null, world, pos, open);
+            return;
+        }
+        if (state.getBlock() instanceof com.ancientkira.mca.mixin.FenceGateBlockAccessor gate) {
+            world.playSound(null, pos, gateSound(state, gate, open), SoundSource.BLOCKS, 1, world.getRandom().nextFloat() * .1F + .9F);
+            return;
+        }
         world.playSound(entity, pos, open ? SoundEvents.WOODEN_DOOR_OPEN : SoundEvents.WOODEN_DOOR_CLOSE, SoundSource.BLOCKS, 0.75F, world.getRandom().nextFloat() * 0.1F + 0.9F);
     }
 
     private static boolean isDoor(BlockState blockState) {
-        return blockState.is(BlockTags.WOODEN_DOORS, state -> state.getBlock() instanceof DoorBlock) || blockState.is(BlockTags.FENCE_GATES, state -> state.getBlock() instanceof FenceGateBlock);
+        return blockState.is(BlockTags.WOODEN_TRAPDOORS, state -> state.getBlock() instanceof net.minecraft.world.level.block.TrapDoorBlock) || blockState.is(BlockTags.WOODEN_DOORS, state -> state.getBlock() instanceof DoorBlock) || blockState.is(BlockTags.FENCE_GATES, state -> state.getBlock() instanceof FenceGateBlock);
     }
 
     public static void closeDoors(ServerLevel world, LivingEntity entity, @Nullable Node lastNode, @Nullable Node currentNode) {
@@ -179,11 +187,28 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
         if (pathNode != null) {
             BlockPos blockPos = pathNode.asBlockPos();
             BlockState blockState = world.getBlockState(blockPos);
+            if (blockState.getBlock() instanceof net.minecraft.world.level.block.TrapDoorBlock
+                    && !com.ancientkira.mca.entity.ai.navigation.TrapdoorNavigation.canOpen(world,blockPos))return;
             if (isDoor(blockState)) {
                 if (setOpen(entity, world, blockState, blockPos, true)) {
                     this.rememberToCloseDoor(world, entity, blockPos);
                 }
             }
+        }
+    }
+
+    /** Swimming routes bypass Brain.PATH, so open only doorways intersecting the next step. */
+    public static void openForSwimming(ServerLevel world, LivingEntity entity, net.minecraft.world.phys.Vec3 next) {
+        AABB passage = entity.getBoundingBox().expandTowards(next.subtract(entity.position())).inflate(0.05);
+        for (BlockPos candidate : BlockPos.betweenClosed(
+                net.minecraft.util.Mth.floor(passage.minX), net.minecraft.util.Mth.floor(passage.minY), net.minecraft.util.Mth.floor(passage.minZ),
+                net.minecraft.util.Mth.floor(passage.maxX), net.minecraft.util.Mth.floor(passage.maxY), net.minecraft.util.Mth.floor(passage.maxZ))) {
+            BlockState state = world.getBlockState(candidate);
+            if (!state.is(BlockTags.WOODEN_DOORS) || !(state.getBlock() instanceof DoorBlock)) continue;
+            BlockPos base = state.getValue(DoorBlock.HALF) == DoubleBlockHalf.UPPER ? candidate.below() : candidate.immutable();
+            if (!base.closerToCenterThan(entity.position(), PATHING_DISTANCE)) continue;
+            BlockState lower = world.getBlockState(base);
+            if (setOpen(entity, world, lower, base, true)) rememberToCloseDoor(world, entity, base);
         }
     }
 
@@ -199,7 +224,7 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
         closeDoors(world, entity, path.getPreviousNode(), path.getNextNode());
     }
 
-    private void rememberToCloseDoor(ServerLevel world, LivingEntity entity, BlockPos pos) {
+    private static void rememberToCloseDoor(ServerLevel world, LivingEntity entity, BlockPos pos) {
         Brain<?> brain = entity.getBrain();
         GlobalPos globalPos = GlobalPos.of(world.dimension(), pos);
         if (brain.getMemoryInternal(MemoryModuleType.DOORS_TO_CLOSE).isPresent()) {
@@ -207,5 +232,17 @@ public class SmarterOpenDoorsTask extends Behavior<LivingEntity> {
         } else {
             brain.setMemory(MemoryModuleType.DOORS_TO_CLOSE, Sets.newHashSet(globalPos));
         }
+    }
+    private static net.minecraft.sounds.SoundEvent gateSound(
+            net.minecraft.world.level.block.state.BlockState state,
+            com.ancientkira.mca.mixin.FenceGateBlockAccessor gate, boolean open) {
+        // NeoForge gates may override their wood type's sounds.
+        try {
+            Object sound = net.minecraft.world.level.block.FenceGateBlock.class
+                    .getField(open ? "openSound" : "closeSound").get(state.getBlock());
+            if (sound instanceof net.minecraft.sounds.SoundEvent event) return event;
+        } catch (ReflectiveOperationException ignored) { }
+        var type = gate.mca$woodType();
+        return open ? type.fenceGateOpen() : type.fenceGateClose();
     }
 }

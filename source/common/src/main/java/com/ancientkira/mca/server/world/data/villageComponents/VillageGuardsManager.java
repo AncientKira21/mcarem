@@ -40,6 +40,7 @@ public class VillageGuardsManager {
     }
 
     public void spawnGuards(ServerLevel world) {
+        if(!village.isAutomaticGuards())return;
         int guardCapacity = (int) Math.ceil(village.getPopulation() * Config.getInstance().guardSpawnFraction);
 
         // Count up the guards

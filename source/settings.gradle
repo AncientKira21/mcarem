@@ -55,9 +55,7 @@ if (buildLoader == null || buildLoader in ['fabric', 'quilt']) {
 if (buildLoader == null || buildLoader == 'neoforge') {
     include('neoforge')
 }
-if (buildLoader == null || buildLoader == 'quilt') {
-    include('quilt')
-}
+// The Fabric artifact also serves Quilt; keep 'quilt' as a loader-selection alias.
 if (buildLoader != null && !(buildLoader in ['fabric', 'neoforge', 'quilt'])) {
     throw new GradleException("Unsupported mca_build_loader: ${buildLoader}")
 }

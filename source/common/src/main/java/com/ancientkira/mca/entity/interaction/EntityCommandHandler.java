@@ -23,6 +23,15 @@ public abstract class EntityCommandHandler<T extends Entity & VillagerLike<?>> {
         this.entity = entity;
     }
 
+    public void beginConversation(Player player) {
+        interactingPlayer = player;
+        if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && !entity.level().isClientSide()) {
+            person.getNavigation().stop();
+            person.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.WALK_TARGET);
+            person.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.PATH);
+        }
+    }
+
     public Optional<Player> getInteractingPlayer() {
         return Optional.ofNullable(interactingPlayer).filter(player -> player.containerMenu != null
                 && player.isAlive() && !player.isRemoved() && player.level() == entity.level()
@@ -52,7 +61,7 @@ public abstract class EntityCommandHandler<T extends Entity & VillagerLike<?>> {
         if (player instanceof ServerPlayer serverPlayer) {
             Network.sendToPlayer(new OpenGuiRequest(OpenGuiRequest.Type.INTERACT, entity), serverPlayer);
         }
-        interactingPlayer = player;
+        beginConversation(player);
         if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) {
             com.ancientkira.mca.server.RaiderSocial.onMenuOpened(person, player);
         }

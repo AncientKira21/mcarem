@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "facing=east": {
+      "model": "mca:block/underwater_wall_torch"
+    },
+    "facing=north": {
+      "model": "mca:block/underwater_wall_torch",
+      "y": 270
+    },
+    "facing=south": {
+      "model": "mca:block/underwater_wall_torch",
+      "y": 90
+    },
+    "facing=west": {
+      "model": "mca:block/underwater_wall_torch",
+      "y": 180
+    }
+  }
+}

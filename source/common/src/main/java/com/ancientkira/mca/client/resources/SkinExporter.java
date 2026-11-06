@@ -123,13 +123,13 @@ public class SkinExporter {
     public static int getSkinColor(VillagerVisuals visuals) {
         int skinDye = visuals.skinDye();
         if (skinDye != 0xFF000000) {
-            return skinDye;
+            return visuals.sicknessProgress() > 0 ? ColorPalette.applyPurpleShift(skinDye, visuals.sicknessProgress()) : skinDye;
         }
         float albinism = visuals.albinism() ? 0.1f : 1.0f;
         return ColorPalette.SKIN.getColor(
                 visuals.melaninGene() * albinism,
                 visuals.hemoglobinGene() * albinism,
-                visuals.infectionProgress()
+                visuals.skinInfectionProgress()
         );
     }
 

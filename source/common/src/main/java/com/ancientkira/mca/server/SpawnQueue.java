@@ -179,6 +179,7 @@ public class SpawnQueue {
     }
 
     private void copyPastaIntensifies(PathfinderMob villager, PathfinderMob entity) {
+        com.ancientkira.mca.compat.SickenedCompat.transfer(entity, villager);
         if (entity.isPersistenceRequired()) {
             villager.setPersistenceRequired();
         }

@@ -5,6 +5,7 @@ import com.ancientkira.mca.util.compat.ButtonWidget;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.network.chat.Component;
 import java.lang.reflect.*;
 import java.util.*;
@@ -17,6 +18,7 @@ public final class McaConfigScreen extends Screen {
     private int offset;
     public McaConfigScreen(Screen parent) { super(Component.literal("MCA Remastered Settings")); this.parent = parent; }
     static String label(Field field) {
+        if (field.getName().equals("enableCorpses")) return "Corpses";
         if (field.getName().equals("enableSilvernaturalPack")) return "Silvernatural's pack";
         if (field.getName().equals("showOwnLibrarySubmissions")) return "Show my submissions";
         if (field.getName().equals("usePlayerAnimationsForVillagers")) return "Use CPA animations for villagers";
@@ -43,7 +45,10 @@ public final class McaConfigScreen extends Screen {
     private void refresh() {
         rows.forEach(this::removeWidget); rows.clear();
         String query=search.getValue().toLowerCase(Locale.ROOT).strip();
-        var fields=settings().stream().filter(f->(label(f) + " " + description(f).getString()).toLowerCase(Locale.ROOT).contains(query)).toList();
+        var fields=settings().stream()
+                .filter(f -> !f.getName().equals("usePlayerAnimationsForVillagers")
+                        || com.ancientkira.mca.MCA.platformHelper.isModLoaded("cpa"))
+                .filter(f->(label(f) + " " + description(f).getString()).toLowerCase(Locale.ROOT).contains(query)).toList();
         int count=Math.max(1,(height-112)/23);
         offset=Math.clamp(offset,0,Math.max(0,fields.size()-count));
         for(int i=0;i<count && offset+i<fields.size();i++) {
@@ -53,7 +58,22 @@ public final class McaConfigScreen extends Screen {
                 String text=label(field)+": "+(value instanceof Boolean b ? b?"ON":"OFF":value);
                 rows.add(addRenderableWidget(new ButtonWidget(width/2-150,60+i*23,300,20,Component.literal(text),b->{
                     try {
-                        if(field.getType()==boolean.class){field.setBoolean(Config.getInstance(),!field.getBoolean(Config.getInstance()));Config.getInstance().save();com.ancientkira.mca.client.resources.ClientSkinCatalog.refreshEditorEntries();refresh();}
+                        if(field.getType()==boolean.class){
+                            if(field.getName().equals("enableCorpses") && !field.getBoolean(Config.getInstance())) {
+                                minecraft.setScreen(new ConfirmScreen(confirmed -> {
+                                    if (confirmed) {
+                                        Config.getInstance().enableCorpses = true;
+                                        Config.getInstance().save();
+                                    }
+                                    minecraft.setScreen(this);
+                                }, Component.translatable("config.mca.enableCorpses.confirm.title"),
+                                   Component.translatable("config.mca.enableCorpses.confirm.message")));
+                            } else {
+                                field.setBoolean(Config.getInstance(),!field.getBoolean(Config.getInstance()));
+                                Config.getInstance().save();
+                                com.ancientkira.mca.client.resources.ClientSkinCatalog.refreshEditorEntries();refresh();
+                            }
+                        }
                         else minecraft.setScreen(new ValueScreen(this,field));
                     }catch(IllegalAccessException e){throw new IllegalStateException(e);}
                 },description(field))));

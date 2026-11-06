@@ -101,11 +101,9 @@ public class VillagerTasksMCA {
             SensorType.NEAREST_ITEMS,
             SensorType.NEAREST_BED,
             SensorType.HURT_BY,
-            SensorType.VILLAGER_HOSTILES,
             SensorType.SECONDARY_POIS,
             SensorType.GOLEM_DETECTED,
             SensorsMCA.VILLAGER_BABIES,
-            SensorsMCA.EXPLODING_CREEPER,
             SensorsMCA.GUARD_ENEMIES
     );
 
@@ -133,14 +131,14 @@ public class VillagerTasksMCA {
         } else if (brain.getMemoryInternal(MemoryModuleTypeMCA.STAYING).isPresent()) {
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getStayingPackage(), ImmutableSet.of(), ImmutableSet.of());
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getImportantCorePackage(0.5f), ImmutableSet.of(), ImmutableSet.of());
-            brain.addActivity(Activity.CORE, villager.isGuard() ? getGuardCorePackage(villager) : getSelfDefencePackage(), ImmutableSet.of(), ImmutableSet.of());
-            brain.addActivity(Activity.PANIC, villager.isGuard() ? getGuardPanicPackage(0.5F) : getPanicPackage(0.5F), ImmutableSet.of(), ImmutableSet.of());
+            brain.addActivity(Activity.CORE, (villager.isGuard() || ProfessionsMCA.isRaider(villager.getProfession())) ? getGuardCorePackage(villager) : getSelfDefencePackage(), ImmutableSet.of(), ImmutableSet.of());
+            brain.addActivity(Activity.PANIC, (villager.isGuard() || ProfessionsMCA.isRaider(villager.getProfession())) ? getGuardPanicPackage(0.5F) : getPanicPackage(0.5F), ImmutableSet.of(), ImmutableSet.of());
             noDefault = true;
         } else if (brain.getMemoryInternal(MemoryModuleTypeMCA.PLAYER_FOLLOWING).isPresent()) {
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getFollowingPackage(), ImmutableSet.of(), ImmutableSet.of());
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getImportantCorePackage(0.5f), ImmutableSet.of(), ImmutableSet.of());
-            brain.addActivity(Activity.CORE, villager.isGuard() ? getGuardCorePackage(villager) : getSelfDefencePackage(), ImmutableSet.of(), ImmutableSet.of());
-            brain.addActivity(Activity.PANIC, villager.isGuard() ? getGuardPanicPackage(0.5F) : getPanicPackage(0.5F), ImmutableSet.of(), ImmutableSet.of());
+            brain.addActivity(Activity.CORE, (villager.isGuard() || ProfessionsMCA.isRaider(villager.getProfession())) ? getGuardCorePackage(villager) : getSelfDefencePackage(), ImmutableSet.of(), ImmutableSet.of());
+            brain.addActivity(Activity.PANIC, (villager.isGuard() || ProfessionsMCA.isRaider(villager.getProfession())) ? getGuardPanicPackage(0.5F) : getPanicPackage(0.5F), ImmutableSet.of(), ImmutableSet.of());
             noDefault = true;
         } else if (profession == ProfessionsMCA.MERCENARY) {
             brain.setSchedule(SchedulesMCA.GUESTS);
@@ -159,6 +157,9 @@ public class VillagerTasksMCA {
             brain.addActivity(Activity.PANIC, VillagerTasksMCA.getPanicPackage(0.5F), ImmutableSet.of(), ImmutableSet.of());
             brain.addActivity(Activity.REST, VillagerTasksMCA.getRestPackage(0.5F), ImmutableSet.of(Pair.of(MemoryModuleType.ATTACK_TARGET, MemoryStatus.VALUE_ABSENT)), ImmutableSet.of());
             noDefault = true;
+        } else if (villager.getVillagerData().profession().is(VillagerProfession.NITWIT)) {
+            // The shared idle/social/safety packages below still run, but no job-site tasks do.
+            brain.setSchedule(SchedulesMCA.getTypeSchedule(villager));
         } else if (villager.isGuard()) {
             brain.setSchedule(SchedulesMCA.getTypeSchedule(villager, SchedulesMCA.GUARD, SchedulesMCA.GUARD_NIGHT));
             brain.addActivity(Activity.CORE, VillagerTasksMCA.getGuardCorePackage(villager), ImmutableSet.of(), ImmutableSet.of());
@@ -224,16 +225,20 @@ public class VillagerTasksMCA {
     public static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super VillagerEntityMCA>>> getImportantCorePackage(float speedModifier) {
         return ImmutableList.of(
                 Pair.of(0, new ConditionalTask<>(new Swim(0.8F), (VillagerEntityMCA v) ->
-                        !(v.getNavigation() instanceof com.ancientkira.mca.entity.ai.navigation.MCAGroundPathNavigation navigation)
-                                || !navigation.isControllingFluid())),
+                        com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.canControlWater(v)
+                                && !com.ancientkira.mca.server.UnderwaterVillageSupport.isAroundUnderwaterVillage(v.level(), v.blockPosition())
+                                && !com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.active(v) && (!(v.getNavigation() instanceof com.ancientkira.mca.entity.ai.navigation.MCAGroundPathNavigation navigation)
+                                || !navigation.isControllingFluid()))),
                 Config.getInstance().useSmarterDoorAI ? Pair.of(0, new SmarterOpenDoorsTask()) : Pair.of(0, InteractWithDoor.create()),
+                Pair.of(96, new PanicShelterTask()),
                 Pair.of(98, new com.ancientkira.mca.server.VillagerHangouts.Activity()),
+                Pair.of(97, new GrieveTask()),
                 Pair.of(99, new com.ancientkira.mca.server.VillageMusic.Activity()),
                 Pair.of(100, new com.ancientkira.mca.server.InfirmaryCare.CareActivity()),
                 Pair.of(101, new com.ancientkira.mca.server.PortalHomecoming.ReturnActivity()),
                 Pair.of(0, new CloseRememberedDoorsTask()),
                 Pair.of(0, new ConditionalTask<>(new LookAtTargetSink(45, 90), villager -> !isInDanger(villager))),
-                Pair.of(0, WakeUp.create()),
+                Pair.of(0, new ConditionalTask<>(WakeUp.create(), (VillagerEntityMCA v) -> !com.ancientkira.mca.server.InfirmaryCare.isPatient(v))),
                 Pair.of(0, new DeliverMessageTask()),
                 Pair.of(1, new WanderOrTeleportToTargetTask()),
                 Pair.of(3, new InteractTask(speedModifier)),
@@ -241,6 +246,7 @@ public class VillagerTasksMCA {
                     // update villagers home/bed position
                     villager.getResidency().seekHome();
                 }, (entity, pos) -> {
+                    if (com.ancientkira.mca.server.world.data.PlayerBedClaims.reserved((ServerLevel) entity.level(), pos)) return false;
                     // verify that this bed is not blocked
                     VillageManager manager = VillageManager.get((ServerLevel) entity.level());
                     if (entity.requiresHome()) {
@@ -263,6 +269,7 @@ public class VillagerTasksMCA {
                     // update villagers home/bed position
                     villager.getResidency().seekHome();
                 }, (entity, pos) -> {
+                    if (com.ancientkira.mca.server.world.data.PlayerBedClaims.reserved((ServerLevel) entity.level(), pos)) return false;
                     // verify that this bed is not blocked
                     VillageManager manager = VillageManager.get((ServerLevel) entity.level());
                     return manager.findNearestVillage(entity).filter(v -> {
@@ -306,7 +313,8 @@ public class VillagerTasksMCA {
                         && !com.ancientkira.mca.server.CaptiveRescue.isHelping(v)
                         && !com.ancientkira.mca.server.ClericAid.isHelping(v))),
                 Pair.of(1, new EquipmentTask(VillagerTasksMCA::isInDanger, v -> EquipmentSet.NAKED)),
-                Pair.of(2, new ExtendedMeleeAttackTask(15, 2.5F, MemoryModuleType.NEAREST_HOSTILE))
+                Pair.of(2, new ExtendedCrossbowAttackTask<VillagerEntityMCA, VillagerEntityMCA>()),
+                Pair.of(3, new ExtendedMeleeAttackTask(15, MemoryModuleType.NEAREST_HOSTILE))
         );
     }
 
@@ -324,7 +332,7 @@ public class VillagerTasksMCA {
                 ),
                 // self-defence while fleeing
                 Pair.of(0, new ConditionalTask<>(
-                        new ExtendedMeleeAttackTask(15, 2.5F, MemoryModuleType.NEAREST_HOSTILE),
+                        new ExtendedMeleeAttackTask(15, MemoryModuleType.NEAREST_HOSTILE),
                         VillagerTasksMCA::guardTooHurt
                 )),
                 Pair.of(1, new EquipmentTask(v -> ProfessionsMCA.isRaider(v.getProfession()) || isOnDuty(v), v -> ProfessionsMCA.isRaider(v.getProfession()) ? com.ancientkira.mca.server.RaiderCombat.equipment(v.getProfession()) : v.getResidency().getEquipmentVillage()
@@ -340,13 +348,14 @@ public class VillagerTasksMCA {
                 )),
                 Pair.of(4, new ArcherMovementTask<>(15)),
                 Pair.of(5, new GunAttackTask()),
+                Pair.of(5, new TridentAttackTask()),
                 Pair.of(5, new BowTask<>(20, 15)),
                 Pair.of(7, new ConditionalTask<>(
                         SetWalkTargetFromAttackTargetIfTargetOutOfReach.create(0.75F),
                         (VillagerEntityMCA v) -> !hasMovementOrder(v) && !VillagerTasksMCA.isHoldingRangedWeapon(v) && !ProfessionsMCA.isSpellcaster(v.getProfession())
                 )),
                 Pair.of(8, new ConditionalTask<>(
-                        new ExtendedMeleeAttackTask(20, 2.0F),
+                        new ExtendedMeleeAttackTask(20),
                         (VillagerEntityMCA v) -> !VillagerTasksMCA.isHoldingRangedWeapon(v) && !ProfessionsMCA.isSpellcaster(v.getProfession())
                 )),
                 Pair.of(9, new ExtendedCrossbowAttackTask<VillagerEntityMCA, VillagerEntityMCA>())
@@ -374,15 +383,15 @@ public class VillagerTasksMCA {
         float f = speedModifier * 1.5F;
         return ImmutableList.of(
                 Pair.of(1, VillagerCalmDown.create()),
-                Pair.of(2, new ConditionalTask<>(SetWalkTargetAwayFrom.entity(MemoryModuleType.NEAREST_HOSTILE, f, 6, false), (VillagerEntityMCA v) -> !hasMovementOrder(v))),
-                Pair.of(2, new ConditionalTask<>(SetWalkTargetAwayFrom.entity(MemoryModuleType.HURT_BY_ENTITY, f, 6, false), (VillagerEntityMCA v) -> !hasMovementOrder(v))),
-                Pair.of(3, new ConditionalTask<>(VillageBoundRandomStroll.create(f, 2, 2), (VillagerEntityMCA v) -> !hasMovementOrder(v))),
+                Pair.of(2, new ConditionalTask<>(SetWalkTargetAwayFrom.entity(MemoryModuleType.NEAREST_HOSTILE, f, 6, false), (VillagerEntityMCA v) -> !hasMovementOrder(v) && !com.ancientkira.mca.server.VillageWarfare.isFunFighting(v))),
+                Pair.of(2, new ConditionalTask<>(SetWalkTargetAwayFrom.entity(MemoryModuleType.HURT_BY_ENTITY, f, 6, false), (VillagerEntityMCA v) -> !hasMovementOrder(v) && !com.ancientkira.mca.server.VillageWarfare.isFunFighting(v))),
+                Pair.of(3, new ConditionalTask<>(VillageBoundRandomStroll.create(f, 2, 2), (VillagerEntityMCA v) -> !hasMovementOrder(v) && !com.ancientkira.mca.server.VillageWarfare.isFunFighting(v))),
                 getMinimalLookBehavior()
         );
     }
 
     private static boolean guardTooHurt(VillagerEntityMCA villager) {
-        return !ProfessionsMCA.isRaider(villager.getProfession()) && villager.getHealth() < villager.getMaxHealth() * 0.25;
+        return !com.ancientkira.mca.server.VillageWarfare.isFunFighting(villager) && !ProfessionsMCA.isRaider(villager.getProfession()) && villager.getHealth() < villager.getMaxHealth() * 0.25;
     }
 
     private static Optional<? extends LivingEntity> getPreferredTarget(VillagerEntityMCA villager) {
@@ -392,17 +401,28 @@ public class VillagerTasksMCA {
             return Optional.empty();
         } else {
             Optional<LivingEntity> current = villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET);
+            Optional<LivingEntity> primary = villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.NEAREST_GUARD_ENEMY)
+                    .filter(target -> shouldRespondToGuardEnemy(villager, target));
             if (current.isPresent() && shouldKeepAttackTarget(villager, current.get())) {
-                return current;
+                if (villager.getSensing().hasLineOfSight(current.get())) return current;
+                // A hidden, unreachable enemy must not monopolize combat while visible enemies approach.
+                if (primary.isPresent() && villager.getSensing().hasLineOfSight(primary.get())) return primary;
+                Optional<LivingEntity> visible = findVisibleGuardEnemy(villager);
+                return visible.isPresent() ? visible : current;
             }
-
-            Optional<LivingEntity> primary = villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.NEAREST_GUARD_ENEMY);
-            if (primary.isPresent() && shouldRespondToGuardEnemy(villager, primary.get())) {
-                return primary;
-            } else {
-                return Optional.empty();
-            }
+            if (primary.isPresent()) return primary;
+            return findVisibleGuardEnemy(villager);
         }
+    }
+
+    private static Optional<LivingEntity> findVisibleGuardEnemy(VillagerEntityMCA villager) {
+        // Reuse the existing sensor scan; no additional world entity search.
+        return villager.getBrain().getMemoryInternal(MemoryModuleType.NEAREST_LIVING_ENTITIES)
+                .stream().flatMap(java.util.Collection::stream)
+                .filter(target -> shouldRespondToGuardEnemy(villager, target))
+                .filter(target -> villager.distanceToSqr(target) <= 48 * 48)
+                .filter(target -> villager.getSensing().hasLineOfSight(target))
+                .min(java.util.Comparator.comparingDouble(villager::distanceToSqr));
     }
 
     public static boolean hasMovementOrder(VillagerEntityMCA villager) {
@@ -421,8 +441,12 @@ public class VillagerTasksMCA {
     }
 
     private static boolean shouldKeepAttackTarget(VillagerEntityMCA villager, LivingEntity target) {
-        return canPursueFromVillage(villager,target) && target != villager && !target.getUUID().equals(villager.getUUID())
+        return com.ancientkira.mca.entity.ai.GuardPerception.canLocate(villager,target)
+               && !com.ancientkira.mca.server.GolemPolice.prisoner(target)
+               && canPursueFromVillage(villager,target) && target != villager && !target.getUUID().equals(villager.getUUID())
                && !(target instanceof VillagerEntityMCA person && person.isPeacefulRaider())
+               && !(target.isSleeping() && (target instanceof net.minecraft.world.entity.monster.zombie.Zombie || target instanceof com.ancientkira.mca.entity.ZombieVillagerEntityMCA))
+               && !(target instanceof com.ancientkira.mca.entity.ZombieVillagerEntityMCA z && com.ancientkira.mca.server.InfirmaryCare.isZombiePatient(z))
                && target.isAlive()
                && !target.isRemoved()
                && target.level() == villager.level()
@@ -458,6 +482,8 @@ public class VillagerTasksMCA {
 
     public static boolean isOnDuty(VillagerEntityMCA villager) {
         return !villager.isKidnapped() && !villager.isSleeping() && (getActivity(villager) == Activity.WORK
+               || com.ancientkira.mca.server.VillageWarfare.isFighting(villager)
+               || villager.isGuard() && villager.getVillagerBrain().getCurrentJob() != com.ancientkira.mca.entity.ai.Chore.NONE
                || villager.isGuard() && (isFollowingPlayer(villager)
                    || villager.getBrain().hasMemoryValue(MemoryModuleTypeMCA.STAYING)
                    || villager.getBrain().isActive(ActivitiesMCA.GRIEVE))
@@ -479,7 +505,11 @@ public class VillagerTasksMCA {
 
     public static boolean isInDanger(VillagerEntityMCA villager) {
         return villager.getVillagerBrain().isPanicking()
-               || villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).isPresent();
+               || villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).isPresent()
+               || villager.getBrain().getMemoryInternal(MemoryModuleType.NEAREST_HOSTILE).isPresent()
+               || villager.getBrain().getMemoryInternal(MemoryModuleType.HURT_BY).isPresent()
+               || villager.getBrain().getMemoryInternal(MemoryModuleType.HURT_BY_ENTITY).isPresent()
+               || (villager.getLastHurtByMob() != null && villager.getLastHurtByMob().isAlive() && villager.tickCount - villager.getLastHurtByMobTimestamp() <= 200);
     }
 
     private static Activity getActivity(VillagerEntityMCA villager) {
@@ -541,6 +571,17 @@ public class VillagerTasksMCA {
             }
             return tasks.build();
         }
+        if (profession == BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.FISHERMAN)) {
+            FishingTask fishing = new FishingTask(true);
+            tasks.add(Pair.of(0, fishing));
+            tasks.add(Pair.of(99, UpdateActivityFromSchedule.create()));
+            for (Pair<Integer, ? extends BehaviorControl<? super Villager>> task : VillagerGoalPackages.getWorkPackage(
+                    BuiltInRegistries.VILLAGER_PROFESSION.wrapAsHolder(profession), speedModifier)) {
+                tasks.add(Pair.of(task.getFirst(), new ConditionalTask<VillagerEntityMCA>(task.getSecond(),
+                        v -> !fishing.isFishing())));
+            }
+            return tasks.build();
+        }
         if (profession == BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.FARMER)) {
             tasks.add(Pair.of(0, new com.ancientkira.mca.entity.ai.brain.tasks.FarmerWorkTask()));
         }
@@ -555,6 +596,7 @@ public class VillagerTasksMCA {
         return ImmutableList.of(
                 Pair.of(0, new MoveToTargetSink(80, 120)),
                 getFullLookBehavior(),
+                Pair.of(2, new com.ancientkira.mca.entity.ai.brain.tasks.StayWithFamilyTask(speedModifier)),
                 Pair.of(5, PlayTagWithOtherKids.create()),
                 Pair.of(5, new RunOne<>(
                         ImmutableMap.of(MemoryModuleType.VISIBLE_VILLAGER_BABIES, MemoryStatus.VALUE_ABSENT),
@@ -606,13 +648,14 @@ public class VillagerTasksMCA {
 
     public static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super VillagerEntityMCA>>> getMeetPackage(float speedModifier) {
         return ImmutableList.of(
+                Pair.of(2, SetWalkTargetFromBlockMemory.create(MemoryModuleType.MEETING_POINT, speedModifier, 6, 100, 200)),
                 Pair.of(2, new RunOne<>(ImmutableList.of(
                         Pair.of(StrollAroundPoi.create(MemoryModuleType.MEETING_POINT, 0.4F, 40), 2),
                         Pair.of(SocializeAtBell.create(), 2))
                 )),
+                Pair.of(3, new com.ancientkira.mca.entity.ai.brain.tasks.StayWithFamilyTask(speedModifier)),
                 Pair.of(10, new ShowTradesToPlayer(400, 1600)),
                 Pair.of(10, SetLookAndInteract.create(EntityType.PLAYER, 4)),
-                Pair.of(2, SetWalkTargetFromBlockMemory.create(MemoryModuleType.MEETING_POINT, speedModifier, 6, 100, 200)),
                 Pair.of(3, new GiveGiftToHero(100)),
                 Pair.of(3, ValidateNearbyPoi.create(registryEntry -> registryEntry.is(PoiTypes.MEETING), MemoryModuleType.MEETING_POINT)),
                 Pair.of(3, new GateBehavior<>(
@@ -630,7 +673,8 @@ public class VillagerTasksMCA {
     public static ImmutableList<Pair<Integer, ? extends BehaviorControl<? super VillagerEntityMCA>>> getIdlePackage(float speedModifier) {
         return ImmutableList.of(
                 Pair.of(1, new EnterFavoredBuildingTask(0.5f)),
-                Pair.of(2, new RunOne<>(ImmutableList.of(
+                Pair.of(2, new com.ancientkira.mca.entity.ai.brain.tasks.StayWithFamilyTask(speedModifier)),
+                Pair.of(3, new RunOne<>(ImmutableList.of(
                         Pair.of(InteractWith.of(EntitiesMCA.PERSON, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2), 4),
                         Pair.of(InteractWith.of(EntityType.CAT, 8, MemoryModuleType.INTERACTION_TARGET, speedModifier, 2), 1),
                         Pair.of(VillageBoundRandomStroll.create(speedModifier), 1),
@@ -641,7 +685,6 @@ public class VillagerTasksMCA {
                 Pair.of(3, new GiveGiftToHero(100)),
                 Pair.of(3, SetLookAndInteract.create(EntityType.PLAYER, 4)),
                 Pair.of(3, new ShowTradesToPlayer(400, 1600)),
-                Pair.of(3, new GrieveTask()),
                 Pair.of(3, new GateBehavior<>(ImmutableMap.of(),
                         ImmutableSet.of(MemoryModuleType.INTERACTION_TARGET),
                         GateBehavior.OrderPolicy.ORDERED,

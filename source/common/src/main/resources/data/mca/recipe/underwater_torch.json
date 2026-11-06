@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "S",
+    "#"
+  ],
+  "key": {
+    "S": "minecraft:sea_lantern",
+    "#": "minecraft:stick"
+  },
+  "result": {
+    "id": "mca:underwater_torch",
+    "count": 4
+  }
+}

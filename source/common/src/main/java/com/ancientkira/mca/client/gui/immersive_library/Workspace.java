@@ -22,6 +22,7 @@ public final class Workspace {
     public SkinLibraryScreen.SkinType skinType;
     public int contentid = -1;
     public int temperature;
+    public boolean untinted;
     public double chance = 1.0;
     public String title = "Unnamed Asset";
     public String profession;
@@ -50,19 +51,28 @@ public final class Workspace {
         this.contentid = content.contentid();
         this.title = content.title();
 
-        this.skinType = content.hasTag("clothing") ? SkinLibraryScreen.SkinType.CLOTHING : SkinLibraryScreen.SkinType.HAIR;
+        this.skinType = SkinLibraryScreen.SkinType.of(content);
 
         this.chance = meta.getChance();
         this.gender = meta.getGender();
         this.profession = meta.getProfession();
         this.temperature = meta.getTemperature();
+        this.untinted=meta.isUntinted();
     }
 
     public SkinListEntry toListEntry() {
         if (skinType == SkinLibraryScreen.SkinType.CLOTHING) {
             return new Clothing("immersive_library:" + contentid, profession, temperature, false, gender);
+        } else if(skinType==SkinLibraryScreen.SkinType.HAIR) {
+            return new Hair("immersive_library:" + contentid) {
+                @Override public com.google.gson.JsonObject toJson(){var meta=super.toJson();meta.addProperty("untinted",untinted);return meta;}
+            };
         } else {
-            return new Hair("immersive_library:" + contentid);
+            return new SkinListEntry("immersive_library:"+contentid,gender,(float)chance) {
+                @Override public com.google.gson.JsonObject toJson() {
+                    var meta=super.toJson();meta.addProperty("kind",skinType.tag());meta.addProperty("name",title);return meta;
+                }
+            };
         }
     }
 

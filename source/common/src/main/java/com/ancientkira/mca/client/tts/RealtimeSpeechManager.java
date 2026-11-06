@@ -104,14 +104,15 @@ public class RealtimeSpeechManager {
     public void play(String phrase, float pitch, Entity entity, boolean cacheable, String voice) {
         CompletableFuture.runAsync(() -> {
             String text = cacheable ? OnlineSpeechManager.cleanPhrase(phrase) : phrase;
-            String hash = cacheable ? cacheKey(voice, text) : "realtime";
+            // Temporary audio still needs its own key: different villagers download concurrently.
+            String hash = cacheKey(voice, text);
             if (AudioCache.get(hash, output -> {
                 downloadAudio(output, voice, text);
             }, cacheable)) {
                 Identifier soundLocation = MCA.locate("tts_cache/" + hash);
                 SpeechManager.INSTANCE.playSound(pitch, entity, soundLocation);
             }
-        });
+        }, SpeechWorkers.EXECUTOR);
     }
 
     public List<String> getVoices(String language, String gender) {

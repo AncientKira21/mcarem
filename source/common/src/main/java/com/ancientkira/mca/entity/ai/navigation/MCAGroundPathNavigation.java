@@ -35,6 +35,9 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
     private BlockPos jumpLanding;
     private int jumpTick;
     private boolean wasEscapingFluid;
+    private Boolean previousRoadRules;
+    private BlockPos blindStep;
+    private int nextBlindStep;
     private static final int JUMP_TICKS = 18;
     private final Set<Path> villageRoadPaths = Collections.newSetFromMap(new WeakHashMap<>());
 
@@ -43,9 +46,9 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
         fluidEscape = new FluidEscapeController(mob, level);
     }
 
-    public boolean isControllingFluid() { return fluidEscape != null && fluidEscape.active(); }
+    public boolean isControllingFluid() { return fluidEscape != null && fluidEscape.controlling(); }
 
-    public boolean isControllingJump() { return jumpLanding != null; }
+    public boolean isControllingJump() { return jumpLanding != null || mob instanceof VillagerEntityMCA person && com.ancientkira.mca.server.WaterBucketClutch.active(person); }
 
     public boolean isControllingClimbable() {
         return getClimbContext() != null;
@@ -67,7 +70,7 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
 
     @Override
     protected Path createPath(Set<BlockPos> targets, int range, boolean offsetUpward, int accuracy, float followRange) {
-        if (!(mob instanceof VillagerEntityMCA villager) || villager.isGuard() || villager.isHostile() || level.isClientSide()) {
+        if (!(mob instanceof VillagerEntityMCA villager) || com.ancientkira.mca.server.PortalHomecoming.isReturning(villager) || com.ancientkira.mca.server.PortalPursuit.active(villager) || (villager.isGuard() && com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isOnDuty(villager)) || villager.isHostile() || level.isClientSide()) {
             return super.createPath(targets, range, offsetUpward, accuracy, followRange);
         }
         Village village = villager.getResidency().getHomeVillage().orElse(null);
@@ -100,6 +103,7 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
 
     @Override
     public int getSurfaceY() {
+        if (mob instanceof VillagerEntityMCA person && UnderwaterNavigation.floorWalking(person)) return mob.getBlockY();
         if (this.mob.isInWater() && this.canFloat()) {
             int surfaceY = this.mob.getBlockY();
             BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(this.mob.getX(), surfaceY, this.mob.getZ());
@@ -125,6 +129,41 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
 
     @Override
     public void tick() {
+        if (mob.isInWater() && UnderwaterNavigation.isNonSwimmingBaby(mob)) {
+            stop();
+            mob.setJumping(false);
+            return;
+        }
+        if (mob instanceof VillagerEntityMCA person
+                && com.ancientkira.mca.entity.ai.brain.tasks.InteractTask.shouldRun(person)) {
+            var player = person.getInteractions().getInteractingPlayer().orElseThrow();
+            jumpLanding = null;
+            person.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.PATH);
+            person.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.LOOK_TARGET,
+                    new net.minecraft.world.entity.ai.behavior.EntityTracker(player, true));
+            person.getLookControl().setLookAt(player, 30, 30);
+            if (person.distanceToSqr(player) <= 4) {
+                stop();
+                person.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.WALK_TARGET);
+                person.getMoveControl().setWantedPosition(person.getX(), person.getY(), person.getZ(), 0);
+                person.setXxa(0); person.setZza(0);
+                person.setDeltaMovement(0, person.getDeltaMovement().y, 0);
+            } else {
+                person.getBrain().setMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.WALK_TARGET,
+                        new net.minecraft.world.entity.ai.memory.WalkTarget(player, 0.6F, 2));
+                if (isDone() || getTargetPos() == null || getTargetPos().distSqr(player.blockPosition()) > 1) moveTo(player, 0.6);
+                super.tick();
+            }
+            return;
+        }
+        if (mob instanceof VillagerEntityMCA person) TrapdoorNavigation.tick(person);
+        if (mob instanceof VillagerEntityMCA person && com.ancientkira.mca.server.WaterBucketClutch.active(person)) return;
+        if (mob instanceof VillagerEntityMCA person && person.isGuard()) {
+            boolean roadRules = !com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isOnDuty(person);
+            if (previousRoadRules != null && previousRoadRules != roadRules) clearStaleMovementPath();
+            previousRoadRules = roadRules;
+        }
+        if (mob instanceof VillagerEntityMCA swimmer && UnderwaterNavigation.tick(swimmer)) return;
         if (fluidEscape.tick()) {
             if (!wasEscapingFluid) clearStaleMovementPath();
             wasEscapingFluid = true;
@@ -139,15 +178,34 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
             tickLavaJump();
             return;
         }
+        if (mob instanceof VillagerEntityMCA blind && blind.hasEffect(net.minecraft.world.effect.MobEffects.BLINDNESS)) {
+            stop(); blind.getBrain().eraseMemory(net.minecraft.world.entity.ai.memory.MemoryModuleType.WALK_TARGET);
+            if (!blind.onGround()) return;
+            if (blind.tickCount >= nextBlindStep) {
+                nextBlindStep = blind.tickCount + 40; blindStep = null;
+                if (blind.getVillagerBrain().getMoveState() != com.ancientkira.mca.entity.ai.MoveState.STAY) {
+                    Direction direction = Direction.Plane.HORIZONTAL.getRandomDirection(blind.getRandom());
+                    BlockPos candidate = blind.blockPosition().relative(direction);
+                    // Blind wandering cannot inspect the floor, fluids or drop beyond this step.
+                    blindStep=candidate;
+                }
+            }
+            if (blind.getVillagerBrain().getMoveState() == com.ancientkira.mca.entity.ai.MoveState.STAY) blindStep = null;
+            if (blindStep != null) blind.getMoveControl().setWantedPosition(blindStep.getX()+.5,blindStep.getY(),blindStep.getZ()+.5,.35);
+            else blind.getMoveControl().setWantedPosition(blind.getX(),blind.getY(),blind.getZ(),0);
+            return;
+        }
+        blindStep = null;
         if (tryLavaJump()) return;
         if (stepBackFromEdge()) return;
         if (path != null && !path.isDone() && !mob.onClimbable() && !mob.isInWater()) {
             BlockPos next = path.getNextNode().asBlockPos();
-            if (TerrainSafety.dangerousEdge(level, next) && !TerrainSafety.dangerousEdge(level, mob.blockPosition())
+            boolean avoidWater = !UnderwaterNavigation.canEnterVillageWater(mob);
+            if (TerrainSafety.dangerousEdge(level, next, avoidWater) && !TerrainSafety.dangerousEdge(level, mob.blockPosition(), avoidWater)
                     || level.getFluidState(next).is(FluidTags.LAVA)
                     || level.getFluidState(next.below()).is(FluidTags.LAVA)
-                    || level.getFluidState(next).is(FluidTags.WATER)
-                    || level.getFluidState(next.below()).is(FluidTags.WATER)) {
+                    || avoidWater && (level.getFluidState(next).is(FluidTags.WATER)
+                    || level.getFluidState(next.below()).is(FluidTags.WATER))) {
                 stop();
                 mob.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 0);
                 mob.setXxa(0); mob.setZza(0);
@@ -163,7 +221,7 @@ public class MCAGroundPathNavigation extends GroundPathNavigation {
     }
 
     private boolean stepBackFromEdge() {
-        if (!mob.onGround() || mob.onClimbable() || mob.isInWater() || mob.isPassenger()
+        if (UnderwaterNavigation.canEnterVillageWater(mob) || !mob.onGround() || mob.onClimbable() || mob.isInWater() || mob.isPassenger()
                 || !TerrainSafety.dangerousEdge(level, mob.blockPosition())) return false;
         BlockPos feet = mob.blockPosition();
         for (Direction direction : Direction.Plane.HORIZONTAL) {

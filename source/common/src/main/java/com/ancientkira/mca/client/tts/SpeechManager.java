@@ -21,6 +21,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.valueproviders.ConstantFloat;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 
 import java.util.Collection;
 import java.util.Locale;
@@ -47,6 +48,8 @@ public class SpeechManager {
 
     public SpeechManager() {
         client = Minecraft.getInstance();
+        if (Config.getInstance().enableOnlineTTS && "elevenlabs".equals(Config.getInstance().onlineTTSModel)
+                && !Config.getInstance().elevenlabsPrivateAPIkey.isBlank()) ElevenlabsVoices.load();
     }
 
     public EntityBoundSoundInstance getSound(float pitch, Entity entity, Identifier soundLocation) {
@@ -66,31 +69,32 @@ public class SpeechManager {
     private final java.util.Set<UUID> pendingScreams = new java.util.HashSet<>();
     private final java.util.Set<UUID> pendingHurtReactions = new java.util.HashSet<>();
 
-    public void playGreeting(VillagerEntityMCA villager) {
+    public void playGreeting(com.ancientkira.mca.entity.VillagerLike<?> villager) {
         if (villager.getVillagerBrain().isPanicking()) return;
         playReaction(villager, false);
     }
 
-    public void playHurt(VillagerEntityMCA villager) {
+    public void playHurt(com.ancientkira.mca.entity.VillagerLike<?> villager) {
         playReaction(villager, true);
     }
 
-    public void playScream(VillagerEntityMCA villager) {
+    public void playScream(com.ancientkira.mca.entity.VillagerLike<?> villager) {
         playReaction(villager, false, true);
     }
 
-    private void playReaction(VillagerEntityMCA villager, boolean hurt) {
+    private void playReaction(com.ancientkira.mca.entity.VillagerLike<?> villager, boolean hurt) {
         playReaction(villager, hurt, false);
     }
 
-    private void playReaction(VillagerEntityMCA villager, boolean hurt, boolean scream) {
-        if (client.level == null || (!scream && villager.isRemoved()) || (!hurt && !scream && villager.isToYoungToSpeak())) return;
-        if (!Config.getInstance().enableOnlineTTS || villager.isSpeechImpaired()) {
+    private void playReaction(com.ancientkira.mca.entity.VillagerLike<?> villager, boolean hurt, boolean scream) {
+        LivingEntity living = villager.asEntity();
+        if (client.level == null || (!scream && living.isRemoved()) || (!hurt && !scream && villager.isToYoungToSpeak())) return;
+        if (!Config.getInstance().enableOnlineTTS) {
             if (hurt || scream || Config.getInstance().useMCAVoices) playReactionFallback(villager, hurt, scream);
             return;
         }
         var pending = scream ? pendingScreams : hurt ? pendingHurtReactions : pendingGreetings;
-        if (!pending.add(villager.getUUID())) return;
+        if (!pending.add(living.getUUID())) return;
         String[] phrases = scream ? SCREAM_REACTIONS : hurt ? HURT_REACTIONS : GREETINGS;
         String phrase = phrases[ThreadLocalRandom.current().nextInt(phrases.length)];
         String gender = villager.getGenetics().getGender().binary().getDataName();
@@ -101,7 +105,7 @@ public class SpeechManager {
         String gameLang = client.options.languageCode;
         // Bracketed non-verbal tags are only supported by our ElevenLabs route.
         if (scream && !"elevenlabs".equals(provider)) {
-            pending.remove(villager.getUUID());
+            pending.remove(living.getUUID());
             playReactionFallback(villager, hurt, true);
             return;
         }
@@ -133,14 +137,14 @@ public class SpeechManager {
                     String voice = gender + "_" + Math.clamp((int) Math.floor(gene * OnlineSpeechManager.TOTAL_VOICES), 0, OnlineSpeechManager.TOTAL_VOICES - 1);
                     String hash = language + "-" + voice + "/" + AudioCache.getHash(phrase) + ".ogg";
                     boolean ready = AudioCache.cachedRetrieve(hash, output -> {
-                        if (!onlineSpeechManager.downloadAudio(output, language, voice, phrase)) throw new IllegalStateException("Greeting unavailable");
+                        if (!onlineSpeechManager.downloadAudio(output, language, voice, phrase, false)) throw new IllegalStateException("Greeting unavailable");
                     });
                     return ready ? hash : null;
                 }
             }
-        }).orTimeout(20, java.util.concurrent.TimeUnit.SECONDS).whenComplete((hash, failure) -> client.execute(() -> {
-            pending.remove(villager.getUUID());
-            if (client.level != villager.level() || (!scream && villager.isRemoved())) return;
+        }, SpeechWorkers.EXECUTOR).orTimeout(20, java.util.concurrent.TimeUnit.SECONDS).whenComplete((hash, failure) -> client.execute(() -> {
+            pending.remove(living.getUUID());
+            if (client.level != living.level() || (!scream && living.isRemoved())) return;
             if (!hurt && !scream && villager.getVillagerBrain().isPanicking()) return;
             if (failure != null || hash == null) playReactionFallback(villager, hurt, scream);
             else if (!hash.isEmpty()) {
@@ -148,11 +152,11 @@ public class SpeechManager {
                 if (scream) {
                     Sound audio = new Sound(location, ConstantFloat.of(1.0f), ConstantFloat.of(1.0f), 1, Sound.Type.FILE, true, false, 16);
                     client.getSoundManager().play(new CustomEntityBoundSoundInstance(new SingleWeighedSoundEvents(audio, location, ""),
-                            SoundEvent.createVariableRangeEvent(location), SoundSource.NEUTRAL, 1.0f, pitch, villager, threadSafeRandom.nextLong()) {
+                            SoundEvent.createVariableRangeEvent(location), SoundSource.NEUTRAL, 1.0f, pitch, living, threadSafeRandom.nextLong()) {
                         @Override public void tick() { }
                         @Override public boolean canPlaySound() { return true; }
                     });
-                } else playSound(pitch, villager, location);
+                } else playSound(pitch, living, location);
             }
         }));
     }
@@ -166,7 +170,8 @@ public class SpeechManager {
         return ready ? hash : null;
     }
 
-    private void playReactionFallback(VillagerEntityMCA villager, boolean hurt, boolean scream) {
+    private void playReactionFallback(com.ancientkira.mca.entity.VillagerLike<?> villager, boolean hurt, boolean scream) {
+        LivingEntity living = villager.asEntity();
         if (scream) {
             var sound = Config.getInstance().useMCAVoices
                     ? (villager.getGenetics().getGender() == com.ancientkira.mca.entity.ai.relationship.Gender.MALE
@@ -175,7 +180,7 @@ public class SpeechManager {
                     : Config.getInstance().useVanillaVoices ? net.minecraft.sounds.SoundEvents.VILLAGER_DEATH
                     : com.ancientkira.mca.registry.SoundsMCA.SILENT;
             client.getSoundManager().play(new EntityBoundSoundInstance(sound, SoundSource.NEUTRAL, 1.0F,
-                    villager.getVoicePitch(), villager, threadSafeRandom.nextLong()) {
+                    villager.getVoicePitch(), living, threadSafeRandom.nextLong()) {
                 @Override public void tick() { }
                 @Override public boolean canPlaySound() { return true; }
             });
@@ -189,14 +194,14 @@ public class SpeechManager {
                     : Config.getInstance().useVanillaVoices ? net.minecraft.sounds.SoundEvents.VILLAGER_HURT
                     : com.ancientkira.mca.registry.SoundsMCA.SILENT;
             client.getSoundManager().play(new EntityBoundSoundInstance(sound, SoundSource.NEUTRAL, 1.0F,
-                    villager.getVoicePitch(), villager, threadSafeRandom.nextLong()));
+                    villager.getVoicePitch(), living, threadSafeRandom.nextLong()));
             return;
         }
         var sound = villager.getGenetics().getGender() == com.ancientkira.mca.entity.ai.relationship.Gender.MALE
                 ? com.ancientkira.mca.registry.SoundsMCA.VILLAGER_MALE_GREET
                 : com.ancientkira.mca.registry.SoundsMCA.VILLAGER_FEMALE_GREET;
         client.getSoundManager().play(new EntityBoundSoundInstance(sound, SoundSource.NEUTRAL, 1.0F,
-                villager.getVoicePitch(), villager, threadSafeRandom.nextLong()));
+                villager.getVoicePitch(), living, threadSafeRandom.nextLong()));
     }
 
     public void playPreview(VillagerEntityMCA villager) {
@@ -221,25 +226,93 @@ public class SpeechManager {
     }
 
     public void onChatMessage(Component message, UUID sender) {
-        ComponentContents content = message.getContents();
-        if (CommonSpeechManager.INSTANCE.translations.containsKey(content)) {
-            String key = CommonSpeechManager.INSTANCE.translations.get(content);
-            if ("villager.scream".equals(key) || key.startsWith("villager.scream/")) {
-                VillagerEntityMCA villager = getSpeaker(client, sender);
-                if (villager != null) playScream(villager);
-                return;
+        if (client.level != null && getSpeaker(client,sender) == null) {
+            for (Entity entity : client.level.entitiesForRendering()) {
+                if (entity.getUUID().equals(sender)) {
+                    speakNative(message.getString(), entity);
+                    return;
+                }
             }
+        }
+        ComponentContents content = message.getContents();
+        String key = CommonSpeechManager.INSTANCE.translations.get(content);
+        String directKey = content instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                ? translated.getKey() : "";
+        if ((key != null && (key.equals("villager.scream") || key.startsWith("villager.scream/")))
+                || directKey.endsWith("villager.scream") || directKey.contains("villager.scream/")) {
+            com.ancientkira.mca.entity.VillagerLike<?> villager = getSpeaker(client, sender);
+            if (villager != null) playScream(villager);
+            return;
+        }
+        // Freeze the text of this component, including direct tactical lines and arguments.
+        // Never resolve a cached dialogue key into a different sentence for online speech.
+        if (Config.getInstance().enableOnlineTTS) {
+            speak(message.getString(), sender, false);
+        } else if (key != null) {
             speak(key, sender, true);
         } else if (content instanceof PlainTextContents.LiteralContents(String text)) {
             speak(text, sender, false);
         }
     }
 
-    private VillagerEntityMCA getSpeaker(Minecraft client, UUID sender) {
+    private final java.util.Set<UUID> pendingNativeSpeech = new java.util.HashSet<>();
+
+    /** Bind generated speech to the actual native/zombie entity, never a detached voice proxy. */
+    private void speakNative(String text, Entity entity) {
+        if (!Config.getInstance().enableOnlineTTS || text.isBlank() || !pendingNativeSpeech.add(entity.getUUID())) return;
+        var person = entity instanceof com.ancientkira.mca.entity.VillagerLike<?> v ? v : null;
+        String gender = person == null ? "male" : person.getGenetics().getGender().binary().getDataName();
+        float gene = person == null ? .5F : person.getGenetics().getGene(Genetics.VOICE_TONE);
+        String selected = person == null ? "" : person.getTrackedValue(com.ancientkira.mca.entity.VillagerLike.VOICE_ID);
+        String provider = Config.getInstance().onlineTTSModel;
+        String language = client.options.languageCode;
+        String voiceboxVoice = person == null ? "" : VoiceboxSpeechManager.voice(person);
+        CompletableFuture.supplyAsync(() -> {
+            switch (provider) {
+                case "voicebox": return prepareGreeting(voiceboxSpeechManager,voiceboxVoice,text);
+                case "elevenlabs": {
+                    String voice = selected.isBlank() || selected.startsWith("voicebox:") ? ElevenlabsVoices.automaticVoice(gender,gene).join() : selected;
+                    return prepareGreeting(elevenlabsSpeechManager,voice,text);
+                }
+                case "realtime": {
+                    var voices = realtimeSpeechManager.getVoices(language,gender);
+                    if (voices == null || voices.isEmpty()) return null;
+                    return prepareGreeting(realtimeSpeechManager,voices.get(Math.clamp((int)(gene*voices.size()),0,voices.size()-1)),text);
+                }
+                case "player2": {
+                    var voices = player2SpeechManager.getVoices(language,gender);
+                    if (voices == null || voices.isEmpty()) return null;
+                    return player2SpeechManager.playInApp(text,1.0F,voices.get(Math.clamp((int)(gene*voices.size()),0,voices.size()-1))) ? "" : null;
+                }
+                default: {
+                    String lang = com.ancientkira.mca.client.tts.resources.OnlineLanguageMap.LANGUAGE_MAP.getOrDefault(language,"");
+                    if (lang.isEmpty()) return null;
+                    String voice = gender+"_"+Math.clamp((int)(gene*OnlineSpeechManager.TOTAL_VOICES),0,OnlineSpeechManager.TOTAL_VOICES-1);
+                    String hash=lang+"-"+voice+"/"+AudioCache.getHash(text)+".ogg";
+                    return AudioCache.cachedRetrieve(hash,output->{
+                        if(!onlineSpeechManager.downloadAudio(output,lang,voice,text))throw new IllegalStateException("Speech unavailable");
+                    }) ? hash : null;
+                }
+            }
+        }).orTimeout(20,java.util.concurrent.TimeUnit.SECONDS).whenComplete((hash,error)->client.execute(()->{
+            pendingNativeSpeech.remove(entity.getUUID());
+            if(error == null && hash != null && !hash.isEmpty() && client.level == entity.level() && !entity.isRemoved())
+                playSound(1.0F,entity,MCA.locate("tts_cache/"+hash));
+        }));
+    }
+
+    private com.ancientkira.mca.entity.VillagerLike<?> getSpeaker(Minecraft client, UUID sender) {
         if (client.level != null) {
             for (Entity entity : client.level.entitiesForRendering()) {
-                if (entity instanceof VillagerEntityMCA v && entity.getUUID().equals(sender)) {
+                if (entity instanceof com.ancientkira.mca.entity.VillagerLike<?> v && entity.getUUID().equals(sender)) {
                     return v;
+                }
+            }
+            if (client.player != null) {
+                for (Entity entity : client.level.getEntities(client.player, client.player.getBoundingBox().inflate(64))) {
+                    if (entity instanceof com.ancientkira.mca.entity.VillagerLike<?> v && entity.getUUID().equals(sender)) {
+                        return v;
+                    }
                 }
             }
         }
@@ -253,21 +326,21 @@ public class SpeechManager {
             return;
         }
 
-        VillagerEntityMCA villager = getSpeaker(client, sender);
+        com.ancientkira.mca.entity.VillagerLike<?> villager = getSpeaker(client, sender);
         if (villager == null) return;
 
         speak(phrase, sender, villager, translatable);
     }
 
-    private void speak(String phrase, UUID sender, VillagerEntityMCA villager, boolean translatable) {
+    private void speak(String phrase, UUID sender, com.ancientkira.mca.entity.VillagerLike<?> villager, boolean translatable) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) return;
 
-        if (villager.isSpeechImpaired()) return;
         if (villager.isToYoungToSpeak()) return;
 
         float pitch = villager.getVoicePitch();
         float gene = villager.getGenetics().getGene(Genetics.VOICE_TONE);
+        LivingEntity living = villager.asEntity();
 
         String gender = villager.getGenetics().getGender().binary().getDataName();
         if (Config.getInstance().enableOnlineTTS) {
@@ -283,7 +356,7 @@ public class SpeechManager {
             String gameLang = client.options.languageCode;
             switch (Config.getInstance().onlineTTSModel) {
                 case "realtime" ->
-                        realtimeSpeechManager.play(phrase, gender, gameLang, pitch, gene, villager, translatable);
+                        realtimeSpeechManager.play(phrase, gender, gameLang, pitch, gene, living, translatable);
                 case "player2" -> player2SpeechManager.play(phrase, gender, gameLang, pitch, gene);
                 case "voicebox" -> {
                     String speech = phrase;
@@ -291,20 +364,20 @@ public class SpeechManager {
                             VoiceboxSpeechManager.voice(villager), speech))
                             .orTimeout(18, java.util.concurrent.TimeUnit.SECONDS)
                             .whenComplete((hash, error) -> client.execute(() -> {
-                                if (client.level != villager.level() || villager.isRemoved()) return;
-                                if (error == null && hash != null) playSound(pitch, villager, MCA.locate("tts_cache/" + hash));
+                                if (client.level != living.level() || living.isRemoved()) return;
+                                if (error == null && hash != null) playSound(pitch, living, MCA.locate("tts_cache/" + hash));
                                 else if (translatable) tryPlayVoicePackSound(speech, sender, villager);
                             }));
                 }
-                case "elevenlabs" -> elevenlabsSpeechManager.play(phrase, gender, pitch, gene, villager, translatable);
-                default -> onlineSpeechManager.play(phrase, gameLang, gender, pitch, gene, villager, translatable);
+                case "elevenlabs" -> elevenlabsSpeechManager.play(phrase, gender, pitch, gene, living, translatable);
+                default -> onlineSpeechManager.play(phrase, gameLang, gender, pitch, gene, living, translatable);
             }
         } else if (translatable) {
             tryPlayVoicePackSound(phrase, sender, villager);
         }
     }
 
-    private boolean tryPlayVoicePackSound(String phrase, UUID sender, VillagerEntityMCA villager) {
+    private boolean tryPlayVoicePackSound(String phrase, UUID sender, com.ancientkira.mca.entity.VillagerLike<?> villager) {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null || client.player == null) {
             return false;
@@ -320,7 +393,7 @@ public class SpeechManager {
             return false;
         }
 
-        EntityBoundSoundInstance instance = new EntityBoundSoundInstance(SoundEvent.createVariableRangeEvent(sound), SoundSource.NEUTRAL, 1.0f, pitch, villager, threadSafeRandom.nextLong());
+        EntityBoundSoundInstance instance = new EntityBoundSoundInstance(SoundEvent.createVariableRangeEvent(sound), SoundSource.NEUTRAL, 1.0f, pitch, villager.asEntity(), threadSafeRandom.nextLong());
         currentlyPlaying.put(sender, instance);
         client.getSoundManager().play(instance);
         return true;

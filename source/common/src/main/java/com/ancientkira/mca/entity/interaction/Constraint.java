@@ -139,7 +139,7 @@ public enum Constraint implements BiPredicate<VillagerLike<?>, ServerPlayer> {
     }
 
     private static boolean isRankAtLeast(VillagerLike<?> villager, ServerPlayer player, Rank rank) {
-        return player != null && (player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER) || villager instanceof VillagerEntityMCA && ((VillagerEntityMCA) villager).getResidency().getHomeVillage()
+        return player != null && (com.ancientkira.mca.util.McaPermissions.cheats(player) || villager instanceof VillagerEntityMCA && ((VillagerEntityMCA) villager).getResidency().getHomeVillage()
                 .filter(village -> Tasks.getRank(village, player).isAtLeast(rank)).isPresent());
     }
 

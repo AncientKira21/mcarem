@@ -47,7 +47,9 @@ public final class MCA {
     }
 
     public static void setServer(MinecraftServer server) {
+        if (server != null && MCA.server != server) com.ancientkira.mca.server.BedCompatibility.registerHomeStates();
         MCA.server = server;
+        if (server != null) { com.ancientkira.mca.server.PortalPursuit.tick(server); com.ancientkira.mca.server.HorseHelp.serverTick(server); }
     }
 
     public interface RegisterHelper<T> {

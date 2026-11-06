@@ -1,5 +1,6 @@
 package com.ancientkira.mca.entity;
 
+import net.minecraft.server.level.ServerLevel;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.entity.ai.Genetics;
 import com.ancientkira.mca.entity.ai.Relationship;
@@ -58,6 +59,7 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
     public ZombieVillagerEntityMCA(EntityType<? extends ZombieVillager> type, Level world, Gender gender) {
         super(type, world);
         genetics.setGender(gender);
+        setPersistenceRequired();
     }
 
     @Override
@@ -104,12 +106,15 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
 
     @Override
     public float getInfectionProgress() {
+        if (com.ancientkira.mca.compat.SickenedCompat.enabled() && getTrackedValue(VillagerLike.SICKENED))
+            return getTrackedValue(VillagerLike.SICKNESS_ZOMBIE_PROGRESS);
         return 1.0f;
     }
 
     @Override
     public void setInfectionProgress(float progress) {
-        // noop
+        if (com.ancientkira.mca.compat.SickenedCompat.enabled() && getTrackedValue(VillagerLike.SICKENED))
+            setTrackedValue(VillagerLike.SICKNESS_ZOMBIE_PROGRESS, com.ancientkira.mca.compat.SickenedCompat.sanitize(progress));
     }
 
     @Override
@@ -124,7 +129,7 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
 
     @Override
     public Component getDisplayName() {
-        return super.getDisplayName().copy().withStyle(ChatFormatting.RED);
+        return super.getDisplayName().copy().withStyle(com.ancientkira.mca.compat.SickenedCompat.sick(this) ? ChatFormatting.DARK_PURPLE : ChatFormatting.RED);
     }
 
     @Override
@@ -143,12 +148,23 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
     }
 
     @Override
+    public void handleEntityEvent(byte id) {
+        if (id == Status.MCA_VILLAGER_GREETING) {
+            com.ancientkira.mca.ClientProxy.playVillagerGreeting(this);
+        } else {
+            super.handleEntityEvent(id);
+        }
+    }
+
+    @Override
     public final InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (hand.equals(InteractionHand.MAIN_HAND) && !stack.is(TagsMCA.Items.ZOMBIE_EGGS) && stack.getItem() != Items.GOLDEN_APPLE) {
+            if (!level().isClientSide() && getAgeState() != AgeState.BABY) {
+                level().broadcastEntityEvent(this, Status.MCA_VILLAGER_GREETING);
+            }
             if (player instanceof ServerPlayer) {
-                String t = new String(new char[getRandom().nextInt(8) + 2]).replace("\0", ". ");
-                sendChatMessage(Component.literal(t), player);
+                sendChatMessage(player, "zombie.greeting");
             }
         }
         return super.mobInteract(player, hand);
@@ -168,12 +184,8 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
             }
         }
 
-        if (getAgeState() == AgeState.BABY) {
-            // baby zombie villager just cause weird bugs, so we skip that stage
-            setAgeState(AgeState.TODDLER);
-        }
-
         initialize(spawnReason);
+        setPersistenceRequired();
 
         return data;
     }
@@ -186,9 +198,47 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
     }
 
     @Override
+    public void travel(net.minecraft.world.phys.Vec3 input) {
+        if (isSleeping()) {
+            setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+            setXxa(0); setYya(0); setZza(0);
+            return;
+        }
+        super.travel(input);
+    }
+
+    private long nextPlea;
+
+    @Override
     public void aiStep() {
+        if (isPassiveBaby()) {
+            setTarget(null);
+            setAggressive(false);
+        }
+        if (isSleeping()) {
+            getNavigation().stop();
+            setTarget(null);
+            setJumping(false);
+            setDeltaMovement(net.minecraft.world.phys.Vec3.ZERO);
+            setXxa(0); setYya(0); setZza(0);
+        }
         super.aiStep();
 
+        if (level() instanceof ServerLevel world) {
+            com.ancientkira.mca.server.InfirmaryCare.tickZombie(this);
+            if (com.ancientkira.mca.server.InfirmaryCare.isZombiePatient(this)) {
+                setRemainingFireTicks(0);
+            }
+            if (tickCount % 20 == 0 && world.getGameTime() >= nextPlea) {
+                boolean threatened = world.getEntitiesOfClass(VillagerEntityMCA.class, getBoundingBox().inflate(16),
+                        person -> person.isGuard() && person.isAlive() && (person.getTarget() == this
+                            || person.getBrain().getMemoryInternal(net.minecraft.world.entity.ai.memory.MemoryModuleType.ATTACK_TARGET).orElse(null) == this)).size() > 0;
+                if (threatened) {
+                    nextPlea = world.getGameTime() + 120 + getRandom().nextInt(100);
+                    sendChatToAllAround("zombie.plead");
+                }
+            }
+        }
         burned--;
         if (isOnFire()) {
             burned = Config.getInstance().burnedClothingTickLength;
@@ -198,22 +248,64 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
         }
     }
 
+    private long nextHurtSpeech;
+
+    @Override
+    public boolean hurtServer(ServerLevel world, DamageSource source, float amount) {
+        boolean hurt = super.hurtServer(world, source, amount);
+        if (hurt && amount > 0 && isAlive() && world.getGameTime() >= nextHurtSpeech) {
+            nextHurtSpeech = world.getGameTime() + 20;
+            sendChatToAllAround(getHealth() <= 4.0F ? "villager.badly_hurt" : "villager.hurt");
+        }
+        return hurt;
+    }
+
+    public boolean isPassiveBaby() {
+        return isBaby() || getAgeState() == AgeState.BABY;
+    }
+
+    @Override
+    public void setTarget(@Nullable LivingEntity target) {
+        super.setTarget(isPassiveBaby() ? null : target);
+    }
+
+    @Override
+    public void setAggressive(boolean aggressive) {
+        super.setAggressive(aggressive && !isPassiveBaby());
+    }
+
+    @Override
+    public boolean doHurtTarget(ServerLevel world, Entity target) {
+        return !isPassiveBaby() && super.doHurtTarget(world, target);
+    }
+
     @Override
     public boolean isHostile() {
-        return true;
+        return !isPassiveBaby() && !isSleeping() && !com.ancientkira.mca.server.InfirmaryCare.isZombiePatient(this);
+    }
+
+    @Override
+    public boolean canAttack(LivingEntity target) {
+        if (isPassiveBaby() || isSleeping() || com.ancientkira.mca.server.InfirmaryCare.isZombiePatient(this)) {
+            return false;
+        }
+        return super.canAttack(target);
     }
 
     @Override
     public void die(DamageSource cause) {
+        // A faction conversion is not a family death and must not drop copied inventory.
+        if (com.ancientkira.mca.compat.SickenedCompat.onDeath(this, cause)) return;
         super.die(cause);
 
         if (level().isClientSide()) {
             return;
         }
 
+        relations.onDeath(cause);
         InventoryUtils.dropAllItems(this, inventory);
 
-        relations.onDeath(cause);
+
     }
 
     public void setInventory(UpdatableInventory inventory) {
@@ -235,7 +327,11 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
 
             if (mob instanceof VillagerLike<?> villager) {
                 villager.copyVillagerAttributesFrom(this);
-                villager.setInfected(false);
+                if (mob instanceof VillagerEntityMCA) {
+                    villager.setInfected(false);
+                    com.ancientkira.mca.compat.SickenedCompat.afterZombieCure(this, villager);
+                }
+                mob.setUUID(oldUuid);
             }
 
             if (mob instanceof VillagerEntityMCA villager) {
@@ -244,6 +340,14 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
                 villager.setAge(getAgeState().toAge());
             }
 
+            if (mob instanceof ZombieVillagerEntityMCA zombie) {
+                zombie.setInventory(inventory);
+                zombie.setVillagerData(getVillagerData());
+                zombie.setVillagerXp(getVillagerXp());
+                zombie.setPersistenceRequired();
+            }
+
+            com.ancientkira.mca.server.InfirmaryCare.dischargeZombie(this);
             this.discard();
         });
     }
@@ -280,6 +384,7 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
     @Override
     public void readAdditionalSaveDataForEditor(CompoundTag nbt) {
         readAdditionalSaveData(TagValueInput.create(ProblemReporter.DISCARDING, registryAccess(), nbt));
+        VillagerLike.parseCustomName(registryAccess(), nbt).ifPresent(this::setCustomName);
     }
 
     @Override
@@ -301,6 +406,15 @@ public class ZombieVillagerEntityMCA extends ZombieVillager implements VillagerL
         }
 
         super.onSyncedDataUpdated(par);
+    }
+
+    @Override
+    public boolean removeWhenFarAway(double distanceToClosestPlayer) {
+        return false;
+    }
+
+    public void startConvertingByCleric(@Nullable UUID clericId, int conversionDelay) {
+        ((com.ancientkira.mca.mixin.ZombieVillagerAccessor) this).mca$startConverting(clericId, conversionDelay);
     }
 
     protected boolean shouldDespawnInPeaceful() {

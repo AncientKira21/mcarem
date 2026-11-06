@@ -44,7 +44,7 @@ public class PatrolVillageTask extends Behavior<VillagerEntityMCA> {
     public static void keepRoutinePatrolInside(VillagerEntityMCA person) {
         if (!person.isGuard() || person.isNoAi() || person.isKidnapped() || person.tickCount%10!=0
                 || person.getVillagerBrain().getMoveState()!=com.ancientkira.mca.entity.ai.MoveState.MOVE
-                || person.getVillagerBrain().isPanicking() || person.isInWater() || person.isInLava() || person.isOnFire()
+                || person.getVillagerBrain().isPanicking() || person.isInLava() || person.isOnFire()
                 || person.getBrain().hasMemoryValue(MemoryModuleType.INTERACTION_TARGET)
                 || com.ancientkira.mca.server.CaptiveRescue.isHelping(person)
                 || com.ancientkira.mca.server.ClericAid.isHelping(person)) return;

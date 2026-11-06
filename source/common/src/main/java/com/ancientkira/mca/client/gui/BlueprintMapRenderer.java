@@ -23,6 +23,7 @@ final class BlueprintMapRenderer implements AutoCloseable {
     RenderResult render(GuiGraphicsExtractor context, BlueprintMapViewport viewport,
                         BlueprintMapGeometry geometry, Integer selectedFloor,
                         boolean showTerrain, boolean showBuildingIcons, boolean showPlayerHead,
+                        boolean underwater, int terrainCeiling,
                         LocalPlayer player, double playerX, double playerZ, int mouseX, int mouseY) {
         if (showTerrain) {
             context.fill(viewport.left() + 1, viewport.top() + 1, viewport.right() - 1, viewport.bottom() - 1, 0xff36551f);
@@ -30,7 +31,7 @@ final class BlueprintMapRenderer implements AutoCloseable {
         WidgetUtils.drawRectangle(context, viewport.left(), viewport.top(), viewport.right(), viewport.bottom(), 0xffffff88);
         context.enableScissor(viewport.left() + 1, viewport.top() + 1, viewport.right() - 1, viewport.bottom() - 1);
         if (showTerrain) {
-            terrainRenderer.render(context, viewport);
+            terrainRenderer.render(context, viewport, underwater, terrainCeiling);
         }
 
         BlueprintMapFootprint.Cell hoveredCell = viewport.screenToCell(mouseX, mouseY);

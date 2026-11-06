@@ -1,0 +1,77 @@
+{
+  "elements": [
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/town_centers/tidal_fountain_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 50
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/town_centers/tidal_meeting_point_1",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 50
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/town_centers/tidal_meeting_point_2",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 50
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/town_centers/tidal_meeting_point_3",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 50
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/town_centers/tidal_fountain_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/town_centers/tidal_meeting_point_1",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/town_centers/tidal_meeting_point_2",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/zombie/town_centers/tidal_meeting_point_3",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    }
+  ],
+  "fallback": "minecraft:empty"
+}

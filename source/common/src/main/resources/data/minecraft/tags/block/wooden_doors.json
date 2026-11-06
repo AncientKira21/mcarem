@@ -1,0 +1,8 @@
+{
+  "replace": false,
+  "values": [
+    "mca:underwater_oak_door",
+    "mca:underwater_prismarine_door",
+    "mca:prismarine_greenhouse_door"
+  ]
+}

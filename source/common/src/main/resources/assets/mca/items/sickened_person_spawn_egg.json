@@ -1,0 +1,13 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "mca:item/sickened_person_spawn_egg",
+    "tints": [
+      {
+        "type": "minecraft:constant",
+        "value": 10036991
+      }
+    ]
+  },
+  "properties": {}
+}

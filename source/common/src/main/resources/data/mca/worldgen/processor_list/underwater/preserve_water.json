@@ -1,0 +1,1466 @@
+{
+  "processors": [
+    {
+      "processor_type": "minecraft:rule",
+      "rules": [
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_wall",
+              "Properties": {
+                "east": "none",
+                "waterlogged": "false",
+                "south": "none",
+                "north": "none",
+                "west": "none",
+                "up": "true"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_wall",
+            "Properties": {
+              "east": "none",
+              "waterlogged": "true",
+              "south": "none",
+              "north": "none",
+              "west": "none",
+              "up": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_wall_torch",
+              "Properties": {
+                "facing": "west",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_wall_torch",
+            "Properties": {
+              "facing": "west",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_wall_torch",
+              "Properties": {
+                "facing": "north",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_wall_torch",
+            "Properties": {
+              "facing": "north",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_wall_torch",
+              "Properties": {
+                "facing": "south",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_wall_torch",
+            "Properties": {
+              "facing": "south",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_wall_torch",
+              "Properties": {
+                "facing": "east",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_wall_torch",
+            "Properties": {
+              "facing": "east",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_torch",
+              "Properties": {
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_torch",
+            "Properties": {
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "left",
+                "half": "lower",
+                "powered": "false",
+                "facing": "east",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "left",
+              "half": "lower",
+              "powered": "false",
+              "facing": "east",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "left",
+                "half": "upper",
+                "powered": "false",
+                "facing": "east",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "left",
+              "half": "upper",
+              "powered": "false",
+              "facing": "east",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_slab",
+              "Properties": {
+                "type": "bottom",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_slab",
+            "Properties": {
+              "type": "bottom",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "right",
+                "half": "lower",
+                "powered": "false",
+                "facing": "east",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "right",
+              "half": "lower",
+              "powered": "false",
+              "facing": "east",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "right",
+                "half": "upper",
+                "powered": "false",
+                "facing": "east",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "right",
+              "half": "upper",
+              "powered": "false",
+              "facing": "east",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "waterlogged": "false",
+                "facing": "west",
+                "type": "single"
+              },
+              "Name": "minecraft:chest"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "waterlogged": "true",
+              "facing": "west",
+              "type": "single"
+            },
+            "Name": "minecraft:chest"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "right",
+                "half": "lower",
+                "powered": "false",
+                "facing": "west",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "right",
+              "half": "lower",
+              "powered": "false",
+              "facing": "west",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "right",
+                "half": "upper",
+                "powered": "false",
+                "facing": "west",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "right",
+              "half": "upper",
+              "powered": "false",
+              "facing": "west",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "waterlogged": "false",
+                "facing": "north",
+                "type": "single"
+              },
+              "Name": "minecraft:chest"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "waterlogged": "true",
+              "facing": "north",
+              "type": "single"
+            },
+            "Name": "minecraft:chest"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "facing": "north",
+                "half": "lower",
+                "hinge": "left",
+                "open": "false",
+                "powered": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "facing": "north",
+              "half": "lower",
+              "hinge": "left",
+              "open": "false",
+              "powered": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "facing": "north",
+                "half": "upper",
+                "hinge": "left",
+                "open": "false",
+                "powered": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "facing": "north",
+              "half": "upper",
+              "hinge": "left",
+              "open": "false",
+              "powered": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "left",
+                "half": "lower",
+                "powered": "false",
+                "facing": "west",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "left",
+              "half": "lower",
+              "powered": "false",
+              "facing": "west",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "left",
+                "half": "upper",
+                "powered": "false",
+                "facing": "west",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "left",
+              "half": "upper",
+              "powered": "false",
+              "facing": "west",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "right",
+                "half": "lower",
+                "powered": "false",
+                "facing": "south",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "right",
+              "half": "lower",
+              "powered": "false",
+              "facing": "south",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "waterlogged": "false",
+                "facing": "south",
+                "type": "single"
+              },
+              "Name": "minecraft:chest"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "waterlogged": "true",
+              "facing": "south",
+              "type": "single"
+            },
+            "Name": "minecraft:chest"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "hinge": "right",
+                "half": "upper",
+                "powered": "false",
+                "facing": "south",
+                "open": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "hinge": "right",
+              "half": "upper",
+              "powered": "false",
+              "facing": "south",
+              "open": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "waterlogged": "false",
+                "type": "top"
+              },
+              "Name": "minecraft:dark_oak_slab"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "waterlogged": "true",
+              "type": "top"
+            },
+            "Name": "minecraft:dark_oak_slab"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "facing": "south",
+                "half": "lower",
+                "hinge": "left",
+                "open": "false",
+                "powered": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "facing": "south",
+              "half": "lower",
+              "hinge": "left",
+              "open": "false",
+              "powered": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "bottom",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "east"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "bottom",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "east"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:cyan_stained_glass_pane",
+              "Properties": {
+                "north": "true",
+                "south": "true",
+                "east": "false",
+                "west": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:cyan_stained_glass_pane",
+            "Properties": {
+              "north": "true",
+              "south": "true",
+              "east": "false",
+              "west": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:cyan_stained_glass_pane",
+              "Properties": {
+                "north": "false",
+                "south": "false",
+                "east": "true",
+                "west": "true",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:cyan_stained_glass_pane",
+            "Properties": {
+              "north": "false",
+              "south": "false",
+              "east": "true",
+              "west": "true",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "mca:underwater_prismarine_door",
+              "Properties": {
+                "facing": "south",
+                "half": "upper",
+                "hinge": "left",
+                "open": "false",
+                "powered": "false",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "mca:underwater_prismarine_door",
+            "Properties": {
+              "facing": "south",
+              "half": "upper",
+              "hinge": "left",
+              "open": "false",
+              "powered": "false",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "bottom",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "south"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "bottom",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "south"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "waterlogged": "false",
+                "type": "bottom"
+              },
+              "Name": "minecraft:dark_oak_slab"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "waterlogged": "true",
+              "type": "bottom"
+            },
+            "Name": "minecraft:dark_oak_slab"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "true",
+                "waterlogged": "false",
+                "south": "true",
+                "north": "false",
+                "west": "false"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "true",
+              "waterlogged": "true",
+              "south": "true",
+              "north": "false",
+              "west": "false"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "true",
+                "waterlogged": "false",
+                "south": "false",
+                "north": "true",
+                "west": "false"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "true",
+              "waterlogged": "true",
+              "south": "false",
+              "north": "true",
+              "west": "false"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "north"
+              },
+              "Name": "minecraft:dark_oak_stairs"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "north"
+            },
+            "Name": "minecraft:dark_oak_stairs"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "south"
+              },
+              "Name": "minecraft:dark_oak_stairs"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "south"
+            },
+            "Name": "minecraft:dark_oak_stairs"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "west"
+              },
+              "Name": "minecraft:dark_oak_stairs"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "west"
+            },
+            "Name": "minecraft:dark_oak_stairs"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "east"
+              },
+              "Name": "minecraft:dark_oak_stairs"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "east"
+            },
+            "Name": "minecraft:dark_oak_stairs"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "false",
+                "waterlogged": "false",
+                "south": "true",
+                "north": "false",
+                "west": "true"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "false",
+              "waterlogged": "true",
+              "south": "true",
+              "north": "false",
+              "west": "true"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "false",
+                "waterlogged": "false",
+                "south": "false",
+                "north": "true",
+                "west": "true"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "false",
+              "waterlogged": "true",
+              "south": "false",
+              "north": "true",
+              "west": "true"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "east"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "east"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_slab",
+              "Properties": {
+                "waterlogged": "false",
+                "type": "top"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_slab",
+            "Properties": {
+              "waterlogged": "true",
+              "type": "top"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "south"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "south"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "north"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "north"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "top",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "west"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "top",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "west"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "bottom",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "west"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "bottom",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "west"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:prismarine_brick_stairs",
+              "Properties": {
+                "half": "bottom",
+                "waterlogged": "false",
+                "shape": "straight",
+                "facing": "north"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:prismarine_brick_stairs",
+            "Properties": {
+              "half": "bottom",
+              "waterlogged": "true",
+              "shape": "straight",
+              "facing": "north"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Name": "minecraft:cyan_stained_glass_pane",
+              "Properties": {
+                "north": "true",
+                "south": "true",
+                "east": "false",
+                "west": "true",
+                "waterlogged": "false"
+              }
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Name": "minecraft:cyan_stained_glass_pane",
+            "Properties": {
+              "north": "true",
+              "south": "true",
+              "east": "false",
+              "west": "true",
+              "waterlogged": "true"
+            }
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "false",
+                "waterlogged": "false",
+                "south": "true",
+                "north": "true",
+                "west": "false"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "false",
+              "waterlogged": "true",
+              "south": "true",
+              "north": "true",
+              "west": "false"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "false",
+                "waterlogged": "false",
+                "south": "false",
+                "north": "true",
+                "west": "false"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "false",
+              "waterlogged": "true",
+              "south": "false",
+              "north": "true",
+              "west": "false"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "false",
+                "waterlogged": "false",
+                "south": "true",
+                "north": "false",
+                "west": "false"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "false",
+              "waterlogged": "true",
+              "south": "true",
+              "north": "false",
+              "west": "false"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "false",
+                "waterlogged": "false",
+                "south": "false",
+                "north": "false",
+                "west": "true"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "false",
+              "waterlogged": "true",
+              "south": "false",
+              "north": "false",
+              "west": "true"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "true",
+                "waterlogged": "false",
+                "south": "false",
+                "north": "false",
+                "west": "true"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "true",
+              "waterlogged": "true",
+              "south": "false",
+              "north": "false",
+              "west": "true"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        },
+        {
+          "input_predicate": {
+            "predicate_type": "minecraft:blockstate_match",
+            "block_state": {
+              "Properties": {
+                "east": "true",
+                "waterlogged": "false",
+                "south": "false",
+                "north": "false",
+                "west": "false"
+              },
+              "Name": "minecraft:dark_oak_fence"
+            }
+          },
+          "location_predicate": {
+            "predicate_type": "minecraft:block_match",
+            "block": "minecraft:water"
+          },
+          "output_state": {
+            "Properties": {
+              "east": "true",
+              "waterlogged": "true",
+              "south": "false",
+              "north": "false",
+              "west": "false"
+            },
+            "Name": "minecraft:dark_oak_fence"
+          }
+        }
+      ]
+    },
+    {
+      "processor_type": "minecraft:block_ignore",
+      "blocks": [
+        {
+          "Name": "minecraft:structure_void"
+        },
+        {
+          "Name": "minecraft:air"
+        }
+      ]
+    }
+  ]
+}

@@ -170,7 +170,7 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
         CompoundTag nbt = entity.getTrackedValue(MEMORIES);
         nbt = nbt == null ? new CompoundTag() : nbt;
         CompoundTag compoundTag = nbt.getCompound(player.getUUID().toString()).orElseGet(CompoundTag::new);
-        Memories returnMemories = Memories.fromCNBT(entity, compoundTag);
+        Memories returnMemories = Memories.fromCNBT(entity, compoundTag, player.getUUID());
         if (returnMemories == null) {
             returnMemories = new Memories(this, player.level().getGameTime(), player.getUUID());
             nbt.put(player.getUUID().toString(), returnMemories.toCNBT());
@@ -192,7 +192,9 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
     }
 
     public Mood getMood() {
-        return MoodGroup.INSTANCE.getMood(entity.getTrackedValue(MOOD));
+        int family=entity.getTrackedValue(com.ancientkira.mca.entity.VillagerLike.FAMILY_MOOD);
+        if(family==2)return MoodGroup.INSTANCE.getMood(MoodGroup.MAX_LEVEL);
+        return MoodGroup.INSTANCE.getMood(family==1?MoodGroup.NORMAL_MIN_LEVEL:entity.getTrackedValue(MOOD));
     }
 
     public boolean isPanicking() {
@@ -233,12 +235,16 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
                || entity.getBrain().hasMemoryValue(MemoryModuleType.NEAREST_HOSTILE);
     }
 
+    public void setMoodValue(int mood) {
+        entity.setTrackedValue(MOOD, MoodGroup.clampMood(com.ancientkira.mca.server.FamilyEmotions.lockedMood(entity,mood)));
+    }
+
     public void modifyMoodValue(int mood) {
-        entity.setTrackedValue(MOOD, MoodGroup.clampMood(this.getMoodValue() + mood));
+        setMoodValue((int) Math.clamp((long) this.getMoodValue() + mood, Integer.MIN_VALUE, Integer.MAX_VALUE));
     }
 
     public int getMoodValue() {
-        return entity.getTrackedValue(MOOD);
+        return com.ancientkira.mca.server.FamilyEmotions.lockedMood(entity,entity.getTrackedValue(MOOD));
     }
 
     public MoveState getMoveState() {
@@ -267,6 +273,15 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
         }
 
         resetsBrain();
+        // Old behavior stop callbacks can rewrite move state while the brain is rebuilding.
+        entity.setTrackedValue(MOVE_STATE,state);
+        if(state==MoveState.FOLLOW) {
+            entity.getBrain().setMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING,leader);
+            entity.getBrain().eraseMemory(MemoryModuleTypeMCA.STAYING);
+        } else if(state==MoveState.STAY) {
+            entity.getBrain().eraseMemory(MemoryModuleTypeMCA.PLAYER_FOLLOWING);
+            entity.getBrain().setMemory(MemoryModuleTypeMCA.STAYING,true);
+        }
         // Stop callbacks from the previous behavior may restore its route; clear it
         // after rebuilding, before the new order starts navigating.
         if (entity.asEntity() instanceof VillagerEntityMCA villager) {
@@ -351,7 +366,7 @@ public class VillagerBrain<E extends Mob & VillagerLike<E>> {
 
             //sensitive people doubles the loss
             if (entity.getVillagerBrain().getPersonality() == Personality.SENSITIVE) {
-                hearts *= 2;
+                hearts = (int) Math.clamp((long) hearts * 2, Integer.MIN_VALUE, Integer.MAX_VALUE);
             }
         }
 

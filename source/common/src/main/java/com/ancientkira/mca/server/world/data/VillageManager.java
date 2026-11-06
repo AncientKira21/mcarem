@@ -178,7 +178,10 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         }
 
         long time = world.getGameTime();
-        if (time % 200 == 0) mergeConnectedVillages();
+        if (time % 200 == 0) {
+            separateStackedWaterVillages();
+            mergeConnectedVillages();
+        }
 
         for (Village v : this) {
             v.tick(world, time);
@@ -189,6 +192,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             processBuilding(buildingQueue.removeFirst());
         }
 
+        com.ancientkira.mca.server.UnderwaterVillageSupport.tickLevel(world);
         com.ancientkira.mca.server.AutomaticVillageConflicts.get(world).tick();
         com.ancientkira.mca.server.VillageWarfare.get(world).tick();
         reapers.tick(world);
@@ -781,6 +785,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         Village finalVillage = targetVillage;
         villages.values().stream()
                 .filter(v -> v != finalVillage)
+                .filter(v -> canAutomaticallyMerge(v, finalVillage))
                 .filter(v -> v.getBox().inflatedBy(Village.MERGE_MARGIN).intersects(finalVillage.getBox()))
                 .findAny()
                 .ifPresent(v -> {
@@ -854,6 +859,32 @@ public class VillageManager extends SavedData implements Iterable<Village> {
         this.buildingCooldown = buildingCooldown;
     }
 
+    /** Repair old saves where the horizontal-only merge combined two water layers. */
+    private void separateStackedWaterVillages() {
+        for (Village origin : List.copyOf(villages.values())) {
+            if (origin.getBox().maxY() - origin.getBox().minY() < 12
+                    || origin.getBuildings().values().stream().anyMatch(b -> !world.hasChunkAt(b.getSourceBlock()))) continue;
+            for (var record : origin.releaseRecords().entrySet()) {
+                if (record.getKey() >= 0) continue; // Preserve intentional historical conquests.
+                Village district = new Village(record.getValue(), world);
+                if (district.isUnderwater() == origin.isUnderwater()) continue;
+                Set<Integer> selected = district.getBuildings().keySet();
+                var rest = origin.getBuildings().values().stream().filter(b -> !selected.contains(b.getId())).toList();
+                if (rest.isEmpty()) continue;
+                boolean separateLayer = rest.stream().allMatch(b ->
+                        b.getPos1().getY() + 4 < district.getBox().minY()
+                                || b.getPos0().getY() - 4 > district.getBox().maxY());
+                if (separateLayer && detachForIndependence(origin, record.getKey()) != null) break;
+            }
+        }
+    }
+
+    private boolean canAutomaticallyMerge(Village a, Village b) {
+        return !a.isSeparateFrom(b) && a.isUnderwater() == b.isUnderwater()
+                && a.getBox().minY() <= b.getBox().maxY() + 4
+                && b.getBox().minY() <= a.getBox().maxY() + 4;
+    }
+
     private boolean connectedByRoad(Village a,Village b){
         if(a.getCenter().distSqr(b.getCenter())>256*256)return false;
         java.util.ArrayDeque<BlockPos> queue=new java.util.ArrayDeque<>();
@@ -884,7 +915,7 @@ public class VillageManager extends SavedData implements Iterable<Village> {
             outer: for (int i = 0; i < ordered.size(); i++) {
                 for (int j = i + 1; j < ordered.size(); j++) {
                     Village a = ordered.get(i), b = ordered.get(j);
-                    if (a.getBuildings().isEmpty() || b.getBuildings().isEmpty()) continue;
+                    if (a.getBuildings().isEmpty() || b.getBuildings().isEmpty() || !canAutomaticallyMerge(a, b)) continue;
                     if(a.isSeparateFrom(b) || com.ancientkira.mca.server.VillageWarfare.get(world).isBusy(a.getId())
                             || com.ancientkira.mca.server.VillageWarfare.get(world).isBusy(b.getId()))continue;
                     boolean horizontal=a.getBox().minX()-Village.MERGE_MARGIN<=b.getBox().maxX()

@@ -65,6 +65,7 @@ import java.util.stream.Stream;
 import static com.ancientkira.mca.client.gui.immersive_library.Api.request;
 
 public class SkinLibraryScreen extends Screen implements SkinListUpdateListener {
+    private static final java.util.concurrent.atomic.AtomicInteger PREVIEW_IDS = new java.util.concurrent.atomic.AtomicInteger(-1);
     static final int CLOTHES_H = 7;
     static final int CLOTHES_V = 2;
     static final int CLOTHES_PER_PAGE = CLOTHES_H * CLOTHES_V + 1;
@@ -81,6 +82,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     private SortingMode sortingMode = SortingMode.RECOMMENDATIONS;
     private boolean filterInvalidSkins = true;
     private boolean moderatorMode = false;
+    private SkinType category = SkinType.CLOTHING;
     private boolean filterHair = false;
     private boolean filterClothing = false;
     private SubscriptionFilter subscriptionFilter = SubscriptionFilter.LIBRARY;
@@ -104,6 +106,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     private double lastMouseX;
     private double lastMouseY;
     private int timeSinceLastRebuild;
+    private boolean contentRefreshPending;
     private Component error;
     private boolean authenticated = false;
     private boolean awaitingAuthentication = false;
@@ -113,16 +116,25 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     private EditBox textFieldWidget;
     private boolean skipHairWarning;
     private final List<LiteContent> remoteContents = new ArrayList<>();
+    private final java.util.Map<Integer, VillagerEntityMCA> libraryPreviews = new java.util.HashMap<>();
     private final CompoundTag basePreviewData;
     private final String selectedClothing;
+    private final Map<SkinType, String> wornTextures = new EnumMap<>(SkinType.class);
+    private long assetRevision = -1;
+    private int availablePages = 1;
+    private final List<LiteContent> categoryCandidates = new ArrayList<>();
+    private ContentQuery categoryScanQuery;
+    private int categoryScanPage;
+    private boolean categoryScanPending, categoryScanExhausted;
 
-    private record ContentQuery(int page, String search, SortingMode sorting, boolean filterInvalid, boolean filterHair, boolean filterClothing, boolean moderatorMode) {
+
+    private record ContentQuery(int page, String search, SortingMode sorting, boolean filterInvalid, boolean filterHair, boolean filterClothing, boolean moderatorMode, SkinType category) {
         Map<String, String> parameters() {
             List<String> blacklist = new ArrayList<>(3);
             if (filterInvalid) blacklist.add("invalid");
             if (filterHair) blacklist.add("hair");
             if (filterClothing) blacklist.add("clothing");
-            return Map.of("whitelist", search, "blacklist", String.join(",", blacklist), "order", sorting.order,
+            return Map.of("whitelist", (category.usesCoverage() ? search : category.tag()+(search.isBlank()?"":","+search)), "blacklist", String.join(",", blacklist), "order", sorting.order,
                     "descending", "true", "offset", Integer.toString(page * CLOTHES_PER_PAGE),
                     "limit", Integer.toString(CLOTHES_PER_PAGE), "moderator", Boolean.toString(moderatorMode));
         }
@@ -134,14 +146,16 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
     public SkinLibraryScreen(VillagerEditorScreen screen, VillagerEntityMCA villagerVisualization) {
         super(Component.translatable("gui.skin_library.title"));
+        this.villagerVisualization.setId(PREVIEW_IDS.getAndDecrement());
 
         this.previousScreen = screen;
+        if(screen!=null && screen.getPage().equals("hair"))category=SkinType.HAIR;
 
         if (this.previousScreen instanceof NeedleScreen) {
             filterHair = true;
         }
         if (this.previousScreen instanceof CombScreen) {
-            filterClothing = true;
+            category = SkinType.HAIR;
         }
 
         if (villagerVisualization != null) {
@@ -153,9 +167,18 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 this.villagerVisualization.load(TagValueInput.create(ProblemReporter.DISCARDING, this.villagerVisualization.registryAccess(), saveEntityData(villager)));
             }
         }
+        this.villagerVisualization.setUUID(UUID.randomUUID());
         selectedClothing = this.villagerVisualization.getClothes();
         basePreviewData = saveEntityData(this.villagerVisualization);
+        wornTextures.put(SkinType.CLOTHING, selectedClothing);
+        wornTextures.put(SkinType.HAIR, this.villagerVisualization.getHair());
+        wornTextures.put(SkinType.CLASSIC, this.villagerVisualization.getClassicSkin());
+        wornTextures.put(SkinType.EYES, this.villagerVisualization.getTrackedValue(VillagerLike.EYE_TEXTURE));
+        for (SkinType type : SkinType.values()) if (type.accessorySlot() >= 0)
+            wornTextures.put(type, this.villagerVisualization.getAccessory(type.accessorySlot()));
     }
+
+    public SkinLibraryScreen category(SkinType type) {category=type;filterHair=false;filterClothing=false;return this;}
 
     private static CompoundTag saveEntityData(VillagerEntityMCA entity) {
         TagValueOutput output = TagValueOutput.createWithContext(ProblemReporter.DISCARDING, entity.registryAccess());
@@ -201,7 +224,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     }
 
     private ContentQuery createQuery() {
-        return new ContentQuery(selectionPage, filteredString, sortingMode, filterInvalidSkins, filterHair, filterClothing, moderatorMode);
+        return new ContentQuery(selectionPage, filteredString, sortingMode, filterInvalidSkins, filterHair, filterClothing, moderatorMode, category);
     }
 
     private void loadPage() {
@@ -209,6 +232,10 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
             return;
         }
 
+        if (category.usesCoverage()) {
+            loadCategoryPage();
+            return;
+        }
         ContentQuery query = createQuery();
         if (query.equals(loadedQuery) || query.equals(pendingQuery)) {
             return;
@@ -221,6 +248,73 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         CompletableFuture
                 .supplyAsync(() -> request(Api.HttpMethod.GET, ContentListResponse.class, "v2/content/mca", query.parameters()))
                 .thenAccept(response -> Minecraft.getInstance().executeIfPossible(() -> acceptContents(query, response)));
+    }
+
+    private LiteContent resolvedContent(LiteContent content) {
+        return content.userid() < 0 || content.title().equalsIgnoreCase("unknown")
+                ? SkinCache.description(content.contentid()).orElse(content) : content;
+    }
+    private Optional<LiteContent> onlineWornContent() {
+        String texture = wornTextures.getOrDefault(category, "");
+        var id = com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(texture);
+        if (id.isEmpty()) return Optional.empty();
+        LiteContent content = SkinCache.description(id.getAsInt()).orElseGet(() -> new LiteContent(id.getAsInt(), -1, "", -1,
+                Set.of(category.tag()), "Asset #" + id.getAsInt(), -1));
+        SkinCache.sync(content); return Optional.of(content);
+    }
+    private void loadCategoryPage() {
+        ContentQuery signature = new ContentQuery(0, filteredString, sortingMode, filterInvalidSkins, filterHair, filterClothing, moderatorMode, category);
+        if (!signature.equals(categoryScanQuery)) {
+            categoryScanQuery = signature; categoryScanPage = 0; categoryScanExhausted = false;
+            categoryScanPending = false; categoryCandidates.clear();
+            Map<String, String> seedParameters = new HashMap<>(signature.parameters());
+            String tags = "mcarem," + signature.category().tag();
+            if (!signature.search().isBlank()) tags += "," + signature.search();
+            seedParameters.put("whitelist", tags);
+            CompletableFuture.supplyAsync(() -> request(Api.HttpMethod.GET, ContentListResponse.class,
+                            "v2/content/mca", seedParameters))
+                    .thenAccept(response -> Minecraft.getInstance().execute(() -> {
+                        if (!signature.equals(categoryScanQuery)) return;
+                        if (response instanceof ContentListResponse(LiteContent[] loaded)) {
+                            List<LiteContent> trusted = Arrays.stream(loaded)
+                                    .filter(content -> content.hasTag("mcarem") && content.hasTag(signature.category().tag()))
+                                    .toList();
+                            trusted.forEach(SkinCache::remember);
+                            Set<Integer> ids = trusted.stream().map(LiteContent::contentid).collect(java.util.stream.Collectors.toSet());
+                            categoryCandidates.removeIf(content -> ids.contains(content.contentid()));
+                            categoryCandidates.addAll(0, trusted);
+                            refreshContentList();
+                        }
+                    }));
+        }
+        if (categoryScanPending || categoryScanExhausted) return;
+        int ready = 0;
+        int waitingForAssets = 0;
+        for (LiteContent candidate : categoryCandidates) {
+            if (!candidate.hasTag("mcarem") && !SkinCache.classified(candidate.contentid())
+                    && !SkinCache.failed(candidate.contentid())) {
+                SkinCache.classify(candidate);
+                waitingForAssets++;
+            } else if (category.matches(candidate)) ready++;
+        }
+        if (ready >= (selectionPage + 1) * CLOTHES_PER_PAGE) return;
+        // Pipeline one page ahead instead of waiting for every image in the previous page.
+        if (waitingForAssets > CLOTHES_PER_PAGE) return;
+        categoryScanPending = true;
+        ContentQuery batch = new ContentQuery(categoryScanPage, filteredString, sortingMode, filterInvalidSkins, filterHair, filterClothing, moderatorMode, category);
+        CompletableFuture.supplyAsync(() -> request(Api.HttpMethod.GET, ContentListResponse.class, "v2/content/mca", batch.parameters()))
+                .thenAccept(response -> Minecraft.getInstance().execute(() -> {
+                    if (!signature.equals(categoryScanQuery)) return;
+                    categoryScanPending = false;
+                    if (response instanceof ContentListResponse(LiteContent[] loaded)) {
+                        for (LiteContent content : loaded) {
+                            SkinCache.remember(content);
+                            if (categoryCandidates.stream().noneMatch(c -> c.contentid() == content.contentid())) categoryCandidates.add(content);
+                        }
+                        categoryScanPage++; categoryScanExhausted = loaded.length < CLOTHES_PER_PAGE;
+                    } else { categoryScanExhausted = true; setError(Component.translatable("gui.skin_library.list_fetch_failed")); }
+                    refreshContentList();
+                }));
     }
 
     private void acceptContents(ContentQuery query, Response response) {
@@ -237,6 +331,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
             loadedQuery = query;
             remoteContents.clear();
             remoteContents.addAll(List.of(loadedContents));
+            remoteContents.forEach(SkinCache::remember);
             clearError();
             refreshContentList();
         } else {
@@ -259,13 +354,19 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
         switch (page) {
             case LIBRARY -> {
+                List<LiteContent> visibleContents = contents;
                 int i = 0;
                 for (int y = 0; y < CLOTHES_V; y++) {
                     for (int x = 0; x < CLOTHES_H + y; x++) {
-                        if (contents.size() > i) {
-                            LiteContent c = contents.get(i);
+                        if (visibleContents.size() > i) {
+                            LiteContent c = visibleContents.get(i);
 
-                            setDummyTexture(villagerVisualization, c);
+                            VillagerEntityMCA preview = libraryPreviews.computeIfAbsent(c.contentid(), id -> {
+                                var dummy = Objects.requireNonNull(EntitiesMCA.PERSON.create(minecraft.level, EntitySpawnReason.LOAD));
+                                dummy.setId(PREVIEW_IDS.getAndDecrement());
+                                return dummy;
+                            });
+                            setDummyTexture(preview, c);
 
                             int cx = width / 2 + (int) ((x - CLOTHES_H / 2.0 + 0.5 - 0.5 * (y % 2)) * 55);
                             int cy = height / 2 + (int) ((y - CLOTHES_V / 2.0 + 0.5) * 80);
@@ -275,11 +376,10 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                                 tooltip = getMetaDataText(c);
                             }
 
-                            villagerVisualization.getGenetics().setGender(SkinCache.getMeta(c).map(SkinMeta::getGender).orElse(Gender.MALE).binary());
-                            PreviewEntityAnimation.withPreviewTime(villagerVisualization, () -> {
-                                InventoryScreen.extractEntityInInventoryFollowsMouse(context, cx - 25, cy - 50, cx + 25, cy + 30, hoveredContent == c ? 30 : 28, 0, mouseX, mouseY, villagerVisualization);
-                                return null;
-                            });
+                            preview.getGenetics().setGender(SkinCache.getMeta(c).map(SkinMeta::getGender).orElse(Gender.MALE).binary());
+                            preview.refreshDimensions();
+                            WidgetUtils.drawLibraryEntity(context, cx - 25, cy - 50, cx + 25, cy + 30,
+                                    hoveredContent == c ? 30 : 28, mouseX, mouseY, preview);
                             i++;
                         } else {
                             break;
@@ -313,6 +413,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                     workspace.setDirty(false);
                 }
 
+                SkinCache.setPreviewUntinted(workspace.skinType==SkinType.HAIR && workspace.untinted);
                 //painting area
                 int tw = 64;
                 int th = 64;
@@ -344,9 +445,15 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
                 //dummy
                 applyBasePreview(villagerVisualization);
-                if (workspace.skinType == SkinType.CLOTHING) {
+                if(workspace.skinType==SkinType.CLASSIC) {
+                    villagerVisualization.setClassicSkin(CANVAS_IDENTIFIER.toString());
+                } else if(workspace.skinType.accessorySlot()>=0) {
+                    villagerVisualization.setAccessory(workspace.skinType.accessorySlot(),CANVAS_IDENTIFIER.toString());
+                } else if (workspace.skinType == SkinType.CLOTHING) {
+                    villagerVisualization.setClassicSkin("");
                     villagerVisualization.setClothes(CANVAS_IDENTIFIER);
                 } else {
+                    villagerVisualization.setClassicSkin("");
                     villagerVisualization.setHairStyle(HairStyle.singleLayer(CANVAS_IDENTIFIER.toString(), workspace.gender.binary(), 1.0F));
                     villagerVisualization.setClothes(EMPTY_IDENTIFIER);
                 }
@@ -355,7 +462,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 int cy = height / 2 - 10;
 
                 villagerVisualization.getGenetics().setGender(workspace.gender.binary());
-                WidgetUtils.drawBackgroundEntity(context, cx, cy, 50, mouseX, mouseY, villagerVisualization);
+                WidgetUtils.drawLibraryEntity(context, cx - 50, cy - 50, cx + 50, cy + 50, 50, mouseX, mouseY, villagerVisualization);
 
                 if (workspace.skinType == SkinType.HAIR) {
                     context.centeredText(font, Component.translatable("gui.skin_library.hair_color"), width / 2 - 150, height / 2 - 40, 0xAAFFFFFF);
@@ -393,30 +500,44 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 int cy = height / 2;
 
                 villagerVisualization.getGenetics().setGender(SkinCache.getMeta(focusedContent).map(SkinMeta::getGender).orElse(Gender.MALE).binary());
-                InventoryScreen.extractEntityInInventoryFollowsMouse(context, cx - 30, cy - 60, cx + 30, cy + 60, 60, 0, mouseX, mouseY, villagerVisualization);
+                WidgetUtils.drawLibraryEntity(context, cx - 30, cy - 60, cx + 30, cy + 60, 60, mouseX, mouseY, villagerVisualization);
 
                 //metadata
                 WidgetUtils.drawTooltip(context, font, getMetaDataText(focusedContent), width / 2 + 200, height / 2 - 50);
             }
         }
 
-        if (tooltip != null) {
+        if (tooltip != null && !DropdownWidget.isOpen(this)) {
             WidgetUtils.drawTooltip(context, font, tooltip, mouseX, mouseY);
         }
 
         if (error != null) {
             context.centeredText(font, error, width / 2, height / 2, 0xFFFF0000);
         }
+        DropdownWidget.extractOverlay(this, context, mouseX, mouseY, delta);
     }
 
     private void setDummyTexture(VillagerEntityMCA preview, LiteContent content) {
         applyBasePreview(preview);
-        if (content.hasTag("clothing")) {
+        if (category == SkinType.EYES || SkinType.of(content)==SkinType.EYES) {
+            preview.setClassicSkin("");
+            preview.setSkin("");
+            preview.setTrackedValue(VillagerLike.SKIN_COLOR, 0xFF000000);
+            preview.setTrackedValue(VillagerLike.EYE_TEXTURE,"immersive_library:"+content.contentid());
+            preview.setTrackedValue(VillagerLike.EYES_OVER_SKIN,true);
+        } else if (SkinType.of(content)==SkinType.CLASSIC) {
+            SkinCache.getTextureIdentifier(content);
+            preview.setClassicSkin("immersive_library:"+content.contentid());
+        } else if (SkinType.of(content).accessorySlot()>=0) {
+            preview.setAccessory(SkinType.of(content).accessorySlot(),SkinCache.getTextureIdentifier(content).toString());
+        } else if (content.hasTag("clothing")) {
+            preview.setClassicSkin("");
             preview.setHair("");
             preview.setHairStyleId("");
             preview.clearLayeredHair();
             preview.setClothes(SkinCache.getTextureIdentifier(content));
         } else {
+            preview.setClassicSkin("");
             preview.setHairStyle(HairStyle.singleLayer(SkinCache.getTextureIdentifier(content).toString(), preview.getGenetics().getGender(), 1.0F));
             preview.setClothes(EMPTY_IDENTIFIER);
         }
@@ -424,25 +545,50 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
     private void applyBasePreview(VillagerEntityMCA preview) {
         if (basePreviewData != null) {
-            preview.load(TagValueInput.create(ProblemReporter.DISCARDING, preview.registryAccess(), basePreviewData));
+            var data = basePreviewData.copy();
+            data.getCompound(VillagerEntityMCA.MCA_DATA_KEY).ifPresent(mca -> mca.putInt("PlayerModel", 0));
+            data.remove("UUID"); data.remove("Passengers"); data.remove("Invisible");
+            data.remove("DeathTime"); data.remove("HurtTime"); data.remove("Fire");
+            data.getCompound(VillagerEntityMCA.MCA_DATA_KEY).ifPresent(mca -> {
+                mca.putLong("KidnappedUntil", 0); mca.remove("CaptivityState");
+            });
+            UUID identity = preview.getUUID();
+            preview.load(TagValueInput.create(ProblemReporter.DISCARDING, preview.registryAccess(), data));
+            preview.setUUID(identity);
+            ((com.ancientkira.mca.entity.RevivalState) preview).mca$resetDeathState();
+            preview.removeAllEffects();
+            preview.setInvisible(false);
+            preview.setHealth(preview.getMaxHealth());
+            preview.deathTime = 0;
+            preview.setPose(net.minecraft.world.entity.Pose.STANDING);
+            preview.setAge(0);
+            preview.refreshDimensions();
+            preview.snapTo(0, 0, 0);
         }
     }
 
     private List<Component> getMetaDataText(LiteContent content) {
+        return getLoadedMetaDataText(resolvedContent(content));
+    }
+    private List<Component> getLoadedMetaDataText(LiteContent content) {
         Optional<SkinMeta> meta = SkinCache.getMeta(content);
         if (meta.isEmpty()) {
-            return List.of(Component.literal(content.title()));
+            return List.of(Component.literal(content.title()),Component.translatable("gui.skin_library.meta.by",content.username()),SkinType.of(content).text());
         } else {
             List<Component> wrap = FlowingText.wrap(Component.literal(String.join(", ", content.tags())).withStyle(ChatFormatting.YELLOW), 160);
             ArrayList<Component> texts = new ArrayList<>(List.of(
                     Component.literal(content.title()),
+                    SkinType.of(content).text(),
+                    content.users()==null?Component.translatable("gui.skin_library.uses_unavailable"):Component.translatable("gui.skin_library.uses",content.users()),
                     Component.translatable("gui.skin_library.meta.by", content.username()).withStyle(ChatFormatting.ITALIC),
-                    Component.translatable("gui.skin_library.meta.likes", content.likes()).withStyle(ChatFormatting.GRAY),
+                    (content.likes() >= 0 ? Component.translatable("gui.skin_library.meta.likes", content.likes())
+                            : Component.translatable("gui.skin_library.meta.likes_unavailable")).withStyle(ChatFormatting.GRAY),
                     Component.translatable("gui.skin_library.gender", meta.get().getGender() == Gender.MALE ? Component.translatable("gui.villager_editor.masculine") : (meta.get().getGender() == Gender.FEMALE ? Component.translatable("gui.villager_editor.feminine") : Component.translatable("gui.villager_editor.neutral"))),
                     Component.translatable("gui.skin_library.profession", getProfessionText(meta.get().getProfession())),
                     Component.translatable("gui.skin_library.temperature", Component.translatable("gui.skin_library.temperature." + (meta.get().getTemperature() + 2))),
                     Component.translatable("gui.skin_library.chance_val", (int) (meta.get().getChance() * 100)).withStyle(ChatFormatting.GRAY)
             ));
+            if(content.hasTag("hair"))texts.add(Component.translatable(meta.get().isUntinted()?"gui.skin_library.untinted":"gui.skin_library.tinted"));
             texts.addAll(wrap);
 
             if (content.tags().contains("invalid")) {
@@ -513,6 +659,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if(com.ancientkira.mca.client.gui.widget.DropdownWidget.escape(this,event.key()))return true;
         int keyCode = event.key();
         // Pan
         if (keyCode == GLFW.GLFW_KEY_SPACE && (textFieldWidget == null || !textFieldWidget.isFocused())) {
@@ -576,6 +723,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if(com.ancientkira.mca.client.gui.widget.DropdownWidget.scroll(this,scrollY))return true;
         if (page == Page.EDITOR) {
             float zoom = (float) (scrollY * 0.2f) * (x1 - x0);
 
@@ -596,10 +744,14 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         super.tick();
 
         timeSinceLastRebuild++;
+        if (page == Page.LIBRARY && timeSinceLastRebuild >= 10 && !DropdownWidget.isOpen(this) && (contentRefreshPending || assetRevision != SkinCache.revision() || category.usesCoverage() || subscriptionFilter == SubscriptionFilter.GLOBAL)) {
+            assetRevision = SkinCache.revision(); refreshContentList();
+        }
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if(com.ancientkira.mca.client.gui.widget.DropdownWidget.click(this,event,doubleClick))return true;
         if (timeSinceLastRebuild < 2) {
             return false;
         }
@@ -630,8 +782,24 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                     focusedContent = hoveredContent;
                     setPage(Page.DETAIL);
                 } else {
-                    if (hoveredContent.hasTag("clothing")) {
+                    var selectedType=SkinType.of(hoveredContent);
+                    if(hoveredContent.contentid()<0) {
+                        LocalLibrary.select(previousScreen.getVillager().getUUID(),selectedType,"immersive_library:"+hoveredContent.contentid());
+                        onClose();return true;
+                    }
+                    LocalLibrary.select(previousScreen.getVillager().getUUID(),selectedType,null);
+                    if (selectedType==SkinType.EYES) {
+                        previousScreen.getVillager().setTrackedValue(VillagerLike.EYE_TEXTURE,"immersive_library:"+hoveredContent.contentid());
+                        returnToPreviousScreen();
+                    } else if (SkinType.of(hoveredContent)==SkinType.CLASSIC) {
+                        previousScreen.getVillager().setClassicSkin("immersive_library:"+hoveredContent.contentid());
+                        returnToPreviousScreen();
+                    } else if(SkinType.of(hoveredContent).accessorySlot()>=0) {
+                        previousScreen.getVillager().setAccessory(SkinType.of(hoveredContent).accessorySlot(),"immersive_library:"+hoveredContent.contentid());
+                        returnToPreviousScreen();
+                    } else if (hoveredContent.hasTag("clothing")) {
                         var villager = previousScreen.getVillager();
+                        villager.setClassicSkin("");
                         villager.setClothes("immersive_library:" + hoveredContent.contentid());
                         previousScreen.markClothingSelected();
                         returnToPreviousScreen();
@@ -706,6 +874,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     }
 
     private void rebuild() {
+        com.ancientkira.mca.client.gui.widget.DropdownWidget.close(this);
         clearWidgets();
 
         timeSinceLastRebuild = 0;
@@ -738,8 +907,11 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                     setSelectionPage(selectionPage - 1);
                     refreshContentList();
                 }));
-                pageWidget = addRenderableWidget(new ButtonWidget(width / 2 - 30, height / 2 + 80, 60, 20, Component.literal(""), sender -> {
-                }));
+                pageWidget = addRenderableWidget(new DropdownWidget<Integer>(this, this::addRenderableWidget, this::removeWidget,
+                        width / 2 - 30, height / 2 + 80, 60, 20,
+                        java.util.stream.IntStream.range(0, availablePages).boxed().toList(), selectionPage,
+                        number -> Component.translatable("gui.villager_editor.page", number + 1),
+                        number -> { setSelectionPage(number); refreshContentList(); }));
                 addRenderableWidget(new ButtonWidget(width / 2 + 30, height / 2 + 80, 30, 20, Component.literal(">>"), sender -> {
                     setSelectionPage(selectionPage + 1);
                     refreshContentList();
@@ -771,6 +943,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                             refreshContentList();
                         }));
 
+                if(subscriptionFilter!=SubscriptionFilter.LIBRARY) addRenderableWidget(typeDropdown(width/2+105,height/2+82,100,type->{category=type;selectionPage=0;refreshContentList();}));
                 iconX = width / 2 + 50;
                 if (subscriptionFilter == SubscriptionFilter.LIBRARY) {
                     //filter
@@ -782,22 +955,8 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                                 refreshContentList();
                             }));
 
-                    //filter clothing
-                    addRenderableWidget(new ToggleableTooltipIconButtonWidget(iconX + 22 * 3, height / 2 + 82, 12 * 16, 3 * 16,
-                            filterClothing,
-                            Component.translatable("gui.skin_library.filter_clothing"),
-                            v -> {
-                                filterClothing = !filterClothing;
-                                refreshContentList();
-                            }));
-
-                    //filter hair
-                    addRenderableWidget(new ToggleableTooltipIconButtonWidget(iconX + 22 * 4, height / 2 + 82, 13 * 16, 3 * 16,
-                            filterHair,
-                            Component.translatable("gui.skin_library.filter_hair"),
-                            v -> {
-                                filterHair = !filterHair;
-                                refreshContentList();
+                    addRenderableWidget(typeDropdown(iconX+22*3,height/2+82,100,type->{
+                                category=type;selectionPage=0;filterHair=false;filterClothing=false;invalidateRemotePage();refreshContentList();
                             }));
 
                     //moderator search
@@ -813,9 +972,10 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 }
 
                 //search
-                if (subscriptionFilter == SubscriptionFilter.LIBRARY) {
+                if (subscriptionFilter == SubscriptionFilter.LIBRARY || subscriptionFilter==SubscriptionFilter.LOCAL) {
                     EditBox textFieldWidget = addRenderableWidget(new EditBox(this.font, width / 2 - 200 + 65, height / 2 - 110 + 2, 110, 16,
                             Component.translatable("gui.skin_library.search")));
+                    this.textFieldWidget = textFieldWidget;
                     textFieldWidget.setMaxLength(64);
                     textFieldWidget.setValue(filteredString);
                     if (filteredString.isEmpty()) {
@@ -830,13 +990,10 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 }
 
                 //group
-                addRenderableWidget(CycleButton.builder(SubscriptionFilter::getText, subscriptionFilter)
-                        .withValues(SubscriptionFilter.values())
-                        .displayOnlyValue()
-                        .create(width / 2 - 200, height / 2 - 110, 60, 20, Component.literal(""), (button, filter) -> {
-                            this.subscriptionFilter = filter;
-                            selectionPage = 0;
-                            refreshContentList();
+                addRenderableWidget(new DropdownWidget<SubscriptionFilter>(this, this::addRenderableWidget, this::removeWidget,
+                        width / 2 - 200, height / 2 - 110, 60, 20, List.of(SubscriptionFilter.values()), subscriptionFilter,
+                        SubscriptionFilter::getText, filter -> {
+                            this.subscriptionFilter = filter; selectionPage = 0; refreshContentList();
                         }));
 
                 //controls
@@ -883,20 +1040,12 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 addRenderableWidget(new ButtonWidget(width / 2 - 50, height / 2 + 5, 100, 20, Component.translatable("gui.skin_library.load_image"), sender -> loadImage(textFieldWidget.getValue())));
             }
             case EDITOR_TYPE -> {
-                addRenderableWidget(new ButtonWidget(width / 2 - 100, height / 2, 95, 20,
-                        Component.translatable("gui.skin_library.prepare.hair"),
-                        v -> {
-                            workspace.skinType = SkinType.HAIR;
-                            color.setHSV(0, 0, 0.5);
-                            setPage(Page.EDITOR);
-                        }));
-
-                addRenderableWidget(new ButtonWidget(width / 2 + 5, height / 2, 95, 20,
-                        Component.translatable("gui.skin_library.prepare.clothing"),
-                        v -> {
-                            workspace.skinType = SkinType.CLOTHING;
-                            setPage(Page.EDITOR);
-                        }));
+                addRenderableWidget(typeDropdown(width/2-100,height/2-20,200,type->category=type));
+                addRenderableWidget(new ButtonWidget(width/2-50,height/2+5,100,20,Component.translatable("gui.proceed"),b->{
+                    workspace.skinType=category;
+                    if(category==SkinType.HAIR)color.setHSV(0,0,.5F);
+                    setPage(Page.EDITOR);
+                }));
 
                 // help
                 addRenderableWidget(new TooltipButtonWidget(width / 2 - 10, height / 2 + 30, 20, 20,
@@ -1024,13 +1173,15 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                         }));
 
                 //gender
-                addRenderableWidget(CycleButton.builder(Gender::getText, workspace.gender)
-                        .withValues(Gender.MALE, Gender.NEUTRAL, Gender.FEMALE)
-                        .displayOnlyValue()
-                        .create(width / 2 - 200, height / 2 - 80, 105, 20, Component.literal(""), (button, gender) -> {
-                            this.workspace.gender = gender;
-                        }));
+                addRenderableWidget(new DropdownWidget<Gender>(this, this::addRenderableWidget, this::removeWidget,
+                        width / 2 - 200, height / 2 - 80, 105, 20, List.of(Gender.MALE, Gender.NEUTRAL, Gender.FEMALE),
+                        workspace.gender, Gender::getText, gender -> this.workspace.gender = gender));
 
+                if(workspace.skinType==SkinType.HAIR) {
+                    addRenderableWidget(new TooltipButtonWidget(width/2-200,height/2-60,105,20,
+                            Component.translatable("gui.skin_library.untinted").append(workspace.untinted?": ON":": OFF"),
+                            Component.translatable("gui.skin_library.untinted.tooltip"),b->{workspace.untinted=!workspace.untinted;rebuild();}));
+                }
                 // temperature
                 if (workspace.skinType == SkinType.CLOTHING) {
                     addRenderableWidget(new IntegerSliderWidget(width / 2 - 200, height / 2 - 60, 105, 20,
@@ -1144,7 +1295,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 ));
 
                 //undo
-                addRenderableWidget(new ButtonWidget(width / 2 + 100, y + 85, 100, 20,
+                addRenderableWidget(new ButtonWidget(width / 2 - 160, height / 2 + 80, 75, 20,
                         Component.translatable("gui.skin_library.undo"),
                         v -> {
                             workspace.undo();
@@ -1209,9 +1360,13 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                             setPage(Page.LIBRARY);
                         }));
 
+                addRenderableWidget(new ButtonWidget(width/2+85,height/2+80,100,20,Component.translatable("gui.skin_library.save_local"),b->{
+                    try {LocalLibrary.save(workspace,getPlayerName());category=workspace.skinType;subscriptionFilter=SubscriptionFilter.LOCAL;setPage(Page.LIBRARY);refreshContentList();}
+                    catch(IOException error){setError(Component.literal(error.getMessage()));}
+                }));
                 // publish
                 addRenderableWidget(new ButtonWidget(width / 2 + 5, height / 2 + 80, 75, 20,
-                        Component.translatable("gui.skin_library.publish"),
+                        Component.translatable("gui.skin_library.publish_public"),
                         v -> {
                             publish();
                         }));
@@ -1224,7 +1379,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         List<TooltipButtonWidget> widgets = new LinkedList<>();
 
         // subscribe
-        if (isOp() || Config.getServerConfig().allowEveryoneToAddContentGlobally) {
+        if (content.contentid()>=0 && (content.hasTag("clothing") || content.hasTag("hair")) && (isOp() || Config.getServerConfig().allowEveryoneToAddContentGlobally)) {
             widgets.add(new ToggleableTooltipIconButtonWidget(0, 0, 0, 3 * 16,
                     getServerContentById(content.contentid()).isPresent(),
                     Component.translatable("gui.skin_library.subscribe"),
@@ -1241,7 +1396,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         }
 
         // like
-        if (authenticated) {
+        if (authenticated && content.contentid()>=0) {
             widgets.add(new ToggleableTooltipIconButtonWidget(0, 0, 16, 3 * 16,
                     isLiked(content),
                     Component.translatable("gui.skin_library.like"),
@@ -1256,7 +1411,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         }
 
         // edit
-        if (advanced && canModifyContent(content)) {
+        if (advanced && content.contentid()>=0 && canModifyContent(content)) {
             widgets.add(new ToggleableTooltipIconButtonWidget(0, 0, 2 * 16, 3 * 16,
                     false,
                     Component.translatable("gui.skin_library.edit"),
@@ -1284,7 +1439,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         }
 
         // delete
-        if (advanced && canModifyContent(content)) {
+        if (advanced && content.contentid()>=0 && canModifyContent(content)) {
             widgets.add(new ToggleableTooltipIconButtonWidget(cx - 12 + 25, cy, 3 * 16, 3 * 16,
                     true,
                     Component.translatable("gui.skin_library.delete"),
@@ -1366,6 +1521,11 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         return currentUser != null && (currentUser.likes().stream().anyMatch(c -> c.contentid() == content.contentid()));
     }
 
+    private com.ancientkira.mca.client.gui.widget.DropdownWidget<SkinType> typeDropdown(int x,int y,int width,java.util.function.Consumer<SkinType> change) {
+        return new com.ancientkira.mca.client.gui.widget.DropdownWidget<>(this,widget->addRenderableWidget(widget),this::removeWidget,
+                x,y,width,20,java.util.List.of(SkinType.values()),category,SkinType::text,change);
+    }
+
     public void setPage(Page page) {
         if (Thread.currentThread() != thread) {
             assert minecraft != null;
@@ -1374,11 +1534,6 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         }
 
         clearError();
-
-        if ((page == Page.EDITOR_TYPE || page == Page.EDITOR_PREPARE) && !authenticated) {
-            setPage(Page.EDITOR_LOCKED);
-            return;
-        }
 
         if (page == Page.HELP) {
             openHelp();
@@ -1500,6 +1655,15 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
             return;
         }
 
+        // Download callbacks must not rebuild widgets while the user is choosing an option.
+        if (DropdownWidget.isOpen(this)) {
+            contentRefreshPending = true;
+            return;
+        }
+        contentRefreshPending = false;
+
+        boolean restoreSearchFocus = textFieldWidget != null && getFocused() == textFieldWidget;
+        int searchCursor = restoreSearchFocus ? textFieldWidget.getCursorPosition() : 0;
         refreshServerContent();
 
         // fetch the list matching the current subscription filter
@@ -1509,6 +1673,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                 loadPage();
                 newList = remoteContents;
             }
+            case LOCAL -> { newList=LocalLibrary.contents(); }
             case GLOBAL -> {
                 newList = serverContent;
             }
@@ -1521,33 +1686,41 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
             default -> throw new IllegalStateException("Unexpected value: " + subscriptionFilter);
         }
 
-        // apply paging here
-        if (subscriptionFilter != SubscriptionFilter.LIBRARY && !newList.isEmpty()) {
-            if (selectionPage * CLOTHES_PER_PAGE >= newList.size()) {
-                newList = new LinkedList<>();
-            } else {
-                newList = newList.subList(selectionPage * CLOTHES_PER_PAGE, Math.min(newList.size(), (selectionPage + 1) * CLOTHES_PER_PAGE));
+        if (subscriptionFilter == SubscriptionFilter.LIBRARY && category.usesCoverage())
+            newList = categoryCandidates;
+        List<LiteContent> matching = new ArrayList<>();
+        int queued = 0;
+        int needed = (selectionPage + 2) * CLOTHES_PER_PAGE;
+        for (LiteContent candidate : newList) {
+            LiteContent content = resolvedContent(candidate);
+            if (subscriptionFilter == SubscriptionFilter.GLOBAL && content.userid() < 0
+                    && SkinCache.description(content.contentid()).isEmpty() && !SkinCache.failed(content.contentid()) && queued++ < 8)
+                SkinCache.sync(content);
+            if (!filteredString.isBlank() && !(content.title() + " " + content.username()).toLowerCase(Locale.ROOT)
+                    .contains(filteredString.toLowerCase(Locale.ROOT))) continue;
+            if (category.usesCoverage() && !content.hasTag("mcarem") && !SkinCache.classified(content.contentid())) {
+                if (!SkinCache.failed(content.contentid()) && queued++ < 8) SkinCache.classify(content);
+                continue;
             }
+            boolean matches = category.matches(content);
+            if (matches) matching.add(content);
+            if (category.usesCoverage() && matching.size() >= needed) break;
         }
-
-        // add to visual list
-        contents.clear();
-        contents.addAll(newList);
-
-        // last page reached, go one back
-        if (contents.isEmpty() && selectionPage > 0
-                && (subscriptionFilter != SubscriptionFilter.LIBRARY || pendingQuery == null)) {
-            selectionPage--;
-            if (subscriptionFilter == SubscriptionFilter.LIBRARY) {
-                loadPage();
-            } else {
-                refreshContentList();
-            }
-            return;
-        }
-
+        boolean publicRegular = subscriptionFilter == SubscriptionFilter.LIBRARY && !category.usesCoverage();
+        availablePages = Math.max(selectionPage + 1, Math.max(1, (matching.size() + CLOTHES_PER_PAGE - 1) / CLOTHES_PER_PAGE));
+        if (subscriptionFilter == SubscriptionFilter.LIBRARY && (!categoryScanExhausted || publicRegular && remoteContents.size() == CLOTHES_PER_PAGE))
+            availablePages = Math.max(availablePages, selectionPage + 2);
+        Optional<LiteContent> pinned = subscriptionFilter == SubscriptionFilter.LIBRARY || subscriptionFilter == SubscriptionFilter.GLOBAL
+                ? onlineWornContent().filter(category::matches) : Optional.empty();
+        List<LiteContent> visible = LibraryPages.page(matching, selectionPage, CLOTHES_PER_PAGE, publicRegular,
+                pinned, LiteContent::contentid);
+        contents.clear(); contents.addAll(visible);
+        contents.forEach(SkinCache::sync);
+        libraryPreviews.clear();
         rebuild();
-
+        if (restoreSearchFocus && textFieldWidget != null) {
+            setFocused(textFieldWidget); textFieldWidget.setFocused(true); textFieldWidget.setCursorPosition(searchCursor);
+        }
         setSelectionPage(selectionPage);
     }
 
@@ -1571,9 +1744,9 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     }
 
     private void setSelectionPage(int p) {
+        selectionPage = Math.max(0, p);
         if (pageWidget != null) {
-            selectionPage = Math.max(0, p);
-            pageWidget.setMessage(Component.translatable("gui.villager_editor.page", selectionPage + 1));
+            pageWidget.setMessage(Component.translatable("gui.villager_editor.page", selectionPage + 1).append(" ▾"));
         }
     }
 
@@ -1623,17 +1796,32 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     }
 
     private void publish() {
+        if(!Auth.hasToken()){setError(Component.translatable("gui.skin_library.login_to_publish"));return;}
         if (workspace.title.equals("Unnamed Asset")) {
             setError(Component.translatable("gui.skin_library.choose_name"));
             return;
         }
 
-        if (!Utils.verify(workspace.currentImage)) {
+        int region = workspace.skinType.coverageRegion();
+        if (region != 0 && (AccessoryTextureCoverage.classify(workspace.currentImage.getWidth(), workspace.currentImage.getHeight(),
+                (x, y) -> (workspace.currentImage.getPixel(x, y) >>> 24) & 255) & region) == 0) {
+            setError(Component.translatable("gui.skin_library.accessory_invalid"));
+            return;
+        }
+        if(workspace.skinType==SkinType.EYES && !EyeTextureCoverage.qualifies(workspace.currentImage.getWidth(),workspace.currentImage.getHeight(),
+                (x,y)->(workspace.currentImage.getPixel(x,y)>>>24)&255)) {
+            setError(Component.translatable("gui.skin_library.eyes_invalid"));return;
+        }
+        if(workspace.skinType==SkinType.CLASSIC && !com.ancientkira.mca.client.gui.immersive_library.ClassicSkinCoverage.qualifies(
+                workspace.currentImage.getWidth(),workspace.currentImage.getHeight(),(x,y)->(workspace.currentImage.getPixel(x,y)>>>24)&255)) {
+            setError(Component.translatable("gui.skin_library.classic_incomplete"));return;
+        }
+        if (workspace.skinType!=SkinType.CLASSIC && !Utils.verify(workspace.currentImage)) {
             setError(Component.translatable("gui.skin_library.read_the_help"));
             return;
         }
 
-        if (workspace.skinType == SkinType.HAIR && !Utils.verifyHair(workspace.currentImage) && !skipHairWarning) {
+        if (workspace.skinType == SkinType.HAIR && !workspace.untinted && !Utils.verifyHair(workspace.currentImage) && !skipHairWarning) {
             setError(Component.translatable("gui.skin_library.read_the_help_hair"));
             skipHairWarning = true;
             return;
@@ -1663,7 +1851,10 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
                         ) ? contentid1 : workspace.contentid;
 
                         // default tags
-                        setTag(contentid, workspace.skinType.name().toLowerCase(Locale.ROOT), true);
+                        for(var kind:SkinType.values())if(kind!=workspace.skinType && workspace.contentid>=0 && focusedContent!=null && focusedContent.hasTag(kind.tag()))setTag(contentid,kind.tag(),false);
+                        setTag(contentid, "mcarem", true);
+                        setTag(contentid, workspace.skinType.tag(), true);
+                        if(workspace.skinType==SkinType.HAIR)setTag(contentid,"untinted",workspace.untinted);
                         if (workspace.profession != null) {
                             setTag(contentid, workspace.profession.replace("mca.", ""), true);
                         }
@@ -1806,8 +1997,8 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
             if (entry.getKey().startsWith("immersive_library:")) {
                 try {
                     int contentid = Integer.parseInt(entry.getKey().substring(18));
-                    serverContent.add(getContentById(contentid).orElse(new LiteContent(
-                            contentid, -1, "unknown", -1, Set.of(type), "unknown", -1
+                    serverContent.add(SkinCache.description(contentid).orElseGet(() -> new LiteContent(
+                            contentid, -1, "", -1, Set.of(type), "Asset #" + contentid, -1
                     )));
                 } catch (NumberFormatException ignored) {
                     //nop
@@ -1829,14 +2020,20 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
         serverContent.clear();
         addServerContent(ClientSkinCatalog.clothing(), "clothing");
         addServerContent(ClientSkinCatalog.hair(), "hair");
+        for (var entry : wornTextures.entrySet()) {
+            var id = com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(entry.getValue());
+            if (id.isPresent() && serverContent.stream().noneMatch(c -> c.contentid() == id.getAsInt()))
+                serverContent.add(SkinCache.description(id.getAsInt()).orElseGet(() -> new LiteContent(id.getAsInt(), -1, "", -1,
+                        Set.of(entry.getKey().tag()), "Asset #" + id.getAsInt(), -1)));
+        }
         // Use the edited person's outfit, not the dummy's last preview texture.
         String currentClothing = previousScreen == null ? selectedClothing : previousScreen.getVillager().getClothes();
         if (currentClothing.startsWith("immersive_library:")) {
             try {
                 int selectedId = Integer.parseInt(currentClothing.substring(18));
                 if (serverContent.stream().noneMatch(content -> content.contentid() == selectedId)) {
-                    serverContent.add(new LiteContent(selectedId, -1, "unknown", 0,
-                            Set.of("clothing"), "", -1));
+                    serverContent.add(new LiteContent(selectedId, -1, "", -1,
+                            Set.of("clothing"), "Asset #" + selectedId, -1));
                 }
                 // Stable sorting preserves every other outfit's order before pagination.
                 serverContent.sort(Comparator.comparing(content -> content.contentid() != selectedId));
@@ -1861,8 +2058,45 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
     }
 
     public enum SkinType {
-        CLOTHING,
-        HAIR
+        CLOTHING, HAIR, CLASSIC, HAT, GLASSES, FACE, BACK, EYES;
+        public String tag(){return name().toLowerCase(Locale.ROOT);}
+        public Component text(){return Component.translatable("gui.skin_library.kind."+tag());}
+        public int accessorySlot(){return switch(this){case HAT->0;case GLASSES->1;case FACE->2;case BACK->3;default->-1;};}
+        public int coverageRegion() {
+            return switch (this) {
+                case HAT -> AccessoryTextureCoverage.HEAD;
+                case GLASSES -> AccessoryTextureCoverage.UPPER_HEAD;
+                case FACE -> AccessoryTextureCoverage.FACE;
+                default -> 0;
+            };
+        }
+        public boolean usesCoverage() {
+            return this == CLASSIC || this == EYES || this == HAT || this == GLASSES || this == FACE;
+        }
+        public boolean matches(LiteContent content) {
+            if (content.hasTag("mcarem")) return content.hasTag(tag());
+            return switch (this) {
+                case CLASSIC -> SkinCache.isCompleteSkin(content);
+                case EYES -> SkinCache.isEyeTexture(content);
+                case HAT -> SkinCache.coversOnly(content, AccessoryTextureCoverage.HEAD);
+                case GLASSES -> SkinCache.coversOnly(content, AccessoryTextureCoverage.UPPER_HEAD);
+                case FACE -> SkinCache.coversOnly(content, AccessoryTextureCoverage.FACE);
+                default -> content.hasTag(tag());
+            };
+        }
+        public static SkinType of(LiteContent content) {
+            if (content.hasTag("mcarem")) {
+                for (SkinType kind : values()) if (content.hasTag(kind.tag())) return kind;
+                return CLOTHING;
+            }
+            for (SkinType kind : new SkinType[]{CLASSIC, EYES, GLASSES, FACE, HAT}) {
+                if (kind.matches(content)) return kind;
+            }
+            for (SkinType kind : new SkinType[]{BACK, HAIR, CLOTHING}) {
+                if (content.hasTag(kind.tag())) return kind;
+            }
+            return CLOTHING;
+        }
     }
 
     public enum SortingMode {
@@ -1880,6 +2114,7 @@ public class SkinLibraryScreen extends Screen implements SkinListUpdateListener 
 
     public enum SubscriptionFilter {
         LIBRARY,
+        LOCAL,
         GLOBAL,
         LIKED,
         SUBMISSIONS;

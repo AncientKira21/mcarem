@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "##",
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:prismarine_bricks"
+  },
+  "result": {
+    "id": "mca:underwater_prismarine_door",
+    "count": 3
+  }
+}

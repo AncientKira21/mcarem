@@ -21,7 +21,8 @@ public final class CpaVillagerAnimations {
 
     public static void apply(VillagerEntityBaseModelMCA model,VillagerRenderState state) {
         if(!Config.getInstance().usePlayerAnimationsForVillagers || state.mcaAnimationId==null
-                || state.isBaby || state.isVillageDancing || state.isKidnapped || state.isCastingSpell
+                || state.isBaby || com.ancientkira.mca.client.render.VillagerVisuals.require(state).baby()
+                || state.isVillageDancing || state.isKidnapped || state.isCastingSpell
                 || state.panicAnimationProgress>0 || state.isUsingItem || state.mcaSwinging) return;
         if(!checked){checked=true;try{api=new Api();}catch(ReflectiveOperationException|LinkageError absent){
             api=null;MCA.LOGGER.warn("CPA villager bridge initialization failed: {}",absent.toString());

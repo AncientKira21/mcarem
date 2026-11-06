@@ -1,5 +1,6 @@
 package com.ancientkira.mca.network;
 
+import net.minecraft.network.chat.Component;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.MCAClient;
 import com.ancientkira.mca.client.book.Book;
@@ -30,6 +31,16 @@ import net.minecraft.world.level.storage.TagValueInput;
 public class ClientHandlerImpl implements ClientHandler {
     private final Minecraft client = Minecraft.getInstance();
 
+    @Override public void handleNativeSocial(com.ancientkira.mca.network.s2c.OpenNativeSocial message) {
+        if(client.level==null)return;
+        var entity=client.level.getEntity(message.entity());if(entity==null)return;
+        var profile=com.ancientkira.mca.entity.VillagerFactory.newVillager(client.level).withUUID(entity.getUUID())
+                .withName(entity.getName().getString()).withAge(message.data().getIntOr("NativeAge",0)).withPosition(entity).build();
+        profile.getTypeDataManager().load(profile,message.data());profile.setId(entity.getId());
+        net.minecraft.core.registries.BuiltInRegistries.VILLAGER_PROFESSION.get(net.minecraft.resources.Identifier.parse(message.data().getStringOr("NativeProfession","minecraft:none")))
+                .ifPresent(holder->profile.setProfession(holder.value()));
+        client.setScreen(new com.ancientkira.mca.client.gui.NativeInteractScreen(profile));
+    }
     @Override
     public void handleGuiRequest(OpenGuiRequest message) {
         Entity entity;
@@ -144,6 +155,7 @@ public class ClientHandlerImpl implements ClientHandler {
 
             Village village = new Village(message.getData(), null);
             gui.setVillage(village);
+            gui.setMedicalInsuranceDetails(message.getData().getListOrEmpty("medicalInsuranceDetails"));
             gui.setMedicalInsurance(message.getData().getStringOr("medicalInsurance", "none"));
             gui.setVillageData(message.rank(), message.reputation(), message.isVillage(), message.ids(), message.tasks());
         }
@@ -255,9 +267,10 @@ public class ClientHandlerImpl implements ClientHandler {
 
     @Override
     public void handleVillagerMessage(VillagerMessage message) {
-        MutableComponent full = message.prefix().copy().append(message.message());
+        Component spoken = message.zombieSpeech() ? Component.literal(com.ancientkira.mca.entity.ai.ZombieSpeech.garble(message.message().getString(), message.speechSeed())).withStyle(message.message().getStyle()) : message.message();
+        MutableComponent full = message.prefix().copy().append(spoken);
         client.getChatListener().handleSystemMessage(full, false);
-        SpeechManager.INSTANCE.onChatMessage(message.message(), message.uuid());
+        SpeechManager.INSTANCE.onChatMessage(spoken, message.uuid());
     }
 
     @Override

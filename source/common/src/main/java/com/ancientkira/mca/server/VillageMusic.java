@@ -30,12 +30,7 @@ public final class VillageMusic {
         @Override protected void start(net.minecraft.server.level.ServerLevel level, VillagerEntityMCA person, long time) { tick(level, person, time); }
         @Override protected boolean canStillUse(net.minecraft.server.level.ServerLevel level, VillagerEntityMCA person, long time) { return checkExtraStartConditions(level, person); }
         @Override protected void tick(net.minecraft.server.level.ServerLevel level, VillagerEntityMCA person, long time) {
-            MusicOrder order = ORDERS.get(person);
-            if (order == null) return;
-            if (order.dance()) {
-                person.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
-                holdStill(person);
-            } else walk(person, order.target());
+            enforceOrder(person);
         }
     }
     private final Village village;
@@ -48,6 +43,22 @@ public final class VillageMusic {
     public String getStartFailure(){return startFailure;}
     private boolean collected;
     private final Map<UUID, BlockPos> danceSpots = new HashMap<>();
+    private final Map<UUID, Integer> spotSearch = new HashMap<>();
+    private int pathBudget;
+    private static final List<BlockPos> OFFSETS = new ArrayList<>();
+    static {
+        for(int x=-12;x<=12;x++) for(int z=-12;z<=12;z++)
+            if(x*x+z*z>=4 && x*x+z*z<=144) OFFSETS.add(new BlockPos(x,0,z));
+        OFFSETS.sort(Comparator.comparingInt(pos -> pos.getX()*pos.getX()+pos.getZ()*pos.getZ()));
+    }
+    public static boolean dancing(VillagerEntityMCA person) {
+        MusicOrder order = ORDERS.get(person);
+        return order != null && order.dance() && order.expires() >= person.level().getGameTime() && available(person);
+    }
+    public static boolean attending(VillagerEntityMCA person) {
+        MusicOrder order = ORDERS.get(person);
+        return order != null && order.expires() >= person.level().getGameTime() && available(person);
+    }
     public VillageMusic(Village village) { this.village = village; }
     public static ItemStack defaultDisc() {
         return net.minecraft.core.registries.BuiltInRegistries.ITEM
@@ -135,15 +146,40 @@ public final class VillageMusic {
         return copy;
     }
     private static boolean available(VillagerEntityMCA person) {
-        return !InfirmaryCare.isPatient(person) && !ClericAid.isHelping(person) && !person.getHangoutState().getBooleanOr("Active", false)
-                && !person.getHangoutState().contains("Work") && !person.getHangoutState().contains("ReturnHome")
-                && person.isAlive() && !person.isKidnapped() && person.getAgeState() != com.ancientkira.mca.entity.ai.relationship.AgeState.BABY
-                && person.getVillagerBrain().getCurrentJob() == com.ancientkira.mca.entity.ai.Chore.NONE && !com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())
-                && person.getVillagerBrain().getMoveState() == MoveState.MOVE
+        return !person.isInWater() && !person.isInLava()
+                && person.level().getFluidState(person.blockPosition()).isEmpty()
+                && person.level().getFluidState(person.blockPosition().below()).isEmpty()
+                && !person.getBrain().isActive(com.ancientkira.mca.entity.ai.ActivitiesMCA.GRIEVE)
+                && !InfirmaryCare.isPatient(person) && !ClericAid.isHelping(person) && !FirefighterAid.isHelping(person) && !person.isNoAi()
+                && person.isAlive() && !person.isKidnapped()
+                && !com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession())
                 && !person.getVillagerBrain().isPanicking()
-                && !person.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET)
-                && !person.getBrain().hasMemoryValue(MemoryModuleType.INTERACTION_TARGET);
+                && !person.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET);
     }
+    public static void enforceOrder(VillagerEntityMCA person) {
+        MusicOrder order = ORDERS.get(person);
+        if (order == null || order.expires() < person.level().getGameTime()) return;
+        if (!available(person)) {
+            person.handleEntityEvent((byte)-125);
+            return; // Escape, combat, and treatment retain control; the dance spot is reserved.
+        }
+        if (order.dance()) {
+            person.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+            holdStill(person);
+            long now = person.level().getGameTime();
+            if (person.getAgeState() != com.ancientkira.mca.entity.ai.relationship.AgeState.BABY
+                    && com.ancientkira.mca.entity.ai.DanceMotion.style(person.getUUID(), now) == 3
+                    && Math.floorMod(now + person.getUUID().hashCode(), 40) == 0 && person.onGround()
+                    && !person.isInWater() && !person.isInLava()
+                    && !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(person.level(), person.blockPosition())
+                    && person.level().noCollision(person, person.getBoundingBox().move(0, .6, 0))) person.getJumpControl().jump();
+        } else {
+            person.handleEntityEvent((byte)-125);
+            if (person.isSleeping()) person.stopSleeping();
+            walk(person, order.target());
+        }
+    }
+
     private static void holdStill(VillagerEntityMCA person){
         person.getNavigation().stop();
         person.getMoveControl().setWantedPosition(person.getX(),person.getY(),person.getZ(),0);
@@ -153,39 +189,41 @@ public final class VillageMusic {
         person.setDeltaMovement(0, person.getDeltaMovement().y, 0);
     }
     private static void walk(VillagerEntityMCA person, BlockPos target) {
-        person.getBrain().setMemory(MemoryModuleType.WALK_TARGET, new WalkTarget(new BlockPosTracker(target), 0.6F, 1));
+        var previous = person.getBrain().getMemory(MemoryModuleType.WALK_TARGET);
+        if (previous.isEmpty() || !previous.get().getTarget().currentBlockPosition().equals(target))
+            person.getBrain().setMemory(MemoryModuleType.WALK_TARGET, new WalkTarget(new BlockPosTracker(target), 0.6F, 1));
     }
     private boolean safeDanceSpot(VillagerEntityMCA person, BlockPos spot) {
         var world = village.getWorld();
         return world.hasChunkAt(spot)
+                && world.getFluidState(spot).isEmpty() && world.getFluidState(spot.below()).isEmpty()
                 && com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(world, spot)
                 && com.ancientkira.mca.entity.ai.navigation.TerrainSafety.clear(world, spot)
                 && !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world, spot)
-                && world.noCollision(person, person.getBoundingBox().move(
+                && world.noBlockCollision(person, person.getBoundingBox().move(
                         spot.getX()+0.5-person.getX(), spot.getY()-person.getY(), spot.getZ()+0.5-person.getZ()));
     }
 
     private BlockPos findDanceSpot(VillagerEntityMCA person) {
-        List<BlockPos> choices = new ArrayList<>();
-        for (int x=-6;x<=6;x+=2) for (int z=-6;z<=6;z+=2) {
-            if (x*x+z*z < 4 || x*x+z*z > 36) continue;
+        int cursor = spotSearch.getOrDefault(person.getUUID(), 0);
+        for (int attempt=0; attempt<16 && pathBudget>0; attempt++) {
+            BlockPos offset = OFFSETS.get(Math.floorMod(cursor++, OFFSETS.size()));
+            spotSearch.put(person.getUUID(), cursor);
             for (int dy : new int[]{0,1,-1,2,-2}) {
-                BlockPos spot=jukebox.offset(x,dy,z);
+                BlockPos spot = jukebox.offset(offset.getX(),dy,offset.getZ());
                 if (danceSpots.containsValue(spot) || !safeDanceSpot(person,spot)) continue;
-                choices.add(spot); break;
+                pathBudget--;
+                var path=person.getNavigation().createPath(spot,1);
+                if (path != null && path.canReach()) return spot;
+                break;
             }
-        }
-        choices.sort(Comparator.comparingDouble(spot -> person.distanceToSqr(spot.getX()+0.5,spot.getY(),spot.getZ()+0.5)));
-        for (BlockPos spot : choices.stream().limit(8).toList()) {
-            var path=person.getNavigation().createPath(spot,1);
-            if (path != null && path.canReach()) return spot;
         }
         return null;
     }
 
     public void tick(long now) {
         var world = village.getWorld();
-        if (world == null || now % 20 != 0) return;
+        if (world == null || Math.floorMod(now + village.getId(),20) != 0) return;
         if (courier != null) {
             if (!(world.getEntity(courier) instanceof VillagerEntityMCA person) || !available(person) || now > deadline) {
                 courier = null; return;
@@ -208,7 +246,7 @@ public final class VillageMusic {
         }
         // Notice manually played DiscCord music too, when no store owns the music selection.
         if ((jukebox==null || !(world.getBlockEntity(jukebox) instanceof JukeboxBlockEntity current)
-                || current.getTheItem().isEmpty()) && now%100==0
+                || current.getTheItem().isEmpty()) && Math.floorMod(now + village.getId(),100)==0
                 && village.getBuildingsOfType("music_store").findAny().isEmpty()) {
             search: for(var center:village.getBuildingsOfType("town_center").toList())
                 for(BlockPos pos:BlockPos.betweenClosed(center.getSourceBlock().offset(-8,-2,-8),center.getSourceBlock().offset(8,2,8)))
@@ -227,11 +265,17 @@ public final class VillageMusic {
             }
             List<VillagerEntityMCA> guests = world.getEntitiesOfClass(VillagerEntityMCA.class,
                     searchBox,
-                    person -> available(person) && (village.isWithinBorder(person)
+                    person -> person.isAlive() && !person.isRemoved() && (village.isWithinBorder(person)
                             || person.getResidency().getHomeVillage().map(home -> home.getId() == village.getId()).orElse(false)));
             Set<UUID> present = guests.stream().map(VillagerEntityMCA::getUUID).collect(java.util.stream.Collectors.toSet());
             danceSpots.keySet().retainAll(present);
+            spotSearch.keySet().retainAll(present);
+            pathBudget = 4;
             for (VillagerEntityMCA person : guests) {
+                if (!available(person)) {
+                    if (ORDERS.remove(person) != null) world.broadcastEntityEvent(person, (byte)-125);
+                    continue;
+                }
                 BlockPos spot = danceSpots.get(person.getUUID());
                 if (spot == null || !safeDanceSpot(person, spot)) {
                     danceSpots.remove(person.getUUID());
@@ -244,18 +288,27 @@ public final class VillageMusic {
                 if (arrived) {
                     person.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
                     holdStill(person);
-                    if (now % 60 == 0) {
+                    if (Math.floorMod(now + village.getId(),60) == 0) {
                         person.getVillagerBrain().modifyMoodValue(1);
                     }
+                    person.handleEntityEvent((byte)-124);
                     world.broadcastEntityEvent(person, (byte)-124);
-                } else walk(person, spot);
+                } else {
+                    person.handleEntityEvent((byte)-125); world.broadcastEntityEvent(person, (byte)-125);
+                    walk(person, spot);
+                }
+            }
+            for (var golem : world.getEntitiesOfClass(net.minecraft.world.entity.animal.golem.IronGolem.class, searchBox,
+                    g -> g.isAlive() && !GolemAllies.raider(g) && GolemAllies.home(g).filter(v -> v.getId()==village.getId()).isPresent())) {
+                if (pathBudget<=0 && !GolemDance.assigned(golem)) continue;
+                if (GolemDance.invite(world,golem,jukebox,now)) pathBudget--;
             }
             return;
         }
         danceSpots.clear();
         long day = Math.floorDiv(world.getOverworldClockTime(), 24000);
         long time = Math.floorMod(world.getOverworldClockTime(), 24000);
-        if (time < 6000 || time >= 11000 || day == lastDay || now % 200 != 0) return;
+        if (time < 6000 || time >= 11000 || day == lastDay || Math.floorMod(now + village.getId(),200) != 0) return;
         List<BlockPos> squares = village.getBuildingsOfType("town_center")
                 .flatMap(b -> b.getBlocks().values().stream()).flatMap(Collection::stream).toList();
         for (BlockPos center : squares) {

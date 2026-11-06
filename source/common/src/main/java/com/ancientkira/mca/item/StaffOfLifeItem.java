@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 
 public class StaffOfLifeItem extends TooltippedItem {
     public StaffOfLifeItem(Item.Properties properties) {
-        super(properties);
+        super(properties.repairable(net.minecraft.world.item.Items.NETHER_STAR));
     }
 
     @Override

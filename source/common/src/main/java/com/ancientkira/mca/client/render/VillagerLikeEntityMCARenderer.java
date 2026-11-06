@@ -56,7 +56,8 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
         } else {
             mesh.getRoot().retainExactParts(armorParts(slot));
         }
-        return new VillagerEntityBaseModelMCA(LayerDefinition.create(mesh, 64, 32).bakeRoot());
+        return new VillagerEntityBaseModelMCA(LayerDefinition.create(mesh, 64, 32).bakeRoot())
+                .receiveDeferredAnimationPose();
     }
 
     private Set<String> armorParts(EquipmentSlot slot) {
@@ -75,6 +76,7 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
         InteractionHand hand = arm == mob.getMainArm() ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
         if (mob.isUsingItem() && mob.getUsedItemHand() == hand) {
             ItemUseAnimation anim = itemStack.getUseAnimation();
+            if(itemStack.is(net.minecraft.world.item.Items.TRIDENT))return HumanoidModel.ArmPose.THROW_TRIDENT;
             if (anim == ItemUseAnimation.BLOCK) {
                 return HumanoidModel.ArmPose.BLOCK;
             }
@@ -121,20 +123,36 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
         state.mcaInWater = entity.isInWater();
         state.mcaFalling = !entity.onGround() && !entity.isInWater() && !entity.isInLava() && entity.getDeltaMovement().y < -0.1;
         state.mcaSleeping = entity.isSleeping();
-        if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA patient && patient.isRestingInInfirmary()) {
+        state.mcaHurtFace = entity.hurtTime > 0;
+        state.mcaScaredFace = entity.getVillagerBrain().isPanicking();
+        if (entity.isSleeping() || (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA patient && patient.isRestingInInfirmary()
+                && entity.level().getBlockState(entity.blockPosition()).is(net.minecraft.tags.BlockTags.BEDS))) {
             state.pose = net.minecraft.world.entity.Pose.SLEEPING;
+            state.mcaSleeping = true;
             var bed = entity.level().getBlockState(entity.blockPosition());
-            state.bedOrientation = bed.getBlock() instanceof net.minecraft.world.level.block.BedBlock
-                    ? bed.getValue(net.minecraft.world.level.block.BedBlock.FACING) : entity.getDirection();
+            if (com.ancientkira.mca.server.BedCompatibility.isBed(bed)) {
+                state.bedOrientation = bed.getValue(net.minecraft.world.level.block.BedBlock.FACING);
+            } else if (entity.getSleepingPos().isPresent()) {
+                var sleepBed = entity.level().getBlockState(entity.getSleepingPos().get());
+                if (com.ancientkira.mca.server.BedCompatibility.isBed(sleepBed)) {
+                    state.bedOrientation = sleepBed.getValue(net.minecraft.world.level.block.BedBlock.FACING);
+                }
+            }
+            if (state.bedOrientation == null) {
+                state.bedOrientation = entity.getDirection();
+            }
         }
         state.mcaSwinging = entity.getAttackAnim(partialTicks) > 0;
         if (state.nameTag != null) {
             state.nameTag = net.minecraft.network.chat.Component.literal(
                     com.ancientkira.mca.entity.FamilyNames.nameTag(state.nameTag.getString(),
-                            entity.getCustomName() == null ? null : entity.getCustomName().getString()))
+                            entity.getCustomName() == null ? null : entity.getCustomName().getString(),
+                            com.ancientkira.mca.entity.FamilyNames.firstName(entity)))
                     .withStyle(state.nameTag.getStyle());
         }
         state.isVillageDancing = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA dancer && dancer.isVillageDancing();
+        state.danceStyle = com.ancientkira.mca.entity.ai.DanceMotion.style(entity.getUUID(), entity.level().getGameTime());
+        state.dancePhase = com.ancientkira.mca.entity.ai.DanceMotion.phase(entity.getUUID());
         state.isCastingSpell = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isCastingSpell();
         state.isKidnapped = entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA captive && captive.isKidnapped();
         VillagerStateHolder holder = VillagerStateHolder.require(state);
@@ -169,6 +187,7 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
         return villager.getCustomName() != null
                && !(Minecraft.getInstance().screen instanceof VillagerEditorScreen)
                && player != null
+               && !Minecraft.getInstance().options.hideGui
                && Config.getInstance().showNameTags
                && player.distanceToSqr(villager) < Math.pow(Config.getInstance().nameTagDistance, 2.0f)
                && !villager.isInvisibleTo(player);
@@ -187,6 +206,7 @@ public class VillagerLikeEntityMCARenderer<T extends Mob & VillagerLike<T>>
 
     @Override
     protected boolean isShaking(VillagerRenderState state) {
-        return VillagerVisuals.require(state).infectionProgress() > Infectable.FEVER_THRESHOLD;
+        var visuals = VillagerVisuals.require(state);
+        return Math.max(visuals.infectionProgress(), visuals.sicknessProgress()) > Infectable.FEVER_THRESHOLD;
     }
 }

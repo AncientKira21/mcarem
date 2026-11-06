@@ -29,6 +29,7 @@ public class VillageMarriageManager {
         List<VillagerEntityMCA> availableVillagers = allVillagers.stream()
                 .filter(v -> !v.isBaby())
                 .filter(v -> !v.getRelationships().isMarried())
+                .filter(v -> !v.getRelationships().getFamilyEntry().mourningSpouse())
                 .filter(v -> !v.getRelationships().isEngaged())
                 .filter(v -> !v.getRelationships().isPromised())
                 .collect(Collectors.toList());

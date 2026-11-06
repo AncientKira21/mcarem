@@ -15,6 +15,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 
@@ -33,6 +35,8 @@ public class Building {
 
     private String type = "building";
     private boolean isTypeForced = false;
+    private boolean generatedOutpost;
+    private boolean generatedInfirmary;
 
     private int size;
     private int pos0X, pos0Y, pos0Z;
@@ -94,6 +98,8 @@ public class Building {
         }
 
         isTypeForced = v.getBoolean("isTypeForced").orElse(false);
+        generatedOutpost = v.getBooleanOr("generatedOutpost", false);
+        generatedInfirmary = v.getBooleanOr("generatedInfirmary", false);
         type = v.getString("type").orElse(type);
 
         strictScan = v.getBoolean("strictScan").orElse(false);
@@ -123,6 +129,8 @@ public class Building {
         v.putInt("posY", posY);
         v.putInt("posZ", posZ);
         v.putBoolean("isTypeForced", isTypeForced);
+        v.putBoolean("generatedOutpost", generatedOutpost);
+        v.putBoolean("generatedInfirmary", generatedInfirmary);
         v.putString("type", type);
         v.putBoolean("strictScan", strictScan);
 
@@ -263,7 +271,13 @@ public class Building {
                         done.add(n);
 
                         //if not solid, continue
-                        if (state.isAir()) {
+                        // Waterlogged blocks retain their solid/door boundaries. Only actual
+                        // water cells can be interior, and they need the same roof as air.
+                        if (state.getBlock() instanceof DoorBlock) {
+                            if (!strictScan) queue.add(n);
+                            hasDoor = true;
+                        } else if (state.isAir() || state.getBlock() instanceof LiquidBlock
+                                && state.getFluidState().is(FluidTags.WATER)) {
                             if (!roofCache.containsKey(n)) {
                                 BlockPos n2 = n;
                                 int maxScanHeight = 16;
@@ -273,7 +287,7 @@ public class Building {
 
                                     //found valid block
                                     BlockState block = world.getBlockState(n2);
-                                    if (!block.isAir() || roofCache.containsKey(n2)) {
+                                    if ((!block.isAir() && !(block.getBlock() instanceof LiquidBlock)) || roofCache.containsKey(n2)) {
                                         if (!(roofCache.containsKey(n2) && !roofCache.get(n2)) && !block.is(BlockTags.LEAVES)) {
                                             for (int i2 = i; i2 >= 0; i2--) {
                                                 n2 = n2.below();
@@ -288,16 +302,6 @@ public class Building {
                                 interiorSize++;
                                 queue.add(n);
                             }
-                        } else if (!state.getFluidState().isEmpty()) {
-                            // Fluid blocks are treated as passable interior.
-                            interiorSize++;
-                            queue.add(n);
-                        } else if (state.getBlock() instanceof DoorBlock) {
-                            //skip door and start a new room
-                            if (!strictScan) {
-                                queue.add(n);
-                            }
-                            hasDoor = true;
                         }
                     }
                 }
@@ -340,10 +344,15 @@ public class Building {
                 BlockState blockState = world.getBlockState(p);
                 Block block = blockState.getBlock();
                 if (isBuildingBlock(blockState)) {
-                    if (block instanceof BedBlock) {
+                    if (com.ancientkira.mca.server.BedCompatibility.isBed(blockState)) {
                         // TODO: look for better solution for 7.4.0
                         if (blockState.getValue(BedBlock.PART) == BedPart.HEAD) {
                             addBlock(block, p);
+                            if (world instanceof net.minecraft.server.level.ServerLevel serverLevel
+                                    && serverLevel.getPoiManager().getType(p).isEmpty()) {
+                                serverLevel.getPoiManager().add(p, net.minecraft.core.registries.BuiltInRegistries.POINT_OF_INTEREST_TYPE.getOrThrow(
+                                        net.minecraft.world.entity.ai.village.poi.PoiTypes.HOME));
+                            }
                         }
                     } else {
                         addBlock(block, p);
@@ -362,8 +371,28 @@ public class Building {
 
             size = interiorSize;
 
+            if (world instanceof net.minecraft.server.level.ServerLevel serverWorld) {
+                generatedOutpost |= !serverWorld.getEntitiesOfClass(net.minecraft.world.entity.Marker.class,
+                        new net.minecraft.world.phys.AABB(pos0X, pos0Y, pos0Z, pos1X + 1, pos1Y + 1, pos1Z + 1),
+                        marker -> marker.entityTags().contains("mca_village_outpost")).isEmpty();
+                if (generatedOutpost && !isTypeForced) {
+                    setType("pillager_outpost");
+                    setTypeForced(true);
+                }
+
+                generatedInfirmary |= !serverWorld.getEntitiesOfClass(net.minecraft.world.entity.Marker.class,
+                        new net.minecraft.world.phys.AABB(pos0X, pos0Y, pos0Z, pos1X + 1, pos1Y + 1, pos1Z + 1),
+                        marker -> marker.entityTags().contains("mca_village_infirmary")).isEmpty();
+                if (generatedInfirmary && !isTypeForced) {
+                    setType("infirmary");
+                    setTypeForced(true);
+                }
+            }
             //determine type
             if (isTypeForced()) {
+                // The house/outpost toggle is an explicit choice, including before beds are added.
+                if (generatedOutpost && type.equals("house")) return validationResult.SUCCESS;
+                if (generatedInfirmary && type.equals("infirmary")) return validationResult.SUCCESS;
                 return matchesType(getBuildingType()) ? validationResult.SUCCESS : validationResult.INVALID_TYPE;
             }
             return determineType() ? validationResult.SUCCESS : validationResult.INVALID_TYPE;
@@ -422,6 +451,12 @@ public class Building {
         type = matches.getFirst().name();
         return true;
     }
+
+    public boolean isGeneratedOutpost() { return generatedOutpost; }
+    public void setGeneratedOutpost(boolean generated) { generatedOutpost = generated; }
+
+    public boolean isGeneratedInfirmary() { return generatedInfirmary; }
+    public void setGeneratedInfirmary(boolean generated) { generatedInfirmary = generated; }
 
     public String getType() {
         return type;

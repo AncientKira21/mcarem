@@ -4,6 +4,6 @@
   "priority": 1,
   "blocks": {
     "minecraft:cake": 1,
-    "minecraft:smoker": 1
+    "#mca:bakery_workstations": 1
   }
 }

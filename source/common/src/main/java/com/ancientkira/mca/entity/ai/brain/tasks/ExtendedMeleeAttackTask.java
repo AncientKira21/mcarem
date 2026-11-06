@@ -13,17 +13,15 @@ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.memory.MemoryStatus;
 
 public class ExtendedMeleeAttackTask extends Behavior<Mob> {
-    private final float range;
     private final int interval;
     private final MemoryModuleType<? extends LivingEntity> target;
 
-    public ExtendedMeleeAttackTask(int interval, float range) {
-        this(interval, range, MemoryModuleType.ATTACK_TARGET);
+    public ExtendedMeleeAttackTask(int interval) {
+        this(interval, MemoryModuleType.ATTACK_TARGET);
     }
 
-    public ExtendedMeleeAttackTask(int interval, float range, MemoryModuleType<? extends LivingEntity> target) {
+    public ExtendedMeleeAttackTask(int interval, MemoryModuleType<? extends LivingEntity> target) {
         super(ImmutableMap.of(MemoryModuleType.LOOK_TARGET, MemoryStatus.REGISTERED, target, MemoryStatus.VALUE_PRESENT, MemoryModuleType.ATTACK_COOLING_DOWN, MemoryStatus.VALUE_ABSENT));
-        this.range = range;
         this.interval = interval;
         this.target = target;
     }
@@ -31,15 +29,16 @@ public class ExtendedMeleeAttackTask extends Behavior<Mob> {
     @Override
     protected boolean checkExtraStartConditions(ServerLevel world, Mob attacker) {
         LivingEntity target = getTarget(attacker);
-        return BehaviorUtils.canSee(attacker, target) && withinRange(attacker, target);
+        return com.ancientkira.mca.entity.ai.MeleeAttack.canHit(attacker, target);
     }
 
     @Override
     protected void start(ServerLevel world, Mob mobEntity, long l) {
+        LivingEntity livingEntity = getTarget(mobEntity);
+        if (!com.ancientkira.mca.entity.ai.MeleeAttack.canHit(mobEntity, livingEntity)) return;
         if (mobEntity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person && person.isUsingCombatShield()) {
             person.stopUsingItem();
         }
-        LivingEntity livingEntity = getTarget(mobEntity);
         BehaviorUtils.lookAtEntity(mobEntity, livingEntity);
         if (mobEntity instanceof VillagerLike<?> villager) {
             mobEntity.swing(villager.getDominantHand());
@@ -55,12 +54,6 @@ public class ExtendedMeleeAttackTask extends Behavior<Mob> {
                 messenger.sendChatToAllAround("villager.kill");
             }
         }
-    }
-
-    private boolean withinRange(LivingEntity attacker, LivingEntity target) {
-        double d = attacker.distanceToSqr(target.getX(), target.getY(), target.getZ());
-        double r = attacker.getBbWidth() + target.getBbWidth() + range;
-        return d <= r * r;
     }
 
     private LivingEntity getTarget(Mob mobEntity) {

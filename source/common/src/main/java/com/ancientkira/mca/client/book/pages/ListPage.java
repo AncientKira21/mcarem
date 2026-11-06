@@ -38,5 +38,24 @@ public abstract class ListPage extends Page {
         }
     }
 
+    protected Component writtenTitle() { return null; }
+
+    @Override
+    public List<Component> writtenPages(boolean dynamic) { return writtenPages(text); }
+
+    protected List<Component> writtenPages(List<Component> entries) {
+        List<Component> pages=new java.util.ArrayList<>();
+        int size=Math.max(1,getEntriesPerPage());
+        for(int start=0;start<Math.max(1,entries.size());start+=size){
+            var page=Component.empty();Component title=writtenTitle();
+            if(title!=null)page.append(title.copy().withStyle(net.minecraft.ChatFormatting.BLACK)).append("\n\n");
+            for(int i=start;i<Math.min(entries.size(),start+size);i++){
+                if(i>start)page.append("\n");page.append(entries.get(i).copy());
+            }
+            pages.add(page);
+        }
+        return pages;
+    }
+
     abstract int getEntriesPerPage();
 }

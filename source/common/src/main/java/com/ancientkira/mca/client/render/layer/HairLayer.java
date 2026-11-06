@@ -48,7 +48,7 @@ public class HairLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
 
             Identifier texture = getTexture(identifier);
             if (canUse(texture)) {
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, color, texture, overlay, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, (SkinCache.isUntinted(identifier) || visuals.untintedHairTextures().lines().anyMatch(identifier::equals))?0xFFFFFFFF:color, texture, overlay, visible, glowing, state);
             }
 
             Identifier overlayTexture = getOverlayTexture(identifier);

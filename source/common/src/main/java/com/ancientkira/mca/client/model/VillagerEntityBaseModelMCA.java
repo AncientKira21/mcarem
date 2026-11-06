@@ -75,32 +75,12 @@ public class VillagerEntityBaseModelMCA extends HumanoidModel<VillagerRenderStat
             state.yRot = originalYRot + (float) Math.sin(visuals.tickCount() / 2.0F);
         }
 
-        if (state.isBaby) {
-            state.walkAnimationPos /= 3.0F;
-        }
-
-        state.walkAnimationPos /= 0.2F + visuals.rawVerticalScaleFactor();
         super.setupAnim(state);
 
         state.walkAnimationPos = originalWalkAnimationPos;
         state.walkAnimationSpeed = originalWalkAnimationSpeed;
         state.yRot = originalYRot;
         state.isPassenger = originalIsPassenger;
-
-        float panicAnimationProgress = state.isVisuallySwimming ? 0 : state.panicAnimationProgress;
-        if (panicAnimationProgress > 0.0F) {
-            float toRadians = (float) Math.PI / 180;
-
-            float armRaise = (((float) Math.sin(state.ageInTicks / 5) * 30 - 180)
-                              + ((float) Math.sin(state.ageInTicks / 3) * 3))
-                              * toRadians;
-            float waveSideways = ((float) Math.sin(state.ageInTicks / 2) * 12 - 17) * toRadians;
-
-            this.leftArm.xRot = Mth.lerp(panicAnimationProgress, this.leftArm.xRot, armRaise);
-            this.leftArm.zRot = Mth.lerp(panicAnimationProgress, this.leftArm.zRot, -waveSideways);
-            this.rightArm.xRot = Mth.lerp(panicAnimationProgress, this.rightArm.xRot, -armRaise);
-            this.rightArm.zRot = Mth.lerp(panicAnimationProgress, this.rightArm.zRot, waveSideways);
-        }
 
         if (state.isCastingSpell) {
             // Match the vanilla evoker's raised, gently waving casting arms.
@@ -117,18 +97,46 @@ public class VillagerEntityBaseModelMCA extends HumanoidModel<VillagerRenderStat
         if (receivesDeferredAnimationPose && state instanceof VillagerStateHolder holder && holder.mca$getHumanoidModelPose() != null) {
             holder.mca$getHumanoidModelPose().applyTo(this);
         }
-        if (state.isKidnapped) {
-            // Reapply the regular panic animation after the deferred humanoid pose.
-            float toRadians = (float) Math.PI / 180;
-            float armRaise = (((float) Math.sin(state.ageInTicks / 5) * 30 - 180)
-                    + ((float) Math.sin(state.ageInTicks / 3) * 3)) * toRadians;
-            float waveSideways = ((float) Math.sin(state.ageInTicks / 2) * 12 - 17) * toRadians;
-            leftArm.xRot = armRaise;
-            rightArm.xRot = -armRaise;
-            leftArm.yRot = rightArm.yRot = 0.0F;
-            leftArm.zRot = -waveSideways;
-            rightArm.zRot = waveSideways;
+        applyPanicPose(state);
+        applyBabySitting(state);
+        if(visuals.hugging() && !visuals.sleeping()){
+            rightArm.xRot=leftArm.xRot=-.95F;
+            rightArm.yRot=-.65F;leftArm.yRot=.65F;
+            rightArm.zRot=.20F;leftArm.zRot=-.20F;
         }
+    }
+
+    /** Apply after pack/deferred poses so fear cannot be replaced by an idle animation. */
+    public void applyPanicPose(VillagerRenderState state) {
+        if (state.isVisuallySwimming || state.hasPose(net.minecraft.world.entity.Pose.SLEEPING)
+                || state.isCastingSpell && !state.isKidnapped) return;
+        float progress = state.isKidnapped ? 1.0F : Mth.clamp(state.panicAnimationProgress, 0.0F, 1.0F);
+        if (progress <= 0) return;
+        float radians = (float) Math.PI / 180;
+        float raise = (((float) Math.sin(state.ageInTicks / 5) * 30 - 180)
+                + (float) Math.sin(state.ageInTicks / 3) * 3) * radians * progress;
+        float wave = ((float) Math.sin(state.ageInTicks / 2) * 12 - 17) * radians * progress;
+        leftArm.xRot = raise;
+        rightArm.xRot = -raise;
+        leftArm.yRot = rightArm.yRot = 0;
+        leftArm.zRot = -wave;
+        rightArm.zRot = wave;
+    }
+
+    /** Reapply the baby leg pose after external and deferred animations, including armor passes. */
+    public void applyBabySitting(VillagerRenderState state) {
+        if (!VillagerVisuals.require(state).baby() || state.hasPose(net.minecraft.world.entity.Pose.SLEEPING)
+                || state.isVisuallySwimming) return;
+        rightLeg.xRot = leftLeg.xRot = -1.4137167F;
+        rightLeg.yRot = 0.31415927F;
+        leftLeg.yRot = -0.31415927F;
+        rightLeg.zRot = 0.07853982F;
+        leftLeg.zRot = -0.07853982F;
+    }
+
+    protected boolean hasDeferredPose(VillagerRenderState state) {
+        return receivesDeferredAnimationPose && state instanceof VillagerStateHolder holder
+                && holder.mca$getHumanoidModelPose() != null;
     }
 
     public VillagerEntityBaseModelMCA receiveDeferredAnimationPose() {

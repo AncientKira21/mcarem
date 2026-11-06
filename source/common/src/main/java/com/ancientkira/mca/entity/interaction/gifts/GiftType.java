@@ -166,6 +166,8 @@ public class GiftType {
 
         analysis.add("base", base);
 
+        FavoriteGiftBonus.addTo(analysis, recipient, stack);
+
         // condition chance
         for (GiftPredicate c : conditions) {
             int val = c.getSatisfactionFor(recipient, stack, player);

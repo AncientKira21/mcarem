@@ -11,6 +11,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Raid.class)
 public abstract class MixinRaid {
+    @Inject(method = "findRandomSpawnPos", at = @At("HEAD"), cancellable = true)
+    private void mca$underwaterWaveSpawn(ServerLevel world, int maxTries,
+            CallbackInfoReturnable<net.minecraft.core.BlockPos> cir) {
+        Raid raid = (Raid) (Object) this;
+        var village = com.ancientkira.mca.server.world.data.VillageManager.get(world)
+                .findNearestVillage(raid.getCenter(), 4);
+        if (village.isPresent() && village.get().isUnderwater()) {
+            cir.setReturnValue(com.ancientkira.mca.server.UnderwaterVillageSupport.findRaidSpawn(world, raid.getCenter(), maxTries));
+        }
+    }
+
     @com.llamalad7.mixinextras.injector.ModifyExpressionValue(method = "tick", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/server/level/ServerLevel;isVillage(Lnet/minecraft/core/BlockPos;)Z"))
     private boolean mca$recognizeRegisteredVillage(boolean vanilla,

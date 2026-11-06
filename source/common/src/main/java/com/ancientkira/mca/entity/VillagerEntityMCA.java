@@ -128,6 +128,10 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     public void setRestingInInfirmary(boolean resting) { entityData.set(INFIRMARY_REST, resting); }
     private static final EntityDataAccessor<Boolean> CAPTIVE = SynchedEntityData.defineId(VillagerEntityMCA.class, EntityDataSerializers.BOOLEAN);
     private long shieldDisabledUntil;
+    private CompoundTag waterClutchState = new CompoundTag();
+    private CompoundTag unseenDeaths = new CompoundTag();
+    public CompoundTag getUnseenDeaths() { return unseenDeaths; }
+    public CompoundTag getWaterClutchState() { return waterClutchState; }
     private net.minecraft.nbt.CompoundTag portalHomeState = new net.minecraft.nbt.CompoundTag();
     public net.minecraft.nbt.CompoundTag getPortalHomeState() { return portalHomeState; }
     private boolean armorRemovedByOrder;
@@ -375,11 +379,16 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
         setAgeState(AgeState.byCurrentAge(getAge()));
 
+        if (spawnType == EntitySpawnReason.EVENT || getProfession() == ProfessionsMCA.ADVENTURER || getProfession() == ProfessionsMCA.WANDERING_TRADER) {
+            return data;
+        }
+
         FamilyTreeNode entry = getRelationships().getFamilyEntry();
         if (!FamilyTreeNode.isValid(entry.father()) && !FamilyTreeNode.isValid(entry.mother())) {
             FamilyTree tree = FamilyTree.get(level.getLevel());
-            FamilyTreeNode father = tree.getOrCreate(UUID.randomUUID(), FamilyNames.fullName(Names.pickCitizenName(Gender.MALE), FamilyNames.lastName(entry.getName())), Gender.MALE);
-            FamilyTreeNode mother = tree.getOrCreate(UUID.randomUUID(), FamilyNames.fullName(Names.pickCitizenName(Gender.FEMALE), FamilyNames.lastName(entry.getName())), Gender.FEMALE);
+            String parentNameRegion = Names.getCitizenNation(this);
+            FamilyTreeNode father = tree.getOrCreate(UUID.randomUUID(), FamilyNames.fullName(Names.pickCitizenNameInRegion(Gender.MALE, parentNameRegion), FamilyNames.lastName(entry.getName())), Gender.MALE);
+            FamilyTreeNode mother = tree.getOrCreate(UUID.randomUUID(), FamilyNames.fullName(Names.pickCitizenNameInRegion(Gender.FEMALE, parentNameRegion), FamilyNames.lastName(entry.getName())), Gender.FEMALE);
             father.setDeceased(true);
             mother.setDeceased(true);
             entry.setFather(father);
@@ -413,7 +422,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             forceRandomizeClothes();
             offers = null;
         }
-        refreshBrain((ServerLevel) level());
+        if(level() instanceof ServerLevel world)refreshBrain(world);
     }
 
     @Override
@@ -427,12 +436,14 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean isProfessionImportant() {
-        return ProfessionsMCA.IS_IMPORTANT.contains(getProfessionKey());
+        return getVillagerData().profession().is(VillagerProfession.NITWIT) || ProfessionsMCA.IS_IMPORTANT.contains(getProfessionKey());
     }
 
     @Override
     public boolean requiresHome() {
-        return (isPeacefulRaider() || !ProfessionsMCA.NEEDS_NO_HOME.contains(getProfessionKey())) && getDespawnDelay() <= 0;
+        boolean forcedHome = getBrain() != null && getBrain().hasMemoryValue(MemoryModuleTypeMCA.FORCED_HOME);
+        return (isPeacefulRaider() || forcedHome
+                || !ProfessionsMCA.NEEDS_NO_HOME.contains(getProfessionKey())) && getDespawnDelay() <= 0;
     }
 
     @Override
@@ -478,7 +489,10 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean doHurtTarget(ServerLevel level, Entity target) {
-        if (getAgeState() == AgeState.BABY || target == this || target.getUUID().equals(getUUID())) return false;
+        if (!(target instanceof LivingEntity victim)
+                || !com.ancientkira.mca.entity.ai.MeleeAttack.canHit(this, victim)) return false;
+        if (getAgeState() == AgeState.BABY || target == this || target.getUUID().equals(getUUID())
+                || target instanceof LivingEntity living && !com.ancientkira.mca.entity.ai.GuardPerception.canLocate(this,living)) return false;
         boolean hurt = super.doHurtTarget(level, target);
         if (hurt) {
             attackedEntity(target);
@@ -619,7 +633,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     private void tickCombatShield() {
         if(getHealth()<=6.0F)prepareTotem();
         net.minecraft.world.entity.monster.Creeper creeper = level().getEntitiesOfClass(net.minecraft.world.entity.monster.Creeper.class,
-                        getBoundingBox().inflate(10), c -> c.isAlive() && (c.isIgnited() || c.getSwelling(0.0F) > 0.0F) && hasLineOfSight(c))
+                        getBoundingBox().inflate(10), c -> com.ancientkira.mca.entity.ai.CreeperThreat.explodingNear(c, this) && hasLineOfSight(c))
                 .stream().min(java.util.Comparator.comparingDouble(this::distanceToSqr)).orElse(null);
         boolean equipmentThreat=creeper != null
                 || com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isInDanger(this)
@@ -678,6 +692,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     private void prepareShield(){
+        if (isGuard() && !getVillagerBrain().getArmorWear()
+                && !com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.isOnDuty(this)) return;
         if(armorRemovedByOrder || isNoAi() || isKidnapped() || isUsingCombatShield()
                 || getMainHandItem().has(DataComponents.BLOCKS_ATTACKS) || getOffhandItem().has(DataComponents.BLOCKS_ATTACKS))return;
         if(getOffhandItem().has(DataComponents.DEATH_PROTECTION))return;
@@ -825,7 +841,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public boolean hurtServer(ServerLevel level, DamageSource source, float damageAmount) {
-        if (isKidnapped() || source.getEntity() == this) return false;
+        if (!isAlive() || isRemoved() || com.ancientkira.mca.server.VillageWarfare.knockedOut(this) || isKidnapped() || source.getEntity() == this) return false;
         // no baby squishes
         if (getVehicle() instanceof Player) {
             return super.hurtServer(level, source, 0.0f);
@@ -869,11 +885,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             }
 
             //infect the villager
-            if (source.getDirectEntity() instanceof Zombie
-                && getProfession() != ProfessionsMCA.GUARD
-                && Config.getInstance().enableInfection
-                && random.nextFloat() < Config.getInstance().zombieBiteInfectionChance
-                && random.nextFloat() > (getVillagerData().level() - 1) * Config.getInstance().infectionChanceDecreasePerLevel) {
+            if (source.getDirectEntity() instanceof Zombie && InfectionRules.roll(this)) {
                 setInfected(true);
                 sendChatToAllAround("villager.bitten");
                 MCA.LOGGER.info("{} has been infected", getName());
@@ -883,7 +895,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         Entity attacker = source.getEntity();
 
         // Golems pardon ordinary villagers, but must continue fighting raider professions.
-        if (attacker instanceof IronGolem golem && !ProfessionsMCA.isRaider(getProfession())) {
+        if (attacker instanceof IronGolem golem && !ProfessionsMCA.isRaider(getProfession())
+                && !com.ancientkira.mca.server.GolemAllies.enemy(golem, this)) {
             golem.stopBeingAngry();
             damageAmount *= 0.0f;
         }
@@ -929,7 +942,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
                                     v.getBrain().setMemory(MemoryModuleType.WALK_TARGET, new WalkTarget(new EntityTracker(livingEntity, false), 0.75F, 3));
                                 }
                                 if (bounty == 1 || bounty == maxWarning) {
-                                    v.sendChatMessage(player, bounty == 1 ? "villager.warning.first" : "villager.warning.last");
+                                    v.sendChatMessage(player, "villager.warning");
                                 }
                             }
                         }
@@ -1065,11 +1078,14 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     public boolean isKidnapped() { return level().isClientSide() ? entityData.get(CAPTIVE) : kidnappedUntil > 0; }
 
-    public boolean beginKidnapping(VillagerEntityMCA captor) {
+    public boolean beginKidnapping(Mob captor) {
         if (level().isClientSide() || isKidnapped() || !isAlive() || ProfessionsMCA.isRaider(getProfession())
                 || getAgeState() == AgeState.BABY
-                || !ProfessionsMCA.isRaider(captor.getProfession()) || captor.isPeacefulRaider()
-                || com.ancientkira.mca.server.RaiderSocial.isFamily(captor, this)) return false;
+                || captor.level() != level() || !captor.isAlive() || captor.isNoAi()) return false;
+        if (captor instanceof VillagerEntityMCA raider) {
+            if (!ProfessionsMCA.isRaider(raider.getProfession()) || raider.isPeacefulRaider()
+                    || com.ancientkira.mca.server.RaiderSocial.isFamily(raider, this)) return false;
+        } else if (!(captor instanceof net.minecraft.world.entity.monster.Ravager)) return false;
         com.ancientkira.mca.server.ClericAid.onCaptured(this);
         captivityState = new CompoundTag();
         captivityState.putString("OriginalProfession", getProfessionId().toString());
@@ -1264,36 +1280,42 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     public int getSmallBounty() {
-        return Objects.requireNonNull(getBrain().getMemoryInternal(MemoryModuleTypeMCA.SMALL_BOUNTY)).orElse(0);
+        Brain<?> b = getBrain();
+        return b == null ? 0 : b.getMemoryInternal(MemoryModuleTypeMCA.SMALL_BOUNTY).orElse(0);
     }
 
     public boolean isHitBy(ServerPlayer player) {
-        return Objects.requireNonNull(getBrain().getMemoryInternal(MemoryModuleTypeMCA.HIT_BY_PLAYER)).filter(v -> v == player).isPresent();
+        Brain<?> b = getBrain();
+        return b != null && b.getMemoryInternal(MemoryModuleTypeMCA.HIT_BY_PLAYER).filter(v -> v == player).isPresent();
     }
 
     private int getMaxWarnings(Player attacker) {
         return 2;
     }
 
+    private BlockPos lastBlindSlipBlock;
     private long nextPuddleSlip;
     private long nextPuddleCheck;
 
     private void tickPuddleSlip() {
         if (!(level() instanceof ServerLevel world) || !isAlive()) return;
         long now = world.getGameTime();
-        if (now < nextPuddleCheck) return;
+        boolean blind = hasEffect(MobEffects.BLINDNESS);
+        if (!blind && now < nextPuddleCheck) return;
         nextPuddleCheck = now + 20;
-        if (now < nextPuddleSlip || isKidnapped() || isSleeping() || isPassenger() || !onGround()
+        if (!blind && now < nextPuddleSlip || isKidnapped() || isSleeping() || isPassenger() || !onGround()
                 || isInWater() || isInLava() || getAgeState() == AgeState.BABY) return;
         // AI mobs use movement speeds rather than consistently setting the sprint flag.
         boolean running = isSprinting() || getSpeed() > getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED) * 0.75;
-        if (!running || getDeltaMovement().horizontalDistanceSqr() < 0.01) return;
+        if ((!blind && !running) || getDeltaMovement().horizontalDistanceSqr() < (blind ? 0.0001 : 0.01)) return;
         var feet = level().getBlockState(blockPosition());
         var floor = level().getBlockState(getBlockPosBelowThatAffectsMyMovement());
         var waterlogged = net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED;
         boolean wet = feet.hasProperty(waterlogged) && feet.getValue(waterlogged)
                 || floor.hasProperty(waterlogged) && floor.getValue(waterlogged);
-        if (!wet || getRandom().nextFloat() >= 0.05F) return;
+        if (!wet) { lastBlindSlipBlock = null; return; }
+        if (blind && blockPosition().equals(lastBlindSlipBlock) || !blind && getRandom().nextFloat() >= 0.05F) return;
+        if (blind) lastBlindSlipBlock = blockPosition().immutable();
         nextPuddleSlip = now + 200;
         // A stumble slows the villager; it must not launch them toward nearby hazards.
         setSprinting(false);
@@ -1307,15 +1329,47 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     @Override
+    protected void checkFallDamage(double downwardMotion,boolean onGround,net.minecraft.world.level.block.state.BlockState surface,BlockPos pos) {
+        com.ancientkira.mca.server.WaterBucketClutch.beforeLanding(this,onGround,downwardMotion);
+        super.checkFallDamage(downwardMotion,onGround,surface,pos);
+        if (onGround) com.ancientkira.mca.server.WaterBucketClutch.afterLanding(this);
+    }
+
+    @Override
     public void aiStep() {
         int oldAge = getAge();
         updateSwingTime();
+        if (!level().isClientSide()) {
+            var target = getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).orElse(null);
+            if (target != null && (!target.isAlive() || target.isRemoved() || target.level() != level()
+                    || !com.ancientkira.mca.entity.ai.GuardPerception.canLocate(this,target))) {
+                getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                getBrain().eraseMemory(MemoryModuleTypeMCA.NEAREST_GUARD_ENEMY);
+                getBrain().eraseMemory(MemoryModuleType.LOOK_TARGET);
+                getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+                getNavigation().stop();
+            }
+            if (getTarget() != null && (!getTarget().isAlive() || getTarget().isRemoved() || getTarget().level() != level()
+                    || !com.ancientkira.mca.entity.ai.GuardPerception.canLocate(this,getTarget())
+                    || (getTarget().isSleeping() && (getTarget() instanceof net.minecraft.world.entity.monster.zombie.Zombie || getTarget() instanceof ZombieVillagerEntityMCA))
+                    || (getTarget() instanceof ZombieVillagerEntityMCA z && com.ancientkira.mca.server.InfirmaryCare.isZombiePatient(z)))) {
+                setTarget(null);
+                getBrain().eraseMemory(MemoryModuleType.ATTACK_TARGET);
+                getBrain().eraseMemory(MemoryModuleTypeMCA.NEAREST_GUARD_ENEMY);
+            }
+        }
 
+        // Run before native travel, so water exists before the landing collision.
+        com.ancientkira.mca.server.WaterBucketClutch.tick(this);
         super.aiStep();
+        com.ancientkira.mca.server.PowerCoilCompatibility.tick(this);
+        com.ancientkira.mca.server.VillageWarfare.tickParticipant(this);
+        if (com.ancientkira.mca.server.VillageWarfare.knockedOut(this)) return;
         if (!level().isClientSide() && tickCount % 20 == 0) {
             FamilyNames.applyPendingSurname(this);
             com.ancientkira.mca.server.RevivalCelebration.tick(this);
         }
+        com.ancientkira.mca.entity.ai.brain.tasks.ExtendedCrossbowAttackTask.unloadIdle(this);
         if (!level().isClientSide()) isTooBusyToTalk();
         tickKidnapping();
         if (isKidnapped()) return;
@@ -1360,6 +1414,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             tickDespawnDelay();
 
             residency.tick();
+            com.ancientkira.mca.server.FamilyTogether.tick(this);
 
             relations.tick(tickCount);
             if (tickCount % 1200 == 0) {
@@ -1373,11 +1428,20 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             com.ancientkira.mca.server.VillageWarfare.tickCombat(this);
 
             com.ancientkira.mca.server.GuardPardons.tick(this);
+            com.ancientkira.mca.server.RetreatDialogue.tick(this);
+            com.ancientkira.mca.server.BakerWork.tick(this);
             com.ancientkira.mca.server.ChildSafety.tick(this);
             com.ancientkira.mca.server.InfirmaryCare.tick(this);
             com.ancientkira.mca.server.ClericAid.tick(this);
             com.ancientkira.mca.server.MedicalInsurance.tick(this);
             getInteractions().getInteractingPlayer().ifPresent(player -> {
+                if (isSwimming()) {
+                    setSwimming(false);
+                    if (getPose() == Pose.SWIMMING) setPose(Pose.STANDING);
+                    getNavigation().stop();
+                    getMoveControl().setWantedPosition(getX(), getY(), getZ(), 0);
+                    setXxa(0); setZza(0); setYya(0);
+                }
                 getLookControl().setLookAt(player.getX(), player.getEyeY(), player.getZ(), 30, 30);
                 getBrain().setMemory(MemoryModuleType.LOOK_TARGET,
                         new net.minecraft.world.entity.ai.behavior.EntityTracker(player, true));
@@ -1387,6 +1451,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             com.ancientkira.mca.entity.ai.brain.tasks.PatrolVillageTask.keepRoutinePatrolInside(this);
             getResidency().tickReturn();
             com.ancientkira.mca.server.PortalHomecoming.tick(this);
+            com.ancientkira.mca.server.HorseHelp.tick(this);
             tickCombatShield();
             inventory.update(this);
 
@@ -1397,6 +1462,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             // Brain and pregnancy depend on the above states, so we tick them last
             // Every 1 second
             mcaBrain.think();
+            com.ancientkira.mca.server.FirefighterAid.tick(this);
+            com.ancientkira.mca.server.VillageMusic.enforceOrder(this);
 
             // pop a item from the desaturation queue
             if (tickCount % Config.getInstance().giftDesaturationReset == 0) {
@@ -1428,7 +1495,14 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public void tick() {
         super.tick();
+        if (level() instanceof ServerLevel && getTrackedValue(FAVORITE_FOOD).isEmpty()) {
+            setTrackedValue(FAVORITE_FOOD, getFavoriteFood());
+            setTrackedValue(FAVORITE_COLOR, getFavoriteColor());
+        }
         mcaBrain.tickPanicAnimation();
+        com.ancientkira.mca.server.VillagerSleepSafety.tick(this);
+        com.ancientkira.mca.server.MourningAwareness.tick(this);
+        com.ancientkira.mca.server.FamilyCalm.tick(this);
 
         // update visual age
         int age = getTrackedValue(GROWTH_AMOUNT);
@@ -1453,6 +1527,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
                 float infection = getInfectionProgress();
                 if (infection > 0 && this.tickCount % 20 == 0) {
                     if (infection > FEVER_THRESHOLD && getRandom().nextInt(25) == 0) {
+                        playSound(getGenetics().getGender() == Gender.MALE ? SoundsMCA.VILLAGER_MALE_COUGH : SoundsMCA.VILLAGER_FEMALE_COUGH, 1.0F, 1.0F);
                         sendChatToAllAround("villager.sickness");
                     }
 
@@ -1461,6 +1536,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
                 if (infection > 1.0f) {
                     convertTo(EntityType.ZOMBIE_VILLAGER, ConversionParams.single(this, false, false), mob -> {
+                        com.ancientkira.mca.compat.SickenedCompat.transfer(this, mob);
                     });
                 }
             }
@@ -1484,6 +1560,10 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
                 mcaBrain.modifyMoodValue(value - base);
             }
         }
+        if (level() instanceof ServerLevel world) {
+            com.ancientkira.mca.entity.ai.brain.tasks.FarmerWorkTask.tickRequestedRepair(world, this);
+        }
+        if(!level().isClientSide())com.ancientkira.mca.server.FamilyEmotions.tick(this);
     }
 
     private void updateLevelHealthBonus() {
@@ -1596,14 +1676,32 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     @Override
+    protected void updateWalkAnimation(float distance) {
+        // Use actual travel distance for every age, without vanilla's baby cadence multiplier.
+        this.walkAnimation.update(Math.min(distance * 4.0F, 1.0F), 0.4F, 1.0F);
+    }
+
+    @Override
+    protected void jumpInLiquid(net.minecraft.tags.TagKey<net.minecraft.world.level.material.Fluid> fluid) {
+        if (fluid == net.minecraft.tags.FluidTags.WATER
+                && !com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.canControlWater(this)) return;
+        super.jumpInLiquid(fluid);
+    }
+
+    @Override
     public void updateSwimming() {
         // Pose and swimming flags are replicated to clients; clients only interpolate them.
         if (level().isClientSide()) return;
+        boolean underwaterVillage = com.ancientkira.mca.server.UnderwaterVillageSupport.isAroundUnderwaterVillage(level(), blockPosition());
         boolean deepWater = level().getFluidState(blockPosition().above()).is(net.minecraft.tags.FluidTags.WATER)
-                || isSwimming() && !onGround();
+                || isSwimming() && !onGround()
+                || underwaterVillage;
+        boolean isGuardOrRaider = isGuard() || com.ancientkira.mca.registry.ProfessionsMCA.isRaider(getProfession());
+        boolean swimNeeded = underwaterVillage || deepWater || (isGuardOrRaider && isInWater());
         boolean swim = isAlive() && !isPassenger() && !isKidnapped() && !isSleeping()
-                && isInWater() && !isInLava() && deepWater
-                && getDeltaMovement().horizontalDistanceSqr() > 0.0004;
+                && isInWater() && !isInLava() && swimNeeded
+                && com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.wantsToSwim(this)
+                && (underwaterVillage || getDeltaMovement().horizontalDistanceSqr() > 0.0004 || (isGuardOrRaider && !onGround()));
         setSwimming(swim);
         if (swim) {
             if (getPose() != Pose.SWIMMING) setPose(Pose.SWIMMING);
@@ -1641,7 +1739,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         if (PillagerRaids.isJohnny(this) && other instanceof LivingEntity living) {
             return PillagerRaids.isRaiderTarget(living);
         }
-        if (ProfessionsMCA.isRaider(getProfession()) && other instanceof LivingEntity living
+        if (other instanceof LivingEntity living
                 && com.ancientkira.mca.server.RaiderSocial.isFamily(this, living)) return true;
         if (ProfessionsMCA.isRaider(getProfession()) && getTeam() == null && other.getTeam() == null) {
             if (other instanceof VillagerEntityMCA person && ProfessionsMCA.isRaider(person.getProfession())) return true;
@@ -1684,6 +1782,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     @Override
     public void die(DamageSource cause) {
+        if (dead || isRemoved()) return;
+        if (com.ancientkira.mca.server.VillageWarfare.simulateDeath(this)) return;
         com.ancientkira.mca.server.VillagerHangouts.cancelAppointment(this);
         com.ancientkira.mca.server.PillagerRaids.onDeath(this, cause);
         // deselect equipment as this messes with MobEntities equipment dropping
@@ -1703,10 +1803,11 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         }
 
         //drop stuff
+        relations.onDeath(cause);
         InventoryUtils.dropAllItems(this, inventory);
 
         //alert family and nearby villagers
-        relations.onDeath(cause);
+
 
         Optional<Village> village = residency.getHomeVillage();
         if (village.isPresent() && cause.getEntity() != null && level() instanceof ServerLevel serverLevel) {
@@ -1784,7 +1885,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             }
 
             //coughing
-            if (isInfected() && random.nextBoolean()) {
+            if ((isInfected() || com.ancientkira.mca.compat.SickenedCompat.sick(this)) && random.nextBoolean()) {
                 return getGenetics().getGender() == Gender.MALE ? SoundsMCA.VILLAGER_MALE_COUGH : SoundsMCA.VILLAGER_FEMALE_COUGH;
             }
 
@@ -1817,6 +1918,11 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     public void markScreaming() {
         panicTalkBlockedUntil = level().getGameTime() + 60;
+        com.ancientkira.mca.server.FamilyCalm.onVillagerScream(this);
+    }
+
+    public void clearPanicTalkBlock() {
+        this.panicTalkBlockedUntil = 0;
     }
 
     public boolean isTooBusyToTalk() {
@@ -1908,7 +2014,9 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
             }
         }
 
-        if (isInfected()) {
+        if (com.ancientkira.mca.compat.SickenedCompat.sick(this)) {
+            return name.copy().withStyle(ChatFormatting.DARK_PURPLE);
+        } else if (isInfected()) {
             return name.copy().withStyle(ChatFormatting.GREEN);
         } else if (getProfession() == ProfessionsMCA.OUTLAW) {
             return name.copy().withStyle(ChatFormatting.RED);
@@ -2039,7 +2147,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
 
     private int villageDanceUntil;
 
-    public boolean isVillageDancing() { return tickCount < villageDanceUntil && !getVillagerBrain().isPanicking(); }
+    public boolean isVillageDancing() { return tickCount < villageDanceUntil && !getVillagerBrain().isPanicking() && !isInWater() && !isInLava()
+            && level().getFluidState(blockPosition()).isEmpty() && level().getFluidState(blockPosition().below()).isEmpty(); }
 
     @Override
     public void handleEntityEvent(byte id) {
@@ -2123,6 +2232,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         entityData.set(CAPTIVE, kidnappedUntil > 0);
         captivityState = nbt.getCompound("CaptivityState").map(CompoundTag::copy).orElseGet(CompoundTag::new);
         if (isKidnapped()) noPhysics = isInvisible();
+        unseenDeaths = nbt.getCompound("UnseenDeaths").map(CompoundTag::copy).orElseGet(CompoundTag::new);
+        waterClutchState = nbt.getCompound("WaterClutch").map(CompoundTag::copy).orElseGet(CompoundTag::new);
         portalHomeState = nbt.getCompound("PortalHome").orElseGet(net.minecraft.nbt.CompoundTag::new).copy();
         armorRemovedByOrder = nbt.getBooleanOr("ArmorRemovedByOrder", false);
         shieldDisabledUntil = level().getGameTime() + Math.max(0, nbt.getIntOr("ShieldCooldown", 0));
@@ -2164,6 +2275,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     public void readAdditionalSaveDataForEditor(CompoundTag nbt) {
         readAdditionalSaveData(TagValueInput.create(ProblemReporter.DISCARDING, registryAccess(), nbt));
+        VillagerLike.parseCustomName(registryAccess(), nbt).ifPresent(this::setCustomName);
     }
 
     @Override
@@ -2177,6 +2289,8 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         nbt.putLong("KidnappedUntil", kidnappedUntil);
         nbt.put("CaptivityState", captivityState.copy());
         nbt.put("PortalHome", portalHomeState.copy());
+        nbt.put("WaterClutch", waterClutchState.copy());
+        nbt.put("UnseenDeaths", unseenDeaths.copy());
         nbt.putBoolean("ArmorRemovedByOrder", armorRemovedByOrder);
         nbt.putInt("ShieldCooldown", (int) Math.max(0, shieldDisabledUntil - level().getGameTime()));
         relations.writeToNbt(nbt);
@@ -2281,6 +2395,7 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     @Override
     @SuppressWarnings("deprecation")
     public void performRangedAttack(LivingEntity target, float pullProgress) {
+        if (!com.ancientkira.mca.entity.ai.GuardPerception.canLocate(this,target)) return;
         if (getAgeState() == AgeState.BABY || target == this || target.getUUID().equals(getUUID())) return;
         if (this.level().isClientSide() || !(this.level() instanceof ServerLevel serverLevel)) {
             return;
@@ -2293,6 +2408,26 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         }
 
         ItemStack weaponStack = this.getItemInHand(weaponHand);
+        boolean underwaterPillagerTrident = getProfession() == com.ancientkira.mca.registry.ProfessionsMCA.PILLAGER
+                && isInWater() && target.isInWater() && getRandom().nextInt(4) == 0;
+        if (weaponStack.is(Items.TRIDENT) || underwaterPillagerTrident) {
+            ItemStack thrownItem=underwaterPillagerTrident ? new ItemStack(Items.TRIDENT) : weaponStack.copyWithCount(1);
+            var trident=new net.minecraft.world.entity.projectile.arrow.ThrownTrident(serverLevel,this,thrownItem);
+            trident.pickup=AbstractArrow.Pickup.DISALLOWED;
+            trident.addTag("mca_archer_trident");
+            double xd=target.getX()-trident.getX(),zd=target.getZ()-trident.getZ();
+            double horizontal=Math.sqrt(xd*xd+zd*zd);
+            double yd=getFriendlyArrowAimY(target)-trident.getY();
+            double angle=com.ancientkira.mca.entity.ai.ArrowTrajectory.elevation(horizontal,yd,1.6);
+            if (isInWater()) {
+                Vec3 aim = com.ancientkira.mca.entity.ai.UnderwaterAim.direction(trident.position(), target, 1.6, .99);
+                xd = aim.x; zd = aim.z; horizontal = aim.horizontalDistance(); angle = Math.atan2(aim.y, horizontal);
+            }
+            Projectile.spawnProjectileUsingShoot(trident,serverLevel,thrownItem,xd,
+                    Math.tan(angle)*Math.max(.001,horizontal),zd,1.6F,FRIENDLY_ARROW_UNCERTAINTY);
+            playSound(SoundEvents.DROWNED_SHOOT,1,1);
+            return;
+        }
         if (weaponStack.getItem() instanceof CrossbowItem crossbow) {
             crossbow.performShooting(
                     this.level(),
@@ -2310,12 +2445,24 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
         if (weaponStack.getItem() instanceof BowItem) {
             ItemStack projectile = this.getProjectile(weaponStack);
             AbstractArrow arrowEntity = ProjectileUtil.getMobArrow(this, projectile, pullProgress, weaponStack);
-            double xd = target.getX() - this.getX();
-            double yd = getFriendlyArrowAimY(target) - arrowEntity.getY();
-            double zd = target.getZ() - this.getZ();
+            double xd = target.getX() - arrowEntity.getX();
+            double zd = target.getZ() - arrowEntity.getZ();
             double distanceToTarget = Math.sqrt(xd * xd + zd * zd);
+            // Lead horizontal movement without predicting falls or sudden vertical jumps.
+            Vec3 motion = target.getDeltaMovement();
+            double flightTicks = Math.min(15, distanceToTarget / 1.6);
+            xd += Math.clamp(motion.x, -.5, .5) * flightTicks;
+            zd += Math.clamp(motion.z, -.5, .5) * flightTicks;
+            distanceToTarget = Math.sqrt(xd * xd + zd * zd);
+            double yd = getFriendlyArrowAimY(target) - arrowEntity.getY();
+            double angle = com.ancientkira.mca.entity.ai.ArrowTrajectory.elevation(distanceToTarget, yd, 1.6);
+            if (isInWater()) {
+                Vec3 aim = com.ancientkira.mca.entity.ai.UnderwaterAim.direction(arrowEntity.position(), target, 1.6, .6);
+                xd = aim.x; zd = aim.z; distanceToTarget = aim.horizontalDistance(); angle = Math.atan2(aim.y, distanceToTarget);
+            }
             Projectile.spawnProjectileUsingShoot(
-                    arrowEntity, serverLevel, projectile, xd, yd + distanceToTarget * 0.2F, zd, 1.6F, FRIENDLY_ARROW_UNCERTAINTY
+                    arrowEntity, serverLevel, projectile, xd, Math.tan(angle) * Math.max(.001, distanceToTarget), zd,
+                    1.6F, FRIENDLY_ARROW_UNCERTAINTY
             );
             this.playSound(SoundEvents.SKELETON_SHOOT, 1.0F, 1.0F / (this.getRandom().nextFloat() * 0.4F + 0.8F));
         }
@@ -2326,12 +2473,55 @@ public class VillagerEntityMCA extends Villager implements VillagerLike<Villager
     }
 
     @Override
+    public boolean wantsToPickUp(ServerLevel level, ItemStack stack) {
+        if (stack.is(Items.CROSSBOW) || stack.is(Items.FIREWORK_ROCKET) || stack.is(Items.BOW) || stack.is(Items.ARROW)) {
+            return this.getInventory().canAddItem(stack);
+        }
+        return super.wantsToPickUp(level, stack);
+    }
+
+    @Override
     @SuppressWarnings("deprecation")
     public ItemStack getProjectile(ItemStack stack) {
+        if (stack.getItem() instanceof CrossbowItem) {
+            if (this.getOffhandItem().is(Items.FIREWORK_ROCKET)) {
+                return this.getOffhandItem();
+            }
+            if (this.getMainHandItem().is(Items.FIREWORK_ROCKET)) {
+                return this.getMainHandItem();
+            }
+            for (int i = 0; i < this.inventory.getContainerSize(); i++) {
+                ItemStack invStack = this.inventory.getItem(i);
+                if (invStack.isEmpty()) {
+                    if (invStack != ItemStack.EMPTY) {
+                        this.inventory.setItem(i, ItemStack.EMPTY);
+                    }
+                    continue;
+                }
+                if (invStack.is(Items.FIREWORK_ROCKET)) {
+                    return invStack;
+                }
+            }
+        }
         if (stack.getItem() instanceof ProjectileWeaponItem weapon) {
             Predicate<ItemStack> predicate = weapon.getSupportedHeldProjectiles();
             ItemStack itemStack = ProjectileWeaponItem.getHeldProjectile(this, predicate);
-            return itemStack.isEmpty() ? new ItemStack(Items.ARROW) : itemStack;
+            if (!itemStack.isEmpty()) {
+                return itemStack;
+            }
+            for (int i = 0; i < this.inventory.getContainerSize(); i++) {
+                ItemStack invStack = this.inventory.getItem(i);
+                if (invStack.isEmpty()) {
+                    if (invStack != ItemStack.EMPTY) {
+                        this.inventory.setItem(i, ItemStack.EMPTY);
+                    }
+                    continue;
+                }
+                if (predicate.test(invStack)) {
+                    return invStack;
+                }
+            }
+            return new ItemStack(Items.ARROW);
         } else {
             return ItemStack.EMPTY;
         }

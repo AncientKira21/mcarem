@@ -21,6 +21,9 @@ final class FluidEscapeController {
     private int nextSearch;
     private boolean escaping;
     private boolean escapingLava;
+    private boolean foundShore;
+    private boolean controlling;
+    boolean controlling() { return controlling && active(); }
 
     FluidEscapeController(Mob mob, Level world) {
         this.mob = mob;
@@ -28,12 +31,18 @@ final class FluidEscapeController {
     }
 
     boolean active() {
+        if (mob.isInWater() && !UnderwaterNavigation.canControlWater(mob)) return false;
+        if (!mob.isInLava() && com.ancientkira.mca.server.UnderwaterVillageSupport.isAroundUnderwaterVillage(world, mob.blockPosition())) {
+            return false;
+        }
         return !mob.isPassenger() && (mob.isInWater() || mob.isInLava()
-                || escaping && (!TerrainSafety.solidFloor(world, mob.blockPosition())
-                    || !route.isEmpty() || TerrainSafety.lavaNear(world, mob.getBoundingBox(), 0)));
+                || escaping && (TerrainSafety.lavaNear(world, mob.getBoundingBox(), 0)
+                    || world.getFluidState(mob.blockPosition()).is(FluidTags.WATER)
+                    || world.getFluidState(mob.blockPosition().below()).is(FluidTags.WATER)));
     }
 
     boolean tick() {
+        controlling = false;
         if (!active()) {
             route.clear();
             escaping = false;
@@ -53,9 +62,20 @@ final class FluidEscapeController {
         while (!route.isEmpty() && Vec3.atBottomCenterOf(route.peekFirst()).distanceToSqr(mob.position()) < 0.0225) {
             route.removeFirst();
         }
+        // With no shore, ordinary combat/follow steering must retain horizontal control.
+        if (!lava && !foundShore && !route.isEmpty()
+                && world.getFluidState(BlockPos.containing(mob.getEyePosition())).isEmpty()) {
+            route.clear();
+            return false;
+        }
+        if (!lava && !foundShore && route.isEmpty()
+                && world.getFluidState(BlockPos.containing(mob.getEyePosition())).isEmpty()) return false;
+        controlling = true;
         mob.getMoveControl().setWantedPosition(mob.getX(), mob.getY(), mob.getZ(), 0);
         mob.setXxa(0);
         mob.setZza(0);
+        // Let recent hit impulses decay naturally before resuming swim steering.
+        if (mob.hurtTime > 7) return true;
         if (route.isEmpty()) {
             boolean headUnderFluid = !world.getFluidState(BlockPos.containing(mob.getEyePosition())).isEmpty();
             boolean canRise = !world.getBlockCollisions(mob, mob.getBoundingBox().move(0, 0.25, 0)).iterator().hasNext();
@@ -70,7 +90,7 @@ final class FluidEscapeController {
         double vertical = Math.clamp(delta.y * 0.35, -0.12, 0.12);
         // Rise before moving over a bank; lava drag otherwise pins the body against its lip.
         if (delta.y > 0.15 && (lava || TerrainSafety.solidFloor(world, route.peekFirst()))) vertical = 0.28;
-        if (mob.horizontalCollision && delta.y >= -0.1
+        if (foundShore && mob.horizontalCollision && delta.y > 0.15
                 && !world.getBlockCollisions(mob, mob.getBoundingBox().move(0, 0.3, 0)).iterator().hasNext())
             vertical = Math.max(vertical, 0.3);
         mob.setDeltaMovement(delta.x * scale, vertical, delta.z * scale);
@@ -129,6 +149,7 @@ final class FluidEscapeController {
                 queue.addLast(next);
             }
         }
+        foundShore = exit != null;
         BlockPos goal = exit == null ? air : exit;
         // A partly submerged body may already occupy the shore block: still center it on dry ground.
         if (exit != null && exit.equals(start)) route.add(start);

@@ -29,6 +29,7 @@ public record GetInteractDataRequest(int id) implements HandleablePayload {
     @Override
     public void handleServer(ServerPlayer player) {
         Entity entity = player.level().getEntity(id);
+        if(entity!=null && com.ancientkira.mca.server.NativeSocial.supported(entity))entity=com.ancientkira.mca.server.NativeSocial.resolve(player,entity.getUUID());
         if (entity instanceof VillagerLike<?> villager) {
             Set<Constraint> constraints = Constraint.allMatching(villager, player);
             EntityRelationship relationship = ((CompassionateEntity<?>) villager).getRelationships();

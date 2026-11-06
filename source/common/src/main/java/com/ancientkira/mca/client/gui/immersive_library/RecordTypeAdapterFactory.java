@@ -44,10 +44,11 @@ public class RecordTypeAdapterFactory implements TypeAdapterFactory {
                     reader.beginObject();
                     while (reader.hasNext()) {
                         String name = reader.nextName();
+                        if(typeMap.containsKey("users") && (name.equals("unique_users") || name.equals("user_count")))name="users";
                         if (typeMap.containsKey(name)) {
                             argsMap.put(name, gson.getAdapter(typeMap.get(name)).read(reader));
                         } else {
-                            throw new RuntimeException("Unknown key " + name);
+                            reader.skipValue();
                         }
                     }
                     reader.endObject();

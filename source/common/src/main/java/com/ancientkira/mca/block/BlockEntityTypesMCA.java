@@ -10,10 +10,12 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class BlockEntityTypesMCA {
+    public static BlockEntityType<CorpseBlock.Data> CORPSE;
     public static BlockEntityType<TombstoneBlock.Data> TOMBSTONE;
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static void registerBlockEntityTypes(TriFunction register) {
+        CORPSE = register.apply(MCA.locate("corpse"), CorpseBlock.Data::new, new Block[]{BlocksMCA.CORPSE});
         TOMBSTONE = register.apply(
                 MCA.locate("tombstone"),
                 TombstoneBlock.Data::new,

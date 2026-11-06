@@ -24,15 +24,15 @@ public class ClientProxy {
         return INSTANCE.getPlayerData(uuid);
     }
 
-    public static void playVillagerGreeting(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+    public static void playVillagerGreeting(com.ancientkira.mca.entity.VillagerLike<?> villager) {
         INSTANCE.playVillagerGreeting(villager);
     }
 
-    public static void playVillagerHurt(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+    public static void playVillagerHurt(com.ancientkira.mca.entity.VillagerLike<?> villager) {
         INSTANCE.playVillagerHurt(villager);
     }
 
-    public static void playVillagerScream(com.ancientkira.mca.entity.VillagerEntityMCA villager) {
+    public static void playVillagerScream(com.ancientkira.mca.entity.VillagerLike<?> villager) {
         INSTANCE.playVillagerScream(villager);
     }
 
@@ -41,11 +41,11 @@ public class ClientProxy {
             INSTANCE = this;
         }
 
-        public void playVillagerScream(com.ancientkira.mca.entity.VillagerEntityMCA villager) { }
+        public void playVillagerScream(com.ancientkira.mca.entity.VillagerLike<?> villager) { }
 
-        public void playVillagerHurt(com.ancientkira.mca.entity.VillagerEntityMCA villager) { }
+        public void playVillagerHurt(com.ancientkira.mca.entity.VillagerLike<?> villager) { }
 
-        public void playVillagerGreeting(com.ancientkira.mca.entity.VillagerEntityMCA villager) { }
+        public void playVillagerGreeting(com.ancientkira.mca.entity.VillagerLike<?> villager) { }
 
         public Player getClientPlayer() {
             return null;

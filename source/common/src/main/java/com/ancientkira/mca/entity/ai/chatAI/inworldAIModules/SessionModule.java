@@ -7,8 +7,6 @@ import com.ancientkira.mca.entity.ai.chatAI.inworldAIModules.api.Interaction;
 import com.ancientkira.mca.entity.ai.chatAI.inworldAIModules.api.Requests;
 import com.ancientkira.mca.entity.ai.chatAI.inworldAIModules.api.Session;
 import com.ancientkira.mca.entity.ai.chatAI.inworldAIModules.api.TriggerEvent;
-import com.ancientkira.mca.server.world.data.PlayerSaveData;
-import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Map;
 import java.util.Optional;
@@ -22,11 +20,6 @@ public class SessionModule {
 
     private final static String INWORLD_BASE_URL = "https://api.inworld.ai/v1/";
     private final static long SESSION_MAX_VALID_TIME = 28 * 60 * 1000;
-    /**
-     * Determines how often status-update triggers are sent with requests. Reduces Interaction cost from (at time of writing) 2/answer to ~(21/20)/answer
-     */
-    private final static int STATUS_UPDATE_FREQUENCY = 20;
-
     private final String characterResourceName;
     private final String workspaceID;
     private final Gson gson;
@@ -42,27 +35,26 @@ public class SessionModule {
     /**
      * Sends a text message from player to the Inworld character and tries to get a response
      * Opens a new session if necessary
-     * Sends the statusUpdate every {@value STATUS_UPDATE_FREQUENCY} messages in the session
+     * Sends the current status before each message.
      *
-     * @param player       The player the message is from
+     * @param playerId     ID of the player sending the message
+     * @param playerName   Name of the player
+     * @param playerGender Gender of the player
      * @param msg          The message
      * @param statusUpdate status-update event for the Character.
      * @return {@code Optional.EMPTY} if the request failed, Optional containing Interaction object otherwise
      */
-    public Optional<Interaction> getResponse(ServerPlayer player, String msg, TriggerEvent statusUpdate) {
+    public Optional<Interaction> getResponse(UUID playerId, String playerName, String playerGender, String msg, TriggerEvent statusUpdate) {
         // Creates a new session if needed
         long currentTime = System.currentTimeMillis();
-        if (!openSessionIfNeeded(player, currentTime)) {
+        if (!openSessionIfNeeded(playerId, playerName, playerGender, currentTime)) {
             return Optional.empty();
         }
 
         // Gets current session for player with this character and makes request
-        OpenSession openSession = openSessionMap.get(player.getUUID());
+        OpenSession openSession = openSessionMap.get(playerId);
 
-        // Sends the status update every x messages
-        if (openSession.getInteractionCount() % STATUS_UPDATE_FREQUENCY == 0) {
-            sendTriggerRequest(openSession.getSession(), statusUpdate, player.getUUID().toString());
-        }
+        sendTriggerRequest(openSession.getSession(), statusUpdate, playerId.toString());
 
         Optional<Interaction> interactionOptional = sendTextRequest(openSession.getSession(), msg);
         if (interactionOptional.isPresent()) {
@@ -153,23 +145,21 @@ public class SessionModule {
     /**
      * Checks if the session has expired or doesn't exist. Tries to open a new session if it needs to.
      *
-     * @param player      The player of the interaction
+     * @param playerId    ID of the player of the interaction
      * @param currentTime The time the session was opened
      * @return {@code true} if a valid session exists, {@code false} if creation of a new session failed
      */
-    private boolean openSessionIfNeeded(ServerPlayer player, long currentTime) {
-        OpenSession openSession = openSessionMap.getOrDefault(player.getUUID(), new OpenSession(null, 0));
+    private boolean openSessionIfNeeded(UUID playerId, String playerName, String playerGender, long currentTime) {
+        OpenSession openSession = openSessionMap.getOrDefault(playerId, new OpenSession(null, 0));
         if (openSession.getSession() == null || currentTime - openSession.getLastInteractionMillis() > SESSION_MAX_VALID_TIME) {
-            Optional<Session> sessionOptional = openSessionRequest(player.getUUID().toString(),
-                    player.getName().getString(),
-                    PlayerSaveData.get(player).getGender().getDataName());
+            Optional<Session> sessionOptional = openSessionRequest(playerId.toString(), playerName, playerGender);
 
             if (sessionOptional.isEmpty()) {
                 MCA.LOGGER.error("Failed to open Inworld session. Consult logs");
                 return false;
             } else {
                 OpenSession newSession = new OpenSession(sessionOptional.get(), currentTime);
-                openSessionMap.put(player.getUUID(), newSession);
+                openSessionMap.put(playerId, newSession);
             }
         }
         return true;
@@ -183,20 +173,14 @@ public class SessionModule {
     private static class OpenSession {
         private final Session session;
         private long lastInteractionMillis;
-        private int interactionCount;
 
         public OpenSession(Session session, long lastInteractionMillis) {
             this.session = session;
             this.lastInteractionMillis = lastInteractionMillis;
-            this.interactionCount = 0;
         }
 
         public Session getSession() {
             return session;
-        }
-
-        public int getInteractionCount() {
-            return this.interactionCount;
         }
 
         public long getLastInteractionMillis() {
@@ -204,13 +188,12 @@ public class SessionModule {
         }
 
         /**
-         * Update lastInteractionMillis and increase interactionCount by 1
+         * Update the last interaction time
          *
          * @param lastInteractionMillis Timestamp of last interaction of session
          */
         public void updateSession(long lastInteractionMillis) {
             this.lastInteractionMillis = lastInteractionMillis;
-            this.interactionCount++;
         }
 
     }

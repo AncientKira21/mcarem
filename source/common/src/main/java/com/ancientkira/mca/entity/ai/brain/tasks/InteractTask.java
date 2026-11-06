@@ -2,7 +2,6 @@ package com.ancientkira.mca.entity.ai.brain.tasks;
 
 import com.google.common.collect.ImmutableMap;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
-import com.ancientkira.mca.entity.ai.Chore;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.behavior.Behavior;
@@ -25,11 +24,7 @@ public class InteractTask extends Behavior<VillagerEntityMCA> {
     public static boolean shouldRun(VillagerEntityMCA villager) {
         return villager.isAlive()
                && villager.getBrain().getMemoryInternal(MemoryModuleType.ATTACK_TARGET).isEmpty()
-               && villager.getInteractions().getInteractingPlayer().filter(player -> villager.distanceToSqr(player) <= 25).isPresent()
-               && !villager.isInWater()
-               && !villager.hurtMarked
-               && (villager.getVillagerBrain().getCurrentJob() == Chore.NONE
-                   || villager.getVillagerBrain().getCurrentJob() == Chore.PROSPECT);
+               && villager.getInteractions().getInteractingPlayer().isPresent();
     }
 
     @Override

@@ -9,8 +9,12 @@ import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-class TemplateSet {
+public class TemplateSet {
     static final TemplateSet INSTANCE = new TemplateSet().with("supporter", Supporters::getRandomSupporter);
+
+    public static String replaceResident(String input, String resident) {
+        return new TemplateSet().with("supporter", () -> resident).replace(input);
+    }
 
     private final Map<String, Supplier<String>> variables = new HashMap<>();
 
@@ -40,7 +44,7 @@ class TemplateSet {
                 computed.put(found.toLowerCase(Locale.ENGLISH), replacement);
             }
 
-            matcher.appendReplacement(buffer, replacement);
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(buffer);
 

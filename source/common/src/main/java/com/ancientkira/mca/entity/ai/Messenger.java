@@ -60,12 +60,22 @@ public interface Messenger extends EntityWrapper {
         }
     }
 
+    static String familyRejection(String phrase, boolean scared) {
+        if (scared) return "family.dialogue.scared";
+        return switch (phrase) {
+            case "dialogue.hug.fail" -> "family.dialogue.hug.fail";
+            case "dialogue.kiss.fail" -> "family.dialogue.kiss.fail";
+            case "dialogue.flirt.fail" -> "family.dialogue.flirt.fail";
+            default -> "family.dialogue.negative";
+        };
+    }
+
     default MutableComponent getTranslatable(Player target, String phraseId, Object... params) {
         if (asEntity() instanceof VillagerEntityMCA person
                 && person.getRelationships().getFamilyEntry().isFamilyMember(target.getUUID())
                 && phraseId.startsWith("dialogue.")
                 && (phraseId.contains(".fail") || phraseId.equals("dialogue.busy") || phraseId.equals("dialogue.goaway"))) {
-            phraseId = person.isTooBusyToTalk() ? "family.dialogue.scared" : "family.dialogue.negative";
+            phraseId = familyRejection(phraseId, person.isTooBusyToTalk());
         }
         String genderString = "";
 
@@ -96,7 +106,14 @@ public interface Messenger extends EntityWrapper {
             ) + ".";
         }
 
-        return Component.translatable(genderString + personalityString + professionString + "#T" + getDialogueType(target).name() + "." + phraseId, newParams);
+        String residentContext = "";
+        if (asEntity() instanceof VillagerEntityMCA speaker && speaker.level() instanceof ServerLevel) {
+            String name = speaker.getResidency().getHomeVillage()
+                    .flatMap(v -> v.randomResidentName(speaker.getRandom())).orElse(speaker.getName().getString());
+            residentContext = "#R" + java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(name.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ".";
+        }
+        return Component.translatable(residentContext + genderString + personalityString + professionString + "#T" + getDialogueType(target).name() + "." + phraseId, newParams);
     }
 
     default void sendChatToAllAround(MutableComponent phrase) {
@@ -120,7 +137,7 @@ public interface Messenger extends EntityWrapper {
 
     default Component transformMessage(Component message) {
         if (isSpeechImpaired()) {
-            return Component.literal(API.getRandomSentence("zombie", message.getString()));
+            return message; // Garble after the receiving client has localized the sentence.
         } else if (isToYoungToSpeak()) {
             return Component.literal(API.getRandomSentence("baby", message.getString()));
         }
@@ -128,6 +145,7 @@ public interface Messenger extends EntityWrapper {
     }
 
     default Component sendChatMessage(Component message, Entity receiver) {
+        if (receiver instanceof ServerPlayer player && com.ancientkira.mca.server.FirstJoinSetup.active(player)) return message;
         message = transformMessage(message);
 
         MutableComponent prefix = Component.literal(Config.getInstance().villagerChatPrefix)
@@ -135,7 +153,7 @@ public interface Messenger extends EntityWrapper {
                 .append(": ");
 
         //use custom packet to have access to sender UUID, and maybe future extra information
-        VillagerMessage msg = new VillagerMessage(prefix, message, asEntity().getUUID());
+        VillagerMessage msg = new VillagerMessage(prefix, message, asEntity().getUUID(), isSpeechImpaired(), java.util.concurrent.ThreadLocalRandom.current().nextLong());
         if (receiver instanceof ServerPlayer serverPlayer) {
             Network.sendToPlayer(msg, serverPlayer);
         } else {

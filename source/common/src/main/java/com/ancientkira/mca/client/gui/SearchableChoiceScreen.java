@@ -51,7 +51,7 @@ public final class SearchableChoiceScreen extends Screen {
             Choice choice = filtered.get(offset + row);
             ButtonWidget option = new ButtonWidget(width / 2 - 130, 60 + row * 22, 260, 20,
                     Component.literal(choice.label()), b -> { choose.accept(choice); onClose(); });
-            option.active = !java.util.Objects.equals(selectedId, choice.id());
+            option.active = !java.util.Objects.equals(selectedId == null ? null : selectedId.strip(), choice.id().strip());
             options.add(addRenderableWidget(option));
         }
     }

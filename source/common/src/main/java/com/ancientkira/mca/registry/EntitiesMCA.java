@@ -36,6 +36,22 @@ public interface EntitiesMCA {
             .<VillagerEntityMCA>of((t, w) -> new VillagerEntityMCA(PERSON, w, Gender.FEMALE), MobCategory.MISC)
             .sized(0.6F, 2.0F), VillagerEntityMCA::createAttributes
     );
+    EntityType<ZombieVillagerEntityMCA> SICKENED_PERSON = register("sickened_person", EntityType.Builder
+            .<ZombieVillagerEntityMCA>of((t, w) -> {
+                ZombieVillagerEntityMCA v = new ZombieVillagerEntityMCA(t, w, Gender.getRandom());
+                com.ancientkira.mca.compat.SickenedCompat.mark(v);
+                return v;
+            }, MobCategory.MONSTER)
+            .sized(0.6F, 2.0F), ZombieVillagerEntityMCA::createAttributes
+    );
+    EntityType<ZombieVillagerEntityMCA> SICKENED_VILLAGER = register("sickened_villager", EntityType.Builder
+            .<ZombieVillagerEntityMCA>of((t, w) -> {
+                ZombieVillagerEntityMCA v = new ZombieVillagerEntityMCA(SICKENED_PERSON, w, Gender.getRandom());
+                com.ancientkira.mca.compat.SickenedCompat.mark(v);
+                return v;
+            }, MobCategory.MONSTER)
+            .sized(0.6F, 2.0F), ZombieVillagerEntityMCA::createAttributes
+    );
     EntityType<ZombieVillagerEntityMCA> ZOMBIE_PERSON = register("zombie_person", EntityType.Builder
             .<ZombieVillagerEntityMCA>of((t, w) -> new ZombieVillagerEntityMCA(t, w, Gender.getRandom()), MobCategory.MONSTER)
             .sized(0.6F, 2.0F), ZombieVillagerEntityMCA::createAttributes
@@ -54,6 +70,17 @@ public interface EntitiesMCA {
             .sized(1, 2.6F)
             .fireImmune(), GrimReaperEntity::createAttributes
     );
+    EntityType<com.ancientkira.mca.entity.GolemEntityMCA> GOLEM = register("golem", EntityType.Builder
+            .<com.ancientkira.mca.entity.GolemEntityMCA>of(com.ancientkira.mca.entity.GolemEntityMCA::new, MobCategory.MISC)
+            .sized(1.4F, 2.7F), net.minecraft.world.entity.animal.golem.IronGolem::createAttributes);
+    EntityType<com.ancientkira.mca.entity.GolemEntityMCA> RAIDER_GOLEM = register("raider_golem", EntityType.Builder
+            .<com.ancientkira.mca.entity.GolemEntityMCA>of((type, world) -> new com.ancientkira.mca.entity.GolemEntityMCA(type, world, true), MobCategory.MISC)
+            .sized(1.4F, 2.7F), net.minecraft.world.entity.animal.golem.IronGolem::createAttributes);
+
+    EntityType<com.ancientkira.mca.entity.VillagerFishingHook> VILLAGER_FISHING_HOOK = register("villager_fishing_hook", EntityType.Builder
+            .<com.ancientkira.mca.entity.VillagerFishingHook>of(com.ancientkira.mca.entity.VillagerFishingHook::new, MobCategory.MISC)
+            .sized(0.25F, 0.25F).clientTrackingRange(8).updateInterval(1).noSave());
+
     EntityType<CribEntity> CRIB = register("crib", EntityType.Builder
             .of(CribEntity::new, MobCategory.MISC)
             .sized(1.2F, 1.0F)

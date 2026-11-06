@@ -21,7 +21,8 @@ public record InteractionCloseRequest(UUID villagerUUID) implements HandleablePa
 
     @Override
     public void handleServer(ServerPlayer player) {
-        Entity v = player.level().getEntity(villagerUUID);
+        Entity v = com.ancientkira.mca.server.NativeSocial.resolve(player,villagerUUID);
+        if(v instanceof VillagerEntityMCA profile) com.ancientkira.mca.server.NativeSocial.persist(player,profile);
         if (v instanceof VillagerEntityMCA villager && villager.getInteractions().getInteractingPlayer().orElse(null) == player) {
             // The old dialogue can be removed while a family tree or another screen opens.
             villager.getInteractions().stopInteracting(false);

@@ -1,0 +1,26 @@
+{
+  "display": {
+    "title": {
+      "translate": "advancement.mca.hostile_mob_squasher"
+    },
+    "description": {
+      "translate": "advancement.mca.hostile_mob_squasher.description"
+    },
+    "icon": {
+      "id": "minecraft:anvil"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "parent": "mca:root",
+  "criteria": {
+    "hostile_mob_squashed": {
+      "trigger": "mca:generic_event",
+      "conditions": {
+        "event": "hostile_mob_squasher"
+      }
+    }
+  }
+}

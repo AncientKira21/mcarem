@@ -47,11 +47,14 @@ public final class ClientNeoForge extends ClientProxyAbstractImpl {
     @SubscribeEvent
     public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         // Block entity renderers
+        event.registerBlockEntityRenderer(BlockEntityTypesMCA.CORPSE, com.ancientkira.mca.client.render.CorpseBlockEntityRenderer::new);
         event.registerBlockEntityRenderer(BlockEntityTypesMCA.TOMBSTONE, TombstoneBlockEntityRenderer::new);
 
         // Entity renderers
         if (Config.getInstance().useSquidwardModels) {
             event.registerEntityRenderer(EntitiesMCA.PERSON, VillagerRenderer::new);
+            event.registerEntityRenderer(EntitiesMCA.SICKENED_PERSON, ZombieVillagerRenderer::new);
+            event.registerEntityRenderer(EntitiesMCA.SICKENED_VILLAGER, ZombieVillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.MALE_VILLAGER, VillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.FEMALE_VILLAGER, VillagerRenderer::new);
             event.registerEntityRenderer(EntitiesMCA.ZOMBIE_PERSON, ZombieVillagerRenderer::new);
@@ -59,6 +62,8 @@ public final class ClientNeoForge extends ClientProxyAbstractImpl {
             event.registerEntityRenderer(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerRenderer::new);
         } else {
             event.registerEntityRenderer(EntitiesMCA.PERSON, VillagerEntityMCARenderer::new);
+            event.registerEntityRenderer(EntitiesMCA.SICKENED_PERSON, ZombieVillagerEntityMCARenderer::new);
+            event.registerEntityRenderer(EntitiesMCA.SICKENED_VILLAGER, ZombieVillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.MALE_VILLAGER, VillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.FEMALE_VILLAGER, VillagerEntityMCARenderer::new);
             event.registerEntityRenderer(EntitiesMCA.ZOMBIE_PERSON, ZombieVillagerEntityMCARenderer::new);
@@ -66,7 +71,10 @@ public final class ClientNeoForge extends ClientProxyAbstractImpl {
             event.registerEntityRenderer(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerEntityMCARenderer::new);
         }
         event.registerEntityRenderer(EntitiesMCA.GRIM_REAPER, GrimReaperRenderer::new);
+        event.registerEntityRenderer(EntitiesMCA.VILLAGER_FISHING_HOOK, com.ancientkira.mca.client.render.VillagerFishingHookRenderer::new);
         event.registerEntityRenderer(EntitiesMCA.CRIB, CribEntityRenderer::new);
+        event.registerEntityRenderer(EntitiesMCA.GOLEM, GolemEntityMCARenderer::new);
+        event.registerEntityRenderer(EntitiesMCA.RAIDER_GOLEM, GolemEntityMCARenderer::new);
     }
 
     @SubscribeEvent

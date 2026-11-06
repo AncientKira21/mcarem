@@ -43,6 +43,8 @@ public final class MCAFabricClient extends ClientProxyAbstractImpl implements Cl
 
         if (Config.getInstance().useSquidwardModels) {
             EntityRenderers.register(EntitiesMCA.PERSON, VillagerRenderer::new);
+            EntityRenderers.register(EntitiesMCA.SICKENED_PERSON, ZombieVillagerRenderer::new);
+            EntityRenderers.register(EntitiesMCA.SICKENED_VILLAGER, ZombieVillagerRenderer::new);
             EntityRenderers.register(EntitiesMCA.MALE_VILLAGER, VillagerRenderer::new);
             EntityRenderers.register(EntitiesMCA.FEMALE_VILLAGER, VillagerRenderer::new);
 
@@ -51,6 +53,8 @@ public final class MCAFabricClient extends ClientProxyAbstractImpl implements Cl
             EntityRenderers.register(EntitiesMCA.FEMALE_ZOMBIE_VILLAGER, ZombieVillagerRenderer::new);
         } else {
             EntityRenderers.register(EntitiesMCA.PERSON, VillagerEntityMCARenderer::new);
+            EntityRenderers.register(EntitiesMCA.SICKENED_PERSON, ZombieVillagerEntityMCARenderer::new);
+            EntityRenderers.register(EntitiesMCA.SICKENED_VILLAGER, ZombieVillagerEntityMCARenderer::new);
             EntityRenderers.register(EntitiesMCA.MALE_VILLAGER, VillagerEntityMCARenderer::new);
             EntityRenderers.register(EntitiesMCA.FEMALE_VILLAGER, VillagerEntityMCARenderer::new);
 
@@ -60,11 +64,15 @@ public final class MCAFabricClient extends ClientProxyAbstractImpl implements Cl
         }
 
         EntityRenderers.register(EntitiesMCA.GRIM_REAPER, GrimReaperRenderer::new);
+        EntityRenderers.register(EntitiesMCA.VILLAGER_FISHING_HOOK, com.ancientkira.mca.client.render.VillagerFishingHookRenderer::new);
         EntityRenderers.register(EntitiesMCA.CRIB, CribEntityRenderer::new);
+        EntityRenderers.register(EntitiesMCA.GOLEM, GolemEntityMCARenderer::new);
+        EntityRenderers.register(EntitiesMCA.RAIDER_GOLEM, GolemEntityMCARenderer::new);
 
         ParticleProviderRegistry.getInstance().register(ParticleTypesMCA.NEG_INTERACTION, InteractionParticle.Factory::new);
         ParticleProviderRegistry.getInstance().register(ParticleTypesMCA.POS_INTERACTION, InteractionParticle.Factory::new);
 
+        BlockEntityRenderers.register(BlockEntityTypesMCA.CORPSE, com.ancientkira.mca.client.render.CorpseBlockEntityRenderer::new);
         BlockEntityRenderers.register(BlockEntityTypesMCA.TOMBSTONE, TombstoneBlockEntityRenderer::new);
 
         // Register resource reload listeners

@@ -1,5 +1,7 @@
 package com.ancientkira.mca.entity.ai.brain.tasks;
 
+import net.minecraft.server.level.ServerLevel;
+
 import com.ancientkira.mca.block.TombstoneBlock;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.ai.MemoryModuleTypeMCA;
@@ -58,16 +60,15 @@ public class EnterGraveyardTask extends EnterBuildingTask {
         Optional<BlockPos> rememberedSite = villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_SITE);
         if (rememberedSite.isPresent()) {
             BlockPos grave = rememberedSite.get();
-            return isMournableTombstone(level, grave)
+            return isMournableTombstone(villager, grave)
                     ? findStandingPosition(level, villager, grave).map(position -> new MourningTarget(grave, position))
                     : Optional.empty();
         }
 
         BlockPos origin = villager.blockPosition();
-        return getCompleteGraveyards(villager)
-                .flatMap(Building::getBlockPosStream)
+        return candidates(villager)
                 .distinct()
-                .filter(grave -> isMournableTombstone(level, grave))
+                .filter(grave -> isMournableTombstone(villager, grave))
                 .sorted(Comparator.comparingInt(grave -> grave.distManhattan(origin)))
                 .map(grave -> findStandingPosition(level, villager, grave).map(position -> new MourningTarget(grave, position)))
                 .flatMap(Optional::stream)
@@ -89,7 +90,7 @@ public class EnterGraveyardTask extends EnterBuildingTask {
     public static boolean isWithinMourningArea(VillagerEntityMCA villager) {
         BlockPos villagerPosition = villager.blockPosition();
         return villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_SITE)
-                .filter(grave -> isMournableTombstone(villager.level(), grave))
+                .filter(grave -> isMournableTombstone(villager, grave))
                 .filter(grave -> grave.closerToCenterThan(villager.position(), MOURNING_GRAVE_DISTANCE))
                 .filter(grave -> grave.getX() != villagerPosition.getX() || grave.getZ() != villagerPosition.getZ())
                 .isPresent();
@@ -101,25 +102,31 @@ public class EnterGraveyardTask extends EnterBuildingTask {
 
     public static boolean hasMournableSite(VillagerEntityMCA villager) {
         return villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_SITE)
-                .filter(grave -> isMournableTombstone(villager.level(), grave))
+                .filter(grave -> isMournableTombstone(villager, grave))
                 .isPresent();
     }
 
     public static boolean hasPeriodicMourningCandidate(VillagerEntityMCA villager) {
-        return getCompleteGraveyards(villager)
-                .flatMap(Building::getBlockPosStream)
+        return candidates(villager)
                 .distinct()
-                .anyMatch(grave -> isMournableTombstone(villager.level(), grave));
+                .anyMatch(grave -> isMournableTombstone(villager, grave));
     }
 
     private static Optional<BlockPos> getMourningPosition(VillagerEntityMCA villager) {
         return villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_SITE)
-                .filter(grave -> isMournableTombstone(villager.level(), grave))
+                .filter(grave -> isMournableTombstone(villager, grave))
                 .flatMap(grave -> villager.getBrain().getMemoryInternal(MemoryModuleTypeMCA.MOURNING_POSITION))
                 .filter(position -> position.dimension().equals(villager.level().dimension()))
                 .map(GlobalPos::pos);
     }
 
+    private static Stream<BlockPos> candidates(VillagerEntityMCA villager) {
+        Stream<BlockPos> registered=getCompleteGraveyards(villager).flatMap(Building::getBlockPosStream);
+        if(!(villager.level() instanceof net.minecraft.server.level.ServerLevel world))return registered;
+        Stream<BlockPos> nearby=com.ancientkira.mca.server.world.data.GraveyardManager.get(world)
+                .findAll(villager.getBoundingBox().inflate(48),false,true).stream();
+        return Stream.concat(registered,nearby).filter(world::hasChunkAt);
+    }
     private static Stream<Building> getCompleteGraveyards(VillagerEntityMCA villager) {
         return villager.getResidency().getHomeVillage()
                 .stream()
@@ -168,14 +175,23 @@ public class EnterGraveyardTask extends EnterBuildingTask {
 
     private static boolean isGoodWalkTarget(Level level, VillagerEntityMCA villager, BlockPos position) {
         return villager.getNavigation().isStableDestination(position)
-                && level.noCollision(villager, villager.getBoundingBox().move(Vec3.atBottomCenterOf(position).subtract(villager.position())));
+                && level.noBlockCollision(villager, villager.getBoundingBox().move(Vec3.atBottomCenterOf(position).subtract(villager.position())));
     }
 
-    private static boolean isMournableTombstone(Level level, BlockPos position) {
+    public static boolean isMournableTombstone(VillagerEntityMCA villager, BlockPos position) {
+        Level level = villager.level();
+        if(!com.ancientkira.mca.server.MourningAwareness.canSee(villager))return false;
         return level.getBlockState(position).is(TagsMCA.Blocks.TOMBSTONES)
                 && TombstoneBlock.Data.of(level.getBlockEntity(position))
                 .filter(TombstoneBlock.Data::hasEntity)
                 .filter(data -> !data.isResurrecting())
+                .filter(data -> data.getStoredEntityUuid().map(victim -> {
+                    if (!(level instanceof ServerLevel world)) return true;
+                    var node = com.ancientkira.mca.server.world.data.FamilyTree.get(world).getOrEmpty(victim);
+                    if (node.isEmpty() || !node.get().isDeceased()
+                            || !villager.getRelationships().getFamilyEntry().isFamilyMember(victim)) return false;
+                    return com.ancientkira.mca.server.MourningAwareness.knows(villager,position,victim);
+                }).orElse(false))
                 .isPresent();
     }
 

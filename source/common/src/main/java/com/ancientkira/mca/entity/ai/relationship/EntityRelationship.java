@@ -72,9 +72,10 @@ public interface EntityRelationship {
     //try to load a PlayerSaveData before loading the entity
     //that way, offline players are also considered
     default Stream<EntityRelationship> getRelationshipStream(Stream<UUID> uuids) {
-        return uuids.map(uuid -> PlayerSaveData.getIfPresent(getWorld(), uuid)
-                        .map(p -> (EntityRelationship) p)
-                        .or(() -> EntityRelationship.of(getWorld().getEntity(uuid))))
+        return uuids.map(uuid -> EntityRelationship.of(getWorld().getEntity(uuid))
+                        .or(() -> getFamilyTree().getOrEmpty(uuid).filter(FamilyTreeNode::isPlayer)
+                                .flatMap(node -> PlayerSaveData.getIfPresent(getWorld(),uuid))
+                                .map(p -> (EntityRelationship)p)))
                 .filter(Optional::isPresent)
                 .map(Optional::get);
     }

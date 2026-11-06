@@ -3,6 +3,7 @@ package com.ancientkira.mca.entity.ai.chatAI;
 import com.google.common.collect.ImmutableList;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.ai.MoveState;
+import com.ancientkira.mca.entity.ai.brain.tasks.FarmerWorkTask;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
@@ -10,6 +11,8 @@ import java.util.Optional;
 
 public class TriggerCommandInfos {
     public static final List<TriggerCommandInfo> triggerCommands = ImmutableList.of(
+            new TriggerCommandInfo("repair-farmland", "Walk to and re-till damaged farmland near the player. Use when asked to repair a farm.",
+                    FarmerWorkTask::requestRepair, FarmerWorkTask::canRequestRepair),
             new TriggerCommandInfo("follow-player", "Follow the player talking to you",
                     (p, v) -> v.getVillagerBrain().setMoveState(MoveState.FOLLOW, p),
                     (p, v) -> v.getVillagerBrain().getMoveState() != MoveState.FOLLOW),

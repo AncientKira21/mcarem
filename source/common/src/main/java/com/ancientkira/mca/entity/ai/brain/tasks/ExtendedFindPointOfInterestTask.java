@@ -96,7 +96,14 @@ public class ExtendedFindPointOfInterestTask extends Behavior<VillagerEntityMCA>
             }
             return this.predicate.test(villager, blockPos);
         };
-        Set<Pair<Holder<PoiType>, BlockPos>> set = pointOfInterestStorage.findAllClosestFirstWithType(this.poiType, predicate, villager.blockPosition(), POI_SORTING_RADIUS, PoiManager.Occupancy.HAS_SPACE).limit(MAX_POSITIONS_PER_RUN).collect(Collectors.toSet());
+        BlockPos searchOrigin = villager.blockPosition();
+        if (this.targetMemoryModuleType == MemoryModuleType.HOME) {
+            searchOrigin = getPreferredBedSearchOrigin(serverWorld, villager);
+        }
+        Set<Pair<Holder<PoiType>, BlockPos>> set = pointOfInterestStorage.findAllClosestFirstWithType(this.poiType, predicate, searchOrigin, POI_SORTING_RADIUS, PoiManager.Occupancy.HAS_SPACE).limit(MAX_POSITIONS_PER_RUN).collect(Collectors.toSet());
+        if (set.isEmpty() && !searchOrigin.equals(villager.blockPosition())) {
+            set = pointOfInterestStorage.findAllClosestFirstWithType(this.poiType, predicate, villager.blockPosition(), POI_SORTING_RADIUS, PoiManager.Occupancy.HAS_SPACE).limit(MAX_POSITIONS_PER_RUN).collect(Collectors.toSet());
+        }
         Path path = findPathToPois(villager, set);
         if (path != null && path.canReach()) {
             BlockPos blockPos2 = path.getTarget();
@@ -116,6 +123,35 @@ public class ExtendedFindPointOfInterestTask extends Behavior<VillagerEntityMCA>
                 this.foundPositionsToExpiry.computeIfAbsent(blockPos2.getSecond().asLong(), m -> new RetryMarker(villager.level().getRandom(), l));
             }
         }
+    }
+
+    private static BlockPos getPreferredBedSearchOrigin(ServerLevel serverWorld, VillagerEntityMCA villager) {
+        // 1. If married, prioritize beds near spouse's bed!
+        Optional<GlobalPos> spouseBed = villager.getRelationships().getPartner()
+                .filter(p -> p instanceof VillagerEntityMCA)
+                .map(p -> (VillagerEntityMCA) p)
+                .flatMap(spouse -> spouse.getResidency().getHome())
+                .filter(gp -> gp.dimension().equals(serverWorld.dimension()));
+        if (spouseBed.isPresent()) {
+            return spouseBed.get().pos();
+        }
+
+        // 2. If child / toddler / teen, prioritize beds near parents' bed!
+        if (villager.getAgeState() != com.ancientkira.mca.entity.ai.relationship.AgeState.ADULT) {
+            Optional<GlobalPos> parentBed = villager.getRelationships().getParents()
+                    .filter(p -> p instanceof VillagerEntityMCA)
+                    .map(p -> (VillagerEntityMCA) p)
+                    .map(p -> p.getResidency().getHome())
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .filter(gp -> gp.dimension().equals(serverWorld.dimension()))
+                    .findFirst();
+            if (parentBed.isPresent()) {
+                return parentBed.get().pos();
+            }
+        }
+
+        return villager.blockPosition();
     }
 
     //todo this check is not necessary in vanilla, but since the 1.19.2 port of 7.4.0 it is requires as occupied beds are used

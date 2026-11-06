@@ -46,6 +46,11 @@ public class ArcherMoveControl extends MCAMoveControl {
 
     @Override
     public void tick() {
+        if (this.mob.isInWater()) {
+            clearArcherStrafeState();
+            super.tick();
+            return;
+        }
         if (isClimbNavigationActive()) {
             clearArcherStrafeState();
             super.tick();

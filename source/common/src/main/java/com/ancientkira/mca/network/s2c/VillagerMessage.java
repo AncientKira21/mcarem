@@ -13,12 +13,15 @@ import net.minecraft.world.entity.player.Player;
 
 import java.util.UUID;
 
-public record VillagerMessage(Component prefix, Component message, UUID uuid) implements HandleablePayload {
+public record VillagerMessage(Component prefix, Component message, UUID uuid, boolean zombieSpeech, long speechSeed) implements HandleablePayload {
+    public VillagerMessage(Component prefix, Component message, UUID uuid) { this(prefix, message, uuid, false, 0L); }
     public static final CustomPacketPayload.Type<VillagerMessage> TYPE = new CustomPacketPayload.Type<>(MCA.locate("villager_message"));
     public static final StreamCodec<RegistryFriendlyByteBuf, VillagerMessage> STREAM_CODEC = StreamCodec.composite(
             ComponentSerialization.STREAM_CODEC, VillagerMessage::prefix,
             ComponentSerialization.STREAM_CODEC, VillagerMessage::message,
             UUIDUtil.STREAM_CODEC, VillagerMessage::uuid,
+            net.minecraft.network.codec.ByteBufCodecs.BOOL, VillagerMessage::zombieSpeech,
+            net.minecraft.network.codec.ByteBufCodecs.LONG, VillagerMessage::speechSeed,
             VillagerMessage::new
     );
 

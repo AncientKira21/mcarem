@@ -5,6 +5,10 @@ import net.minecraft.client.gui.ActiveTextCollector;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public abstract class Page {
+    /** Vanilla-compatible text for lecterns; independent of rendering and GUI state. */
+    public java.util.List<net.minecraft.network.chat.Component> writtenPages(boolean dynamic) {
+        return java.util.List.of(net.minecraft.network.chat.Component.empty());
+    }
     public abstract void render(ExtendedBookScreen screen, GuiGraphicsExtractor context, int mouseX, int mouseY, float delta);
 
     public void visitText(ExtendedBookScreen screen, ActiveTextCollector collector) {

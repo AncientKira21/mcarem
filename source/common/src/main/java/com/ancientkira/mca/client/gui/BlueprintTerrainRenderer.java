@@ -21,16 +21,23 @@ final class BlueprintTerrainRenderer {
         }
     };
     private ClientLevel cachedLevel;
+    private boolean underwater;
+    private int terrainCeiling;
+    private long refreshedAt = Long.MIN_VALUE;
+    private final java.util.Map<Long, Integer> heights = new LinkedHashMap<>(1024, .75f, true) {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Long, Integer> entry) { return size() > MAX_CACHED_CELLS; }
+    };
 
-    void render(GuiGraphicsExtractor context, BlueprintMapViewport viewport) {
+    void render(GuiGraphicsExtractor context, BlueprintMapViewport viewport, boolean underwater, int terrainCeiling) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
             return;
         }
         ClientLevel level = minecraft.level;
-        if (cachedLevel != level) {
-            cache.clear();
-            cachedLevel = level;
+        if (cachedLevel != level || this.underwater != underwater || this.terrainCeiling != terrainCeiling
+                || refreshedAt == Long.MIN_VALUE || level.getGameTime() - refreshedAt >= 200) {
+            cache.clear(); heights.clear(); cachedLevel = level;
+            this.underwater = underwater; this.terrainCeiling = terrainCeiling; refreshedAt = level.getGameTime();
         }
 
         int step = Math.max(1, (int) Math.ceil((double) TARGET_CELL_PIXELS / viewport.scale()));
@@ -69,11 +76,10 @@ final class BlueprintTerrainRenderer {
             return cache.get(key);
         }
         if (!level.hasChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
-            cache.put(key, null);
             return null;
         }
 
-        int surfaceY = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+        int surfaceY = underwater ? columnHeight(level, x, z) - 1 : level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
         int minBuildHeight = level.getMinY();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(x, surfaceY, z);
         BlockState state = level.getBlockState(pos);
@@ -85,7 +91,7 @@ final class BlueprintTerrainRenderer {
         }
 
         int color = mapColor == MapColor.NONE ? FALLBACK_COLOR : 0xff000000 | mapColor.col & 0x00ffffff;
-        int height = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        int height = underwater ? pos.getY() + 1 : level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
         int east = sampleHeight(level, x + 1, z, height);
         int west = sampleHeight(level, x - 1, z, height);
         int south = sampleHeight(level, x, z + 1, height);
@@ -96,11 +102,27 @@ final class BlueprintTerrainRenderer {
         return cell;
     }
 
-    private static int sampleHeight(ClientLevel level, int x, int z, int fallback) {
+    private int sampleHeight(ClientLevel level, int x, int z, int fallback) {
         if (!level.hasChunk(Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
             return fallback;
         }
-        return level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+        return underwater ? columnHeight(level, x, z) : level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+    }
+
+    private int columnHeight(ClientLevel level, int x, int z) {
+        long key = ((long)x << 32) | (z & 0xffffffffL);
+        Integer cached = heights.get(key);
+        if (cached != null) return cached;
+        int y = Math.min(terrainCeiling, level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos(x, y, z);
+        while (pos.getY() > level.getMinY()) {
+            BlockState state = level.getBlockState(pos);
+            // Skip water itself, not waterlogged roofs, stairs or other village blocks.
+            if (!state.isAir() && !(state.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock)
+                    && state.getMapColor(level, pos) != MapColor.NONE) break;
+            pos.move(0, -1, 0);
+        }
+        int height = pos.getY() + 1; heights.put(key, height); return height;
     }
 
     private static int shadeColor(int color, float slope, int height) {

@@ -33,6 +33,14 @@ public class ColorPalette {
         );
     }
 
+    public static int applyPurpleShift(int color, float progress) {
+        float amount = Mth.clamp(progress, 0, 1);
+        return ARGB.colorFromFloat(1.0F,
+                Mth.lerp(amount, ARGB.red(color) / 255F, .65F),
+                Mth.lerp(amount, ARGB.green(color) / 255F, .18F),
+                Mth.lerp(amount, ARGB.blue(color) / 255F, .8F));
+    }
+
     private static int clampFloor(float v, int max) {
         return (int) Math.floor(Mth.clamp(v * max, 0, max));
     }
@@ -47,7 +55,7 @@ public class ColorPalette {
 
         int color = data.colors[y * data.height + x];
 
-        return greenShift > 0 ? applyGreenShift(color, greenShift) : color;
+        return greenShift < 0 ? applyPurpleShift(color, -greenShift) : greenShift > 0 ? applyGreenShift(color, greenShift) : color;
     }
 
     public record Data(int width, int height, int[] colors) {

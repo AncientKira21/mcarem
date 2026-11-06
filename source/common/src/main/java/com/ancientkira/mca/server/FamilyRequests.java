@@ -116,6 +116,7 @@ public final class FamilyRequests {
             var parent = data.getFamilyEntry();
             var spouse = data.getFamilyTree().getOrEmpty(parent.partner()).filter(node -> !node.isDeceased());
             person.getRelationships().getFamilyEntry().replaceParents(parent, spouse);
+            AdoptionEffects.apply(person, player);
             com.ancientkira.mca.entity.FamilyNames.inheritSurname(person);
             record(person, Component.translatable("mca.adoption.player", person.getName().getString(), player.getName().getString()));
         } else {

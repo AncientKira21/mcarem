@@ -18,6 +18,10 @@ public class MatchmakersRingItem extends Item implements SpecialCaseGift {
 
     @Override
     public InteractionResult handle(ServerPlayer player, VillagerEntityMCA villager) {
+        if(villager.getRelationships().getFamilyEntry().mourningSpouse()) {
+            villager.sendChatMessage(player,"interaction.relationship.fail.mourning");
+            return InteractionResult.FAIL;
+        }
         // ensure two rings are in the inventory
         if (player.getMainHandItem().getCount() < 2) {
             villager.sendChatMessage(player, "interaction.matchmaker.fail.needtwo");
@@ -35,6 +39,7 @@ public class MatchmakersRingItem extends Item implements SpecialCaseGift {
                 .filter(v -> v != villager && v instanceof VillagerEntityMCA)
                 .map(VillagerEntityMCA.class::cast)
                 .filter(v -> !v.isBaby() && !v.getRelationships().isMarried())
+                .filter(v -> !v.getRelationships().getFamilyEntry().mourningSpouse())
                 .filter(v -> !v.getRelationships().getFamilyEntry().isRelative(villager.getUUID()))
                 .filter(villager::canBeAttractedTo)
                 .min(Comparator.comparingDouble(villager::distanceTo));

@@ -1,0 +1,41 @@
+{
+  "elements": [
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/terminators/terminator_01",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/terminators/terminator_02",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/terminators/terminator_03",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    },
+    {
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "mca:village/underwater/terminators/terminator_04",
+        "processors": "mca:underwater/preserve_water",
+        "projection": "rigid"
+      },
+      "weight": 1
+    }
+  ],
+  "fallback": "minecraft:empty"
+}

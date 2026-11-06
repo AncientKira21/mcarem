@@ -145,8 +145,16 @@ public abstract class MixinPlayerRenderer extends LivingEntityRenderer<LivingEnt
     }
 
     @Unique
+    private boolean mca$isRightArm(ModelPart arm) {
+        return arm == model.rightArm
+                || (mca$playerModel != null && arm == mca$playerModel.rightArm)
+                || (mca$villagerAnimationModel != null && arm == mca$villagerAnimationModel.rightArm)
+                || (mca$vanillaModel != null && arm == mca$vanillaModel.rightArm);
+    }
+
+    @Unique
     private boolean mca$renderCustomFirstPersonArm(AbstractClientPlayer player, ModelPart arm) {
-        String armName = arm == model.rightArm ? "right_arm" : "left_arm";
+        String armName = mca$isRightArm(arm) ? "right_arm" : "left_arm";
         return MCAClient.renderArms(player.getUUID(), armName);
     }
 
@@ -174,7 +182,7 @@ public abstract class MixinPlayerRenderer extends LivingEntityRenderer<LivingEnt
             boolean hasSleeve
     ) {
         AbstractClientPlayer player = Minecraft.getInstance().player;
-        boolean rightArm = arm == model.rightArm;
+        boolean rightArm = mca$isRightArm(arm);
         if (player == null || !mca$renderCustomFirstPersonArm(player, arm)) {
             original.call(submitNodeCollector, originalArm, poseStack, renderType, lightCoords, overlayCoords, sprite);
             return;

@@ -21,7 +21,7 @@ public class Book {
     private boolean textShadow;
 
     public Book(String bookName) {
-        this(bookName, Component.translatable("mca.books." + bookName + ".author").withStyle(ChatFormatting.GRAY));
+        this(bookName, com.ancientkira.mca.client.book.BookText.translated("mca.books." + bookName + ".author").withStyle(ChatFormatting.GRAY));
     }
 
     public Book(String bookName, Component bookAuthor) {
@@ -60,6 +60,10 @@ public class Book {
             addPage(new TextPage(getBookName(), start + i));
         }
         return this;
+    }
+
+    public List<Component> writtenPages(boolean dynamic) {
+        return pages.stream().flatMap(page -> page.writtenPages(dynamic).stream()).limit(100).toList();
     }
 
     public int getPageCount() {

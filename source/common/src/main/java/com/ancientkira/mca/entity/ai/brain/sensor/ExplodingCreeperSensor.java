@@ -9,8 +9,8 @@ import net.minecraft.world.entity.monster.Creeper;
 public class ExplodingCreeperSensor extends NearestVisibleLivingEntitySensor {
     @Override
     protected boolean isMatchingEntity(ServerLevel level, LivingEntity body, LivingEntity target) {
-        return target instanceof Creeper
-               && ((Creeper) target).isIgnited();
+        return target instanceof Creeper creeper
+               && com.ancientkira.mca.entity.ai.CreeperThreat.explodingNear(creeper, body);
     }
 
     @Override

@@ -12,6 +12,8 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.behavior.Behavior;
 import net.minecraft.world.entity.ai.behavior.EntityTracker;
+import net.minecraft.world.entity.ai.behavior.BlockPosTracker;
+import net.minecraft.world.entity.ai.memory.WalkTarget;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.memory.MemoryStatus;
 import net.minecraft.world.entity.ai.util.LandRandomPos;
@@ -45,6 +47,8 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
 
     private final double maximumRangeSquared;
     private LivingEntity lastTarget;
+    private long nextEdgeSearch;
+    private int edgeCandidateCursor;
     private MovementState state = MovementState.IDLE;
     private int seeTime;
     private long lastDebugLogTime = Long.MIN_VALUE;
@@ -89,6 +93,15 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
     protected void tick(ServerLevel level, E entity, long gameTime) {
         LivingEntity target = getAttackTarget(entity);
         if (!RangedWeaponHelper.isValidAttackTarget(entity, target)) {
+            return;
+        }
+
+        if (entity.isInWater() && target.isInWater()) {
+            trackTarget(entity, target);
+            entity.getArcherMoveControl().setEmergencyFleeing(false);
+            double range = RangedWeaponHelper.getAttackRangeSquared(entity, maximumRangeSquared);
+            if (!entity.getSensing().hasLineOfSight(target) || entity.distanceToSqr(target) > range * 0.65) approach(entity, target);
+            else hold(entity);
             return;
         }
 
@@ -158,11 +171,16 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
         resetState();
         ArcherMoveControl moveControl = entity.getArcherMoveControl();
         moveControl.setEmergencyFleeing(false);
-        entity.getNavigation().stop();
+        if(!com.ancientkira.mca.entity.ai.brain.VillagerTasksMCA.hasMovementOrder(entity)) {
+            entity.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+            entity.getNavigation().stop();
+        }
     }
 
     private void resetState() {
         this.lastTarget = null;
+        this.nextEdgeSearch = 0;
+        this.edgeCandidateCursor = 0;
         this.state = MovementState.IDLE;
         this.seeTime = 0;
         this.lastDebugState = "";
@@ -214,9 +232,10 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
         this.awayPathTicks = 0;
         this.blockedPathTicks = 0;
         this.blockedStrafeTicks = 0;
-        entity.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
+        entity.getBrain().setMemory(MemoryModuleType.WALK_TARGET,
+                new WalkTarget(new EntityTracker(target,false),(float)SPEED_MODIFIER,1));
 
-        if (--this.repathCooldown <= 0 || entity.getNavigation().isDone()) {
+        if (--this.repathCooldown <= 0) {
             entity.getNavigation().moveTo(target, SPEED_MODIFIER);
             this.repathCooldown = getNextRepathCooldown(entity);
         }
@@ -225,7 +244,6 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
     private void moveAway(E entity, LivingEntity target, double desiredDistance, int pathTicks, double speedModifier, boolean allowPartialPath) {
         this.strafingTime = -1;
         this.blockedStrafeTicks = 0;
-        entity.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
 
         if (isCurrentPathBlocked(entity)) {
             this.blockedPathTicks++;
@@ -240,17 +258,18 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
             return;
         }
 
-        if (--this.repathCooldown > 0 && !entity.getNavigation().isDone()) {
+        if (--this.repathCooldown > 0) {
             return;
         }
 
         Path path = findPathAway(entity, target, desiredDistance, allowPartialPath);
         if (path != null) {
-            entity.getNavigation().moveTo(path, speedModifier);
+            requestPath(entity,path,speedModifier);
             this.awayPathTicks = pathTicks;
             this.repathCooldown = pathTicks;
             this.blockedPathTicks = 0;
         } else {
+            entity.getBrain().eraseMemory(MemoryModuleType.WALK_TARGET);
             entity.getNavigation().stop();
             this.awayPathTicks = 0;
             this.repathCooldown = 4;
@@ -268,25 +287,32 @@ public class ArcherMovementTask<E extends VillagerEntityMCA> extends Behavior<E>
                 || entity.getDeltaMovement().horizontalDistanceSqr() < STUCK_HORIZONTAL_SPEED_SQUARED);
     }
 
+    private void requestPath(E entity,Path path,double speed) {
+        if(path.getEndNode()==null)return;
+        entity.getBrain().setMemory(MemoryModuleType.WALK_TARGET,
+                new WalkTarget(new BlockPosTracker(path.getEndNode().asBlockPos()),(float)speed,0));
+        entity.getNavigation().moveTo(path,speed);
+    }
+
     private boolean retreatFromEdge(E entity) {
-        var world = entity.level();
-        if (!entity.onGround() || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world, entity.blockPosition())) return false;
-        // Prefer the nearest reachable interior block instead of strafing along the lip.
-        Path best = null;
-        double distance = Double.MAX_VALUE;
-        for (net.minecraft.core.BlockPos candidate : net.minecraft.core.BlockPos.betweenClosed(
-                entity.blockPosition().offset(-4, -1, -4), entity.blockPosition().offset(4, 1, 4))) {
-            double nextDistance = entity.distanceToSqr(Vec3.atBottomCenterOf(candidate));
-            if (nextDistance >= distance
-                    || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(world, candidate)
-                    || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.clear(world, candidate)
-                    || com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world, candidate)) continue;
-            Path path = entity.getNavigation().createPath(candidate, 0);
-            if (path != null && path.canReach()) { best = path; distance = nextDistance; }
-        }
+        var world=entity.level();
+        if(!entity.onGround() || !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world,entity.blockPosition()))return false;
         entity.getArcherMoveControl().setEmergencyFleeing(false);
-        if (best != null) entity.getNavigation().moveTo(best, SPEED_MODIFIER);
-        else hold(entity);
+        if(world.getGameTime()<nextEdgeSearch)return true;
+        nextEdgeSearch=world.getGameTime()+20;
+        // Nearest safe destinations first, with a strict path-search budget.
+        var candidates=new java.util.ArrayList<net.minecraft.core.BlockPos>();
+        for(var candidate:net.minecraft.core.BlockPos.betweenClosed(entity.blockPosition().offset(-4,-1,-4),entity.blockPosition().offset(4,1,4))) {
+            if(com.ancientkira.mca.entity.ai.navigation.TerrainSafety.solidFloor(world,candidate)
+                    && com.ancientkira.mca.entity.ai.navigation.TerrainSafety.clear(world,candidate)
+                    && !com.ancientkira.mca.entity.ai.navigation.TerrainSafety.dangerousEdge(world,candidate))candidates.add(candidate.immutable());
+        }
+        candidates.sort(java.util.Comparator.comparingDouble(pos -> entity.distanceToSqr(Vec3.atBottomCenterOf(pos))));
+        for(int i=0;i<Math.min(4,candidates.size());i++) {
+            Path path=entity.getNavigation().createPath(candidates.get(Math.floorMod(edgeCandidateCursor++,candidates.size())),0);
+            if(path!=null && path.canReach()){requestPath(entity,path,SPEED_MODIFIER);return true;}
+        }
+        hold(entity);
         return true;
     }
 

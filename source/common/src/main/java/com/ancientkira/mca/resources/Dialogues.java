@@ -82,8 +82,28 @@ public class Dialogues extends SimpleJsonResourceReloadListener<JsonElement> {
         return questions.get(i);
     }
 
+    static boolean isIntroduction(String questionId) {
+        return "root".equals(questionId) || "first".equals(questionId) || "first.question".equals(questionId);
+    }
+
+    private static boolean knowsPlayerAsFamily(VillagerEntityMCA villager, ServerPlayer player) {
+        return com.ancientkira.mca.entity.ai.Relationship.IS_ROMANTIC_PARTNER.test(villager, player)
+                || com.ancientkira.mca.entity.ai.Relationship.IS_FAMILY.test(villager, player);
+    }
+
     //selects a specific answer while being in given question
     public void selectAnswer(VillagerEntityMCA villager, ServerPlayer player, String questionId, String answerId) {
+        if (isIntroduction(questionId) && knowsPlayerAsFamily(villager, player)) {
+            Question main = getQuestion("main");
+            if (main != null) {
+                String seen = "seen." + player.getUUID();
+                if (!villager.getLongTermMemory().hasMemory(seen)) villager.getLongTermMemory().remember(seen);
+                Network.sendToPlayer(new com.ancientkira.mca.network.s2c.InteractionDialogueResponse(main, player, villager), player);
+                Network.sendToPlayer(new com.ancientkira.mca.network.s2c.InteractionDialogueQuestionResponse(
+                        villager.getTranslatable(player, Question.getTranslationKey("main")), false), player);
+                return;
+            }
+        }
         Question question = getQuestion(questionId);
         if (question == null) {
             MCA.LOGGER.warn("Player {} tried to select an unknown dialogue question '{}'", player.getGameProfile().name(), questionId);

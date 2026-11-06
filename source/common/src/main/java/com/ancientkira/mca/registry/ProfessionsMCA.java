@@ -32,6 +32,10 @@ public interface ProfessionsMCA {
 
     VillagerProfession MAYOR = register("mayor", false, true, false, poi -> false, poi -> false, SoundEvents.VILLAGER_WORK_LIBRARIAN);
     VillagerProfession RULER = register("ruler", false, true, false, poi -> false, poi -> false, SoundEvents.VILLAGER_WORK_LIBRARIAN);
+    VillagerProfession FIREFIGHTER = register("firefighter", false, true, false, PoiType.NONE,
+            VillagerProfession.ALL_ACQUIRABLE_JOBS, SoundEvents.VILLAGER_WORK_ARMORER);
+    VillagerProfession BAKER = register("baker", true, false, false,
+            poi -> poi.is(PoiTypesMCA.BAKER), poi -> poi.is(PoiTypesMCA.BAKER), SoundEvents.VILLAGER_WORK_FARMER, TradeOffersMCA.BAKER_TRADES);
     VillagerProfession MINER = register("miner", true, false, false,
             poi -> poi.is(PoiTypesMCA.MINER), poi -> poi.is(PoiTypesMCA.MINER), SoundEvents.VILLAGER_WORK_TOOLSMITH, TradeOffersMCA.MINER_TRADES);
     VillagerProfession VINDICATOR = register("vindicator", false, true, true, poi -> false, poi -> false, SoundEvents.VINDICATOR_AMBIENT);
@@ -146,6 +150,8 @@ public interface ProfessionsMCA {
                         || professionId.equals(VillagerProfession.LIBRARIAN.identifier())
                         || professionId.equals(VillagerProfession.CLERIC.identifier()))) {
             return "library";
+        } else if (BAKER == profession) {
+            return "bakery";
         } else if (GUARD == profession || ARCHER == profession) {
             return "inn";
         }

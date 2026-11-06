@@ -25,7 +25,7 @@ public class StayTask extends Behavior<VillagerEntityMCA> {
 
     @Override
     protected void start(ServerLevel world, VillagerEntityMCA villager, long time) {
-        if (waitingPosition == null) waitingPosition = villager.blockPosition();
+        waitingPosition = villager.blockPosition();
         villager.getNavigation().stop();
     }
 

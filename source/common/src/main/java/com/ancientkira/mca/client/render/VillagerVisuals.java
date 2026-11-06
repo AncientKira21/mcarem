@@ -1,6 +1,8 @@
 package com.ancientkira.mca.client.render;
 
 import com.ancientkira.mca.client.resources.EyeTextureLayers;
+import com.ancientkira.mca.client.gui.immersive_library.LocalLibrary;
+import com.ancientkira.mca.client.gui.SkinLibraryScreen.SkinType;
 import com.ancientkira.mca.entity.VillagerLike;
 import com.ancientkira.mca.entity.ai.Genetics;
 import com.ancientkira.mca.entity.ai.Traits;
@@ -32,7 +34,12 @@ public record VillagerVisuals(
         float eumelaninGene,
         float pheomelaninGene,
         float eyeBrightnessGene,
+        String classicSkin,
+        boolean eyesOverSkin,
+        String eyeTexture,
+        java.util.List<String> accessories,
         String skin,
+        String untintedHairTextures,
         String hairBase,
         String hairBangs,
         String hairBack,
@@ -44,11 +51,16 @@ public record VillagerVisuals(
         int eyeLeftDye,
         String clothes,
         float infectionProgress,
+        float sicknessProgress,
         int tickCount,
         int entityId,
         boolean sleeping,
-        boolean deadOrDying
+        boolean deadOrDying,
+        boolean hugging
 ) {
+    /** Negative values select the purple sickness palette; zombie and sickness data remain independent. */
+    public float skinInfectionProgress() { return sicknessProgress > 0 ? -sicknessProgress : infectionProgress; }
+
     private static final int MIN_BLINK_INTERVAL_A = 50;
     private static final int MIN_BLINK_INTERVAL_B = 57;
     private static final int BLINK_INTERVAL_VARIANCE = 80;
@@ -111,7 +123,12 @@ public record VillagerVisuals(
                 genetics.getGene(Genetics.EUMELANIN),
                 genetics.getGene(Genetics.PHEOMELANIN),
                 genetics.getGene(Genetics.EYE_BRIGHTNESS),
+                LocalLibrary.selected(entity.getUUID(),SkinType.CLASSIC,villager.getClassicSkin()),
+                villager.getTrackedValue(VillagerLike.EYES_OVER_SKIN),
+                LocalLibrary.selected(entity.getUUID(),SkinType.EYES,villager.getTrackedValue(VillagerLike.EYE_TEXTURE)),
+                java.util.List.of(LocalLibrary.selected(entity.getUUID(),SkinType.HAT,villager.getAccessory(0)),LocalLibrary.selected(entity.getUUID(),SkinType.GLASSES,villager.getAccessory(1)),LocalLibrary.selected(entity.getUUID(),SkinType.FACE,villager.getAccessory(2)),LocalLibrary.selected(entity.getUUID(),SkinType.BACK,villager.getAccessory(3))),
                 villager.getSkin(),
+                villager.getTrackedValue(VillagerLike.UNTINTED_HAIR_TEXTURES),
                 getHairLayer(villager, LayeredHair.Category.BASE),
                 getHairLayer(villager, LayeredHair.Category.BANGS),
                 getHairLayer(villager, LayeredHair.Category.BACK),
@@ -121,16 +138,19 @@ public record VillagerVisuals(
                 villager.getHairDye(),
                 villager.getEyeDye(),
                 villager.getEyeLeftDye(),
-                villager.getClothes(),
+                LocalLibrary.selected(entity.getUUID(),SkinType.CLOTHING,villager.getClothes()),
                 villager.getInfectionProgress(),
+                com.ancientkira.mca.compat.SickenedCompat.progress(villager),
                 animationTickCount(entity),
                 entity.getId(),
                 entity.isSleeping(),
-                entity.isDeadOrDying()
+                entity.isDeadOrDying(), villager.getTrackedValue(VillagerLike.FAMILY_HUG)
         );
     }
 
     private static String getHairLayer(VillagerLike<?> villager, LayeredHair.Category category) {
+        String localHair=LocalLibrary.selected(villager.asEntity().getUUID(),SkinType.HAIR,"");
+        if(!localHair.isBlank())return category==LayeredHair.Category.BASE?localHair:"";
         String hair = villager.getLayeredHair(category);
         if (!isBlank(hair)) {
             return hair;

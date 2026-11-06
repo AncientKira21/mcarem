@@ -49,6 +49,49 @@ class MCAMoveControl extends MoveControl {
             return;
         }
 
+        if (this.mob.isInWater() && com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.isNonSwimmingBaby(this.mob)) {
+            this.operation = Operation.WAIT;
+            this.mob.setJumping(false);
+            this.mob.setSpeed(0);
+            this.mob.setXxa(0);
+            this.mob.setZza(0);
+            this.mob.setYya(0);
+            return;
+        }
+
+        if (this.mob.isInWater() && this.mob.isSwimming()
+                && com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.canControlWater(this.mob)) {
+            if (this.operation == Operation.MOVE_TO) {
+                this.mob.setJumping(false);
+                this.mob.setXxa(0); this.mob.setZza(0); this.mob.setYya(0);
+                double dx = this.wantedX - this.mob.getX();
+                double dy = this.wantedY - this.mob.getY();
+                double dz = this.wantedZ - this.mob.getZ();
+                double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (dist > 1.0E-5D) {
+                    float targetYaw = (float)(Math.atan2(dz, dx) * 57.2957763671875D) - 90.0F;
+                    this.mob.setYRot(this.rotlerp(this.mob.getYRot(), targetYaw, 90.0F));
+                    this.mob.yBodyRot = this.mob.getYRot();
+                    float speed = (float)(this.speedModifier * this.mob.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED));
+                    this.mob.setSpeed(speed);
+                    double swimSpeed = speed * 0.7D;
+                    this.mob.setDeltaMovement(this.mob.getDeltaMovement().add(dx / dist * swimSpeed * 0.2D, dy / dist * swimSpeed * 0.2D + (speed > 0 ? 0.005D : 0), dz / dist * swimSpeed * 0.2D));
+                }
+                return;
+            }
+        }
+
+        // Floor-walking villagers need an upward impulse to cross a raised, dry threshold.
+        if (this.operation == Operation.MOVE_TO && this.mob.horizontalCollision
+                && this.mob instanceof com.ancientkira.mca.entity.VillagerEntityMCA person
+                && com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.floorWalking(person)
+                && com.ancientkira.mca.entity.ai.navigation.UnderwaterNavigation.canControlWater(person)
+                && this.wantedY > this.mob.getY() + 0.15 && this.wantedY <= this.mob.getY() + 1.25
+                && !this.mob.level().getBlockCollisions(this.mob, this.mob.getBoundingBox().move(0, 0.3, 0)).iterator().hasNext()) {
+            var movement = this.mob.getDeltaMovement();
+            this.mob.setDeltaMovement(movement.x, Math.max(movement.y, 0.3), movement.z);
+        }
+
         if (!isClimbNavigationActive()) {
             super.tick();
             return;

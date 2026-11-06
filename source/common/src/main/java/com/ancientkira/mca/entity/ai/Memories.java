@@ -10,6 +10,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.UUID;
 
 public class Memories {
+    public static final int MAX_HEARTS = Integer.MAX_VALUE;
+    public static final int MIN_HEARTS = Integer.MIN_VALUE;
 
     private final UUID playerUUID;
     private final VillagerBrain<?> brain;
@@ -29,11 +31,12 @@ public class Memories {
     }
 
     public static <E extends Mob & VillagerLike<E>> Memories fromCNBT(E villager, @Nullable CompoundTag tag) {
-        if (tag == null || tag.isEmpty()) {
-            return null;
-        }
+        if (tag == null || tag.isEmpty()) return null;
+        return fromCNBT(villager, tag, tag.read("playerUUID", UUIDUtil.LENIENT_CODEC).orElse(new UUID(0L, 0L)));
+    }
 
-        UUID playerUuid = tag.read("playerUUID", UUIDUtil.LENIENT_CODEC).orElse(new UUID(0L, 0L));
+    public static <E extends Mob & VillagerLike<E>> Memories fromCNBT(E villager, @Nullable CompoundTag tag, UUID playerUuid) {
+        if (tag == null || tag.isEmpty()) return null;
         Memories memories = new Memories(villager.getVillagerBrain(), villager.level().getOverworldClockTime(), playerUuid);
 
         memories.raiderDisposition = tag.getIntOr("raiderDisposition", 0);
@@ -59,7 +62,7 @@ public class Memories {
     }
 
     public void modHearts(int value) {
-        setHearts(this.hearts += value);
+        setHearts((int) Math.clamp((long) this.hearts + value, MIN_HEARTS, MAX_HEARTS));
     }
 
     public int getInteractionFatigue() {

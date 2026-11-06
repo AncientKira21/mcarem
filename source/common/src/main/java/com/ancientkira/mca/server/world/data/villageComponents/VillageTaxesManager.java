@@ -137,10 +137,8 @@ public class VillageTaxesManager {
                 Block block = state.getBlock();
                 if (inventory instanceof ChestBlockEntity && block instanceof ChestBlock chest) {
                     inventory = ChestBlock.getContainer(chest, state, world, p, true);
-                    if (inventory != null) {
-                        putIntoInventory(inventory);
-                    }
                 }
+                if (inventory != null) putIntoInventory(inventory);
             }
         }
     }

@@ -38,11 +38,11 @@ import java.util.stream.Collectors;
 
 public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag data) implements HandleablePayload {
     private static final String[] MCA_VISUAL_KEYS = {
-            "VoiceId",
+            "UntintedHairTextures", "FirstName", "LastName", "SurnameDisabled", "VoiceId",
             "Gender",
             "Clothes",
             "ClothingLocked",
-            "Skin",
+            "Skin", "ClassicSkin", "EyesOverSkin", "EyeTexture", "AccessoryHat", "AccessoryGlasses", "AccessoryFace", "AccessoryBack",
             "Hair",
             "HairStyle",
             "HairBase",
@@ -55,7 +55,9 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
             "EyeColor",
             "EyeColorLeft",
             "AgeState",
-            "PlayerModel"
+            "PlayerModel",
+            "FavoriteFood",
+            "FavoriteColor"
     };
 
     public static final CustomPacketPayload.Type<VillagerEditorSyncRequest> TYPE = new CustomPacketPayload.Type<>(MCA.locate("villager_editor_sync_request"));
@@ -81,6 +83,7 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
     }
 
     public static boolean isAllowedMcaKey(String key) {
+        if (key.equals("SicknessProgress") || key.equals("SicknessZombieProgress") || key.equals("Sickened") || key.equals("SickenedId")) return com.ancientkira.mca.compat.SickenedCompat.enabled();
         if (key.startsWith("Gene")) {
             return true;
         }
@@ -95,7 +98,7 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
         if (key.equals("HairDye") || key.equals("SkinDye") || key.equals("EyeDye") || key.equals("EyeLeftDye")) {
             return true;
         }
-        if (key.equals("InfectionProgress") || key.equals("Mood") || key.equals("Memories")) {
+        if (key.equals("InfectionProgress")) {
             return true;
         }
         return false;
@@ -184,14 +187,19 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
         }
 
         if (entity instanceof ServerPlayer serverPlayer) {
+            String oldSurname = com.ancientkira.mca.entity.FamilyNames.lastName(serverPlayer);
             CompoundTag serverData = PlayerSaveData.get(serverPlayer).getEntityData();
             CompoundTag merged = mergeAllowedEditorPatch(serverData, patch);
             PlayerSaveData data = PlayerSaveData.get(serverPlayer);
             data.setEntityData(merged);
             data.setEntityDataSet(true);
-            syncFamilyTree(player, entity, merged);
-            serverPlayer.level().players().forEach(p -> Network.sendToPlayer(new PlayerDataMessage(serverPlayer.getUUID(), merged), p));
-            Network.sendToPlayer(new GetVillagerResponse(merged), player);
+            data.ensurePlayerName(serverPlayer);
+            CompoundTag normalized = data.getEntityData();
+            syncFamilyTree(player, entity, normalized);
+            String newSurname = com.ancientkira.mca.entity.FamilyNames.lastName(serverPlayer);
+            if (!oldSurname.equals(newSurname)) com.ancientkira.mca.entity.FamilyNames.changeFamilySurname(serverPlayer, oldSurname, newSurname);
+            serverPlayer.level().players().forEach(p -> Network.sendToPlayer(new PlayerDataMessage(serverPlayer.getUUID(), normalized), p));
+            Network.sendToPlayer(new GetVillagerResponse(normalized), player);
             return;
         }
 
@@ -204,11 +212,36 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
             CompoundTag merged = mergeAllowedEditorPatch(serverData, patch);
             sanitizeVisualIdentifiers(entity, merged);
 
-            String oldSurname = com.ancientkira.mca.entity.FamilyNames.lastName(entity.getName().getString());
+            String oldSurname = com.ancientkira.mca.entity.FamilyNames.lastName(entity);
+            String previousName = entity.getName().getString();
             villagerLike.syncFromEditor(merged);
+            patch.getInt("EditorHearts").ifPresent(value ->
+                    villagerLike.getVillagerBrain().getMemoriesForPlayer(player).setHearts(value));
+            patch.getInt("EditorMood").ifPresent(value ->
+                    com.ancientkira.mca.server.FamilyEmotions.overrideMood(villagerLike, value));
+            if (getMcaData(patch).contains("InfectionProgress")) {
+                villagerLike.setInfectionProgress(getMcaData(patch).getFloatOr("InfectionProgress", 0));
+            }
+            if (com.ancientkira.mca.compat.SickenedCompat.enabled() && getMcaData(patch).contains("SicknessProgress")) {
+                com.ancientkira.mca.compat.SickenedCompat.setProgress(villagerLike,
+                        getMcaData(patch).getFloatOr("SicknessProgress", 0));
+            }
+            var editedNames = getMcaData(merged);
+            if (editedNames.contains("FirstName") && !editedNames.getStringOr("FirstName", "").isBlank()) {
+                String requested = VillagerLike.parseCustomName(entity.registryAccess(), merged).map(Component::getString).orElse(previousName);
+                var parts = com.ancientkira.mca.entity.NameParts.resolve(requested,
+                        editedNames.getStringOr("FirstName", ""), editedNames.getStringOr("LastName", ""));
+                boolean disabled = editedNames.getBooleanOr("SurnameDisabled", false);
+                String first = disabled ? requested : parts.first();
+                String last = disabled ? " " : parts.last();
+                editedNames.putString("FirstName", first); editedNames.putString("LastName", last.strip());
+                com.ancientkira.mca.entity.FamilyNames.setParts(entity, first, last);
+                entity.setCustomName(Component.literal(com.ancientkira.mca.entity.FamilyNames.fullName(first, last)));
+                if (!previousName.equals(entity.getName().getString())) FamilyTree.get((ServerLevel) entity.level()).getOrCreate(entity).clearPendingSurname();
+            }
             entity.refreshDimensions();
             syncFamilyTree(player, entity, merged);
-            String newSurname = com.ancientkira.mca.entity.FamilyNames.lastName(entity.getName().getString());
+            String newSurname = com.ancientkira.mca.entity.FamilyNames.lastName(entity);
             if (!oldSurname.equals(newSurname)) {
                 com.ancientkira.mca.entity.FamilyNames.changeFamilySurname(entity, oldSurname, newSurname);
             }
@@ -333,7 +366,11 @@ public record VillagerEditorSyncRequest(String command, UUID uuid, CompoundTag d
 
         VillagerLike.parseCustomName(entity.registryAccess(), villagerData)
                 .map(Component::getString)
-                .ifPresent(entry::setName);
+                .ifPresent(full -> {
+                    var names = com.ancientkira.mca.util.NbtHelper.getCompoundOrSelf(villagerData, VillagerEntityMCA.MCA_DATA_KEY);
+                    var parts = com.ancientkira.mca.entity.NameParts.resolve(full, names.getStringOr("FirstName", ""), names.getStringOr("LastName", ""));
+                    entry.setNameParts(parts.first(), names.getBooleanOr("SurnameDisabled", false) ? " " : parts.last());
+                });
 
         if (villagerData.contains("FamilyTreeNewFatherName")) {
             String name = villagerData.getString("FamilyTreeNewFatherName").orElse("");

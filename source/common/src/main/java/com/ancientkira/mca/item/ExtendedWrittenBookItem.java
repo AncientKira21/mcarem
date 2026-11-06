@@ -23,7 +23,8 @@ public class ExtendedWrittenBookItem extends WrittenBookItem {
     private final Book book;
 
     public ExtendedWrittenBookItem(Properties settings, Book book) {
-        super(settings);
+        super(settings.component(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,
+                writtenContent(book, book.writtenPages(false))));
         this.book = book;
     }
 
@@ -44,6 +45,28 @@ public class ExtendedWrittenBookItem extends WrittenBookItem {
         }
 
         return world.isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
+    }
+
+    private static net.minecraft.world.item.component.WrittenBookContent writtenContent(Book book,List<Component> pages) {
+        String title=com.ancientkira.mca.client.book.BookText.title(book.getBookName());
+        if(title.length()>32)title=title.substring(0,32);
+        return new net.minecraft.world.item.component.WrittenBookContent(
+                net.minecraft.server.network.Filterable.passThrough(title),
+                com.ancientkira.mca.client.book.BookText.author(book.getBookAuthor()),0,
+                (pages.isEmpty()?List.of(Component.empty()):pages).stream()
+                        .map(net.minecraft.server.network.Filterable::passThrough).toList(),true);
+    }
+
+    /** Refresh before insertion, preserving the original item and MCA-specific components. */
+    public void prepareLectern(ItemStack stack,Player player) {
+        List<Component> pages;
+        if(this instanceof CivilRegistry && player instanceof ServerPlayer serverPlayer) {
+            pages=com.ancientkira.mca.server.world.data.PlayerSaveData.get(serverPlayer)
+                    .getRegistryVillage(serverPlayer.level()).flatMap(com.ancientkira.mca.server.world.data.Village::getCivilRegistry)
+                    .map(registry -> registry.getPage(0,100)).filter(lines -> !lines.isEmpty())
+                    .orElseGet(() -> List.of(Component.translatable("civil_registry.empty")));
+        } else pages=getBook(stack).writtenPages(true);
+        stack.set(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,writtenContent(book,pages));
     }
 
     @Override

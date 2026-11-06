@@ -98,7 +98,8 @@ public final class SkinSelection {
     }
 
     public static String mapProfession(String profession, Map<String, String> professionConversions) {
-        return professionConversions.getOrDefault(profession, professionConversions.getOrDefault("default", profession));
+        String mapped = professionConversions.getOrDefault(profession, professionConversions.getOrDefault("default", profession));
+        return mapped.equals("mca:baker") ? "minecraft:butcher" : mapped;
     }
 
     public static <T extends SkinListEntry> List<T> forGender(Collection<T> entries, Gender gender) {

@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "mca:underwater_prismarine_door",
+    "minecraft:glass"
+  ],
+  "result": {
+    "id": "mca:prismarine_greenhouse_door",
+    "count": 1
+  }
+}

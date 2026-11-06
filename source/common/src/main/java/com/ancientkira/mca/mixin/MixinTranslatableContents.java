@@ -10,10 +10,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(TranslatableContents.class)
 public class MixinTranslatableContents {
+    @Inject(method = "decompose()V", at = @At("HEAD"))
+    private void mca$clearPreviousTranslation(CallbackInfo ci) {
+        CommonSpeechManager.INSTANCE.lastResolvedKey.remove();
+    }
+
     @Inject(method = "decompose()V", at = @At("TAIL"))
     private void mca$updateTranslations(CallbackInfo ci) {
-        if (CommonSpeechManager.INSTANCE.lastResolvedKey != null) {
-            CommonSpeechManager.INSTANCE.translations.put((ComponentContents) this, CommonSpeechManager.INSTANCE.lastResolvedKey);
+        if (CommonSpeechManager.INSTANCE.lastResolvedKey.get() != null) {
+            CommonSpeechManager.INSTANCE.translations.put((ComponentContents) this, CommonSpeechManager.INSTANCE.lastResolvedKey.get());
+            CommonSpeechManager.INSTANCE.lastResolvedKey.remove();
         }
     }
 }

@@ -46,6 +46,9 @@ public final class FamilyTreeNode {
     private transient final FamilyTree rootNode;
     private Gender gender;
     private String name;
+    private String firstName = "";
+    private String surname = "";
+    private boolean surnameDisabled;
     private String profession = VillagerProfession.NONE.identifier().toString();
     private UUID father;
     private UUID mother;
@@ -53,6 +56,12 @@ public final class FamilyTreeNode {
     private UUID widowedPartner = Util.NIL_UUID;
     private RelationshipState relationshipState = RelationshipState.SINGLE;
     private boolean deceased;
+    private CompoundTag familyEmotions = new CompoundTag();
+    public CompoundTag familyEmotions() { return familyEmotions; }
+    public boolean mourningSpouse() {
+        return relationshipState == RelationshipState.WIDOW && familyEmotions.getCompound("grief")
+                .map(g -> g.getLongOr(widowedPartner.toString(),0L)>com.ancientkira.mca.server.FamilyEmotions.now()).orElse(false);
+    }
     private CompoundTag revivalData;
     private CompoundTag appearanceData;
     private UUID lastRevivalRescuer;
@@ -82,10 +91,14 @@ public final class FamilyTreeNode {
         nbt.getList("children").ifPresent(listTag -> children.addAll(
                 NbtHelper.toList(listTag, c -> ((CompoundTag) c).read("uuid", UUIDUtil.CODEC).orElse(Util.NIL_UUID))
         ));
+        surnameDisabled = nbt.getBooleanOr("SurnameDisabled", false);
+        firstName = nbt.getStringOr("FirstName", "");
+        surname = nbt.getStringOr("LastName", "");
         pendingSurname = nbt.getString("pendingSurname").orElse(null);
         lastRevivalRescuer = nbt.read("lastRevivalRescuer", UUIDUtil.CODEC).orElse(null);
         profession = nbt.getString("profession").orElse(profession);
         deceased = nbt.getBoolean("isDeceased").orElse(false);
+        familyEmotions=nbt.getCompound("familyEmotions").map(CompoundTag::copy).orElseGet(CompoundTag::new);
         partner = nbt.read("spouse", UUIDUtil.CODEC).orElse(Util.NIL_UUID);
         widowedPartner = nbt.read("widowedPartner", UUIDUtil.CODEC).orElse(Util.NIL_UUID);
         relationshipState = RelationshipState.byId(nbt.getInt("marriageState").orElse(0));
@@ -139,6 +152,7 @@ public final class FamilyTreeNode {
         if (changed && deceased) rememberWidowedMarriage();
         this.deceased = deceased;
         if (!deceased) restoreWidowedMarriage();
+        if(changed && deceased && rootNode!=null)com.ancientkira.mca.server.FamilyEmotions.death(this);
         markDirty();
     }
 
@@ -180,6 +194,7 @@ public final class FamilyTreeNode {
     }
 
     public UUID getWidowedPartner() { return widowedPartner; }
+    public void setWidowedPartner(UUID id) { widowedPartner = id != null ? id : Util.NIL_UUID; markDirty(); }
 
     public Optional<CompoundTag> getRevivalData() {
         return Optional.ofNullable(revivalData).map(CompoundTag::copy);
@@ -195,6 +210,7 @@ public final class FamilyTreeNode {
         UUID spouse = relationshipState.isMarried() ? partner : widowedPartner;
         if (!spouse.equals(Util.NIL_UUID)) revivalData.store("MCAWidowedPartner", UUIDUtil.CODEC, spouse);
         if (entity instanceof VillagerEntityMCA person) {
+            revivalData.putBoolean("MCARevivalRaider",com.ancientkira.mca.registry.ProfessionsMCA.isRaider(person.getProfession()));
             person.getResidency().getRegistryVillage().ifPresent(village -> {
                 revivalData.putInt("MCARevivalVillage", village.getId());
                 revivalData.putString("MCARevivalDimension", entity.level().dimension().identifier().toString());
@@ -246,6 +262,17 @@ public final class FamilyTreeNode {
 
     public String getName() {
         return name;
+    }
+
+    public boolean isSurnameDisabled() { return surnameDisabled; }
+    public String getFirstName() { return com.ancientkira.mca.entity.NameParts.resolve(name, firstName, surname).first(); }
+    public String getSurname() { return com.ancientkira.mca.entity.NameParts.resolve(name, firstName, surname).last(); }
+    public void setNameParts(String first, String last) {
+        var parts = new com.ancientkira.mca.entity.NameParts(first, last);
+        if (firstName.equals(parts.first()) && surname.equals(parts.last()) && name.equals(parts.full())
+                && surnameDisabled == com.ancientkira.mca.entity.NameParts.disablesSurname(last)) return;
+        surnameDisabled = com.ancientkira.mca.entity.NameParts.disablesSurname(last);
+        firstName = parts.first(); surname = parts.last(); name = parts.full(); markDirty();
     }
 
     public void setName(String name) {
@@ -315,6 +342,7 @@ public final class FamilyTreeNode {
     }
 
     public void updatePartner(@Nullable Entity newPartner, @Nullable RelationshipState state) {
+        if (newPartner != null && (mourningSpouse() || rootNode.getOrEmpty(newPartner.getUUID()).map(FamilyTreeNode::mourningSpouse).orElse(false))) return;
         if (newPartner == null && state == RelationshipState.WIDOW) rememberWidowedMarriage();
         if (newPartner != null || state != RelationshipState.WIDOW) widowedPartner = Util.NIL_UUID;
         //cancel relationship with previous partner
@@ -420,13 +448,14 @@ public final class FamilyTreeNode {
         Set<UUID> family = new HashSet<>();
         family.add(id);
         getAllRelatives(depth).forEach(family::add);
-        rootNode.getOrEmpty(partner).ifPresent(spouse -> {
+        rootNode.getOrEmpty(partner.equals(Util.NIL_UUID) ? widowedPartner : partner).ifPresent(spouse -> {
             family.add(spouse.id());
             spouse.getAllRelatives(depth).forEach(family::add);
         });
         for (UUID relative : new HashSet<>(family)) {
             rootNode.getOrEmpty(relative).ifPresent(node -> {
                 if (node.relationshipState.isMarried() && !node.partner.equals(Util.NIL_UUID)) family.add(node.partner);
+                else if (!node.widowedPartner.equals(Util.NIL_UUID)) family.add(node.widowedPartner);
             });
         }
         family.remove(id);
@@ -624,9 +653,10 @@ public final class FamilyTreeNode {
 
     public void queueSurname(String surname) {
         pendingSurname = surname;
-        setName(com.ancientkira.mca.entity.FamilyNames.fullName(
-                com.ancientkira.mca.entity.FamilyNames.firstName(name), surname));
+        setNameParts(getFirstName(), surname);
     }
+
+    public void clearPendingSurname() { if (pendingSurname != null) { pendingSurname = null; markDirty(); } }
 
     public String takePendingSurname() {
         String surname = pendingSurname;
@@ -655,9 +685,13 @@ public final class FamilyTreeNode {
         if (lastRevivalRescuer != null) nbt.store("lastRevivalRescuer", UUIDUtil.CODEC, lastRevivalRescuer);
         nbt.put("revivalThanks", revivalThanks.copy());
         nbt.putString("name", name);
+        nbt.putBoolean("SurnameDisabled", surnameDisabled);
+        nbt.putString("FirstName", firstName);
+        nbt.putString("LastName", surname);
         nbt.store("id", UUIDUtil.CODEC, id);
         nbt.putBoolean("isPlayer", isPlayer);
         nbt.putBoolean("isDeceased", deceased);
+        nbt.put("familyEmotions", familyEmotions.copy());
         nbt.putInt("gender", gender.getId());
         nbt.store("father", UUIDUtil.CODEC, father);
         nbt.store("mother", UUIDUtil.CODEC, mother);

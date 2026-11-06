@@ -30,6 +30,7 @@ public class MiningTask extends AbstractChoreTask {
     private boolean returning, ending, newShaft;
     private String endMessage;
     private long retryAt;
+    private long nextOreNotice;
     private int diggingTicks, blastRetreatTicks;
     private long nextBlastAttempt, blastWaitUntil;
     private com.ancientkira.mca.server.MinerBlasting.Plan blastPlan;
@@ -43,7 +44,7 @@ public class MiningTask extends AbstractChoreTask {
     @Override
     protected boolean checkExtraStartConditions(ServerLevel world, VillagerEntityMCA entity) {
         return world.getGameTime() >= retryAt
-                && (!professionWork || world.getGameRules().get(GameRules.MOB_GRIEFING))
+                && (!professionWork || com.ancientkira.mca.server.VillagerGriefing.allowed(entity))
                 && (professionWork ? entity.getProfession() == com.ancientkira.mca.registry.ProfessionsMCA.MINER
                     && entity.getVillagerBrain().getCurrentJob() == Chore.NONE
                     && entity.getBrain().isActive(net.minecraft.world.entity.schedule.Activity.WORK)
@@ -64,12 +65,14 @@ public class MiningTask extends AbstractChoreTask {
     protected void start(ServerLevel world, VillagerEntityMCA entity, long time) {
         super.start(world, entity, time);
         if (!restoredRoute) { restoreRoute(world, entity); restoredRoute = true; }
+        if (!professionWork && equipPickaxe(entity).isEmpty()) { finish("chore.mining.nopick"); return; }
         if (professionWork) equipPickaxe(entity);
         if (furnace == null || !world.getBlockState(furnace).is(Blocks.FURNACE)) {
             furnace = com.ancientkira.mca.server.MinerWork.furnace(world, entity).orElse(null);
             if (furnace == null) { finish("chore.mining.no_furnace"); return; }
         }
-        if (step == null && entrance == null) {
+        if (com.ancientkira.mca.server.MinerWork.hasOre(entity)) returning = true;
+        if (!returning && step == null && entrance == null) {
             entrance = findEntrance(world, entity);
             if (entrance == null) { finish("chore.mining.unsafe"); return; }
             progress = walking = steps = 0;
@@ -119,7 +122,7 @@ public class MiningTask extends AbstractChoreTask {
             super.tick(world, entity, time);
             if (getAssigningPlayer().isEmpty()) return;
         }
-        if (!world.getGameRules().get(GameRules.MOB_GRIEFING)) {
+        if (!com.ancientkira.mca.server.VillagerGriefing.allowed(entity)) {
             clearChoreItem(entity);
             if (!professionWork) finish("chore.mining.disabled");
             return;
@@ -151,7 +154,7 @@ public class MiningTask extends AbstractChoreTask {
             returning = false;
             walking = 0;
             if (ending) { finish(endMessage); return; }
-            if (newShaft) {
+            if (newShaft || entrance == null) {
                 newShaft = false;
                 step = null;
                 entrance = findEntrance(world, entity);
@@ -251,6 +254,13 @@ public class MiningTask extends AbstractChoreTask {
         if (speed > 1 && efficiency > 0) speed += efficiency * efficiency + 1;
         int ticks = Math.max(10, (int) Math.ceil(Math.max(0.1F, state.getDestroySpeed(world, target)) * 30 / Math.max(1, speed)));
         if (++progress < ticks) return;
+        if (world.getGameTime() >= nextOreNotice
+                && (net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().endsWith("_ore")
+                    || state.is(Blocks.ANCIENT_DEBRIS))) {
+            nextOreNotice = world.getGameTime() + 200;
+            if (professionWork) entity.sendChatToAllAround("chore.mining.orenotify", state.getBlock().getName());
+            else getAssigningPlayer().ifPresent(player -> entity.sendChatMessage(player, "chore.mining.orenotify", state.getBlock().getName()));
+        }
         var drops = Block.getDrops(state, world, target, null, entity, pickaxe);
         if (!world.destroyBlock(target, false, entity)) { finish("chore.mining.blocked"); return; }
         com.ancientkira.mca.server.NeutralMobRules.onBlockMined(world, entity, target, state);

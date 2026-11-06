@@ -51,9 +51,28 @@ import java.util.Optional;
 import java.util.Set;
 
 public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrackedEntity<E>, VillagerDataHolder, Infectable, Messenger {
+    CDataParameter<Float> SICKNESS_ZOMBIE_PROGRESS = CParameter.create("SicknessZombieProgress", 0.0F);
+    CDataParameter<Float> SICKNESS_PROGRESS = CParameter.create("SicknessProgress", 0.0F);
+    CDataParameter<Integer> FAMILY_MOOD = CParameter.create("FamilyMood", 0);
+    CDataParameter<Boolean> FAMILY_HUG = CParameter.create("FamilyHug", false);
+    CDataParameter<Boolean> SICKENED = CParameter.create("Sickened", false);
+    CDataParameter<String> SICKENED_ID = CParameter.create("SickenedId", "");
+    CDataParameter<String> UNTINTED_HAIR_TEXTURES = CParameter.create("UntintedHairTextures", "");
+    CDataParameter<Boolean> SURNAME_DISABLED = CParameter.create("SurnameDisabled", false);
+    CDataParameter<String> FIRST_NAME = CParameter.create("FirstName", "");
+    CDataParameter<String> LAST_NAME = CParameter.create("LastName", "");
     CDataParameter<String> VOICE_ID = CParameter.create("VoiceId", "");
+    CDataParameter<String> FAVORITE_FOOD = CParameter.create("FavoriteFood", "");
+    CDataParameter<String> FAVORITE_COLOR = CParameter.create("FavoriteColor", "");
     CDataParameter<String> CLOTHES = CParameter.create("Clothes", "");
     CDataParameter<Boolean> CLOTHING_LOCKED = CParameter.create("ClothingLocked", false);
+    CDataParameter<Boolean> EYES_OVER_SKIN = CParameter.create("EyesOverSkin", false);
+    CDataParameter<String> EYE_TEXTURE = CParameter.create("EyeTexture", "");
+    CDataParameter<String> CLASSIC_SKIN = CParameter.create("ClassicSkin", "");
+    CDataParameter<String> ACCESSORY_HAT = CParameter.create("AccessoryHat", "");
+    CDataParameter<String> ACCESSORY_GLASSES = CParameter.create("AccessoryGlasses", "");
+    CDataParameter<String> ACCESSORY_FACE = CParameter.create("AccessoryFace", "");
+    CDataParameter<String> ACCESSORY_BACK = CParameter.create("AccessoryBack", "");
     CDataParameter<String> SKIN = CParameter.create("Skin", "");
     CDataParameter<String> HAIR = CParameter.create("Hair", "");
     CDataParameter<String> HAIR_STYLE = CParameter.create("HairStyle", "");
@@ -73,11 +92,24 @@ public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrack
 
     static <E extends Entity> CDataManager.Builder<E> createTrackedData(CDataManager.Builder<E> builder) {
         return builder
-                .addAll(VOICE_ID, CLOTHES, SKIN, HAIR, HAIR_STYLE, HAIR_BASE, HAIR_BANGS, HAIR_BACK, HAIR_FRONT, HAIR_EXTRA,
+                .addAll(FAMILY_MOOD, FAMILY_HUG, SICKNESS_ZOMBIE_PROGRESS, SICKNESS_PROGRESS, SICKENED, SICKENED_ID, UNTINTED_HAIR_TEXTURES, FIRST_NAME, LAST_NAME, SURNAME_DISABLED, FAVORITE_FOOD, FAVORITE_COLOR, VOICE_ID, CLOTHES, CLASSIC_SKIN, EYES_OVER_SKIN, EYE_TEXTURE, ACCESSORY_HAT, ACCESSORY_GLASSES, ACCESSORY_FACE, ACCESSORY_BACK, SKIN, HAIR, HAIR_STYLE, HAIR_BASE, HAIR_BANGS, HAIR_BACK, HAIR_FRONT, HAIR_EXTRA,
                         SKIN_COLOR, HAIR_COLOR, EYE_COLOR, EYE_COLOR_LEFT, AGE_STATE, CLOTHING_LOCKED)
                 .add(Genetics::createTrackedData)
                 .add(Traits::createTrackedData)
                 .add(VillagerBrain::createTrackedData);
+    }
+
+    String[] FAVORITE_FOODS = {"apple", "bread", "carrot", "baked_potato", "pumpkin_pie", "cookie", "melon_slice", "sweet_berries", "cooked_beef", "cooked_salmon"};
+    String[] FAVORITE_COLORS = {"white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray", "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black"};
+
+    default String getFavoriteFood() {
+        String saved = getTrackedValue(FAVORITE_FOOD);
+        return saved.isEmpty() ? FAVORITE_FOODS[Math.floorMod(asEntity().getUUID().hashCode(), FAVORITE_FOODS.length)] : saved;
+    }
+
+    default String getFavoriteColor() {
+        String saved = getTrackedValue(FAVORITE_COLOR);
+        return saved.isEmpty() ? FAVORITE_COLORS[Math.floorMod(Long.hashCode(asEntity().getUUID().getMostSignificantBits()), FAVORITE_COLORS.length)] : saved;
     }
 
     static VillagerLike<?> toVillager(PlayerSaveData player) {
@@ -134,12 +166,19 @@ public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrack
 
     @Override
     default boolean isSpeechImpaired() {
-        return getInfectionProgress() > BABBLING_THRESHOLD;
+        return getInfectionProgress() > BABBLING_THRESHOLD
+                || com.ancientkira.mca.compat.SickenedCompat.progress(this) > BABBLING_THRESHOLD
+                || com.ancientkira.mca.compat.SickenedCompat.enabled() && getTrackedValue(SICKENED);
     }
 
     @Override
     default boolean isToYoungToSpeak() {
         return getAgeState() == AgeState.BABY;
+    }
+
+    default float getVoicePitch() {
+        if (asEntity() instanceof VillagerEntityMCA v) return v.getVoicePitch();
+        return 1.0F;
     }
 
     default void setName(String name) {
@@ -237,6 +276,15 @@ public interface VillagerLike<E extends Entity & VillagerLike<E>> extends CTrack
     default void setClothingLocked(boolean clothingLocked) {
         setTrackedValue(CLOTHING_LOCKED, clothingLocked);
     }
+
+    default String getClassicSkin() { return getTrackedValue(CLASSIC_SKIN); }
+    default void setClassicSkin(String texture) { setTrackedValue(CLASSIC_SKIN, texture); }
+    default String getAccessory(int slot) { return getTrackedValue(switch(slot) {
+        case 0 -> ACCESSORY_HAT; case 1 -> ACCESSORY_GLASSES; case 2 -> ACCESSORY_FACE; default -> ACCESSORY_BACK;
+    }); }
+    default void setAccessory(int slot,String texture) { setTrackedValue(switch(slot) {
+        case 0 -> ACCESSORY_HAT; case 1 -> ACCESSORY_GLASSES; case 2 -> ACCESSORY_FACE; default -> ACCESSORY_BACK;
+    },texture); }
 
     default String getSkin() {
         return getTrackedValue(SKIN);

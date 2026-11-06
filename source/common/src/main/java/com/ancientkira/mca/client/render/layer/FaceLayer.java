@@ -27,10 +27,19 @@ public class FaceLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
     private static final int OPAQUE_WHITE = 0xFFFFFFFF;
 
     private final String variant;
+    private final Boolean aboveHair;
 
     public FaceLayer(RenderLayerParent<S, M> renderer, M model, String variant) {
         super(renderer, model);
         this.variant = variant;
+        this.aboveHair = null;
+    }
+    public FaceLayer(RenderLayerParent<S, M> renderer, M model, String variant, boolean aboveHair) {
+        super(renderer,model);this.variant=variant;this.aboveHair=aboveHair;
+    }
+    @Override public void submit(PoseStack pose,SubmitNodeCollector collector,int light,S state,float yRot,float xRot) {
+        if(aboveHair!=null && aboveHair!=com.ancientkira.mca.Config.getInstance().eyesOverHair)return;
+        super.submit(pose,collector,light,state,yRot,xRot);
     }
 
     @Override
@@ -55,19 +64,23 @@ public class FaceLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
 
         Identifier skin = getSkin(state);
         var visuals = VillagerVisuals.require(state);
-        Identifier renderedSkin = visuals.isBlinking() ? getBlinkSkin() : skin;
+        var expressionState=state instanceof com.ancientkira.mca.client.render.VillagerRenderState v ? v : null;
+        String expression=expressionState!=null && expressionState.mcaHurtFace ? "hurt"
+                : expressionState!=null && expressionState.mcaScaredFace ? "scared" : "normal";
+        boolean blink=expressionState!=null && expressionState.mcaCorpse || expression.equals("normal") && visuals.isBlinking();
+        Identifier renderedSkin = blink ? getBlinkSkin() : skin;
         if (canUse(renderedSkin)) {
-            if (visuals.isBlinking()) {
+            if (blink) {
                 renderModel(poseStack, submitNodeCollector, lightCoords, this.model, OPAQUE_WHITE, renderedSkin, tint, visible, glowing, state);
             } else if (visuals.heterochromia()) {
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, OPAQUE_WHITE, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.SCLERA, EyeTextureLayers.Side.FULL), tint, visible, glowing, state);
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, EyeTextureLayers.DETAILS_TINT, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.DETAILS, EyeTextureLayers.Side.FULL), tint, visible, glowing, state);
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, getEyeColor(visuals, tickDelta, true), getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.IRIS, EyeTextureLayers.Side.LEFT), tint, visible, glowing, state);
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, getEyeColor(visuals, tickDelta, false), getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.IRIS, EyeTextureLayers.Side.RIGHT), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, OPAQUE_WHITE, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.SCLERA, EyeTextureLayers.Side.FULL, expression), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, EyeTextureLayers.DETAILS_TINT, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.DETAILS, EyeTextureLayers.Side.FULL, expression), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, getEyeColor(visuals, tickDelta, true), getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.IRIS, EyeTextureLayers.Side.LEFT, expression), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, getEyeColor(visuals, tickDelta, false), getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.IRIS, EyeTextureLayers.Side.RIGHT, expression), tint, visible, glowing, state);
             } else {
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, OPAQUE_WHITE, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.SCLERA, EyeTextureLayers.Side.FULL), tint, visible, glowing, state);
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, EyeTextureLayers.DETAILS_TINT, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.DETAILS, EyeTextureLayers.Side.FULL), tint, visible, glowing, state);
-                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, getEyeColor(visuals, tickDelta, false), getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.IRIS, EyeTextureLayers.Side.FULL), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, OPAQUE_WHITE, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.SCLERA, EyeTextureLayers.Side.FULL, expression), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, EyeTextureLayers.DETAILS_TINT, getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.DETAILS, EyeTextureLayers.Side.FULL, expression), tint, visible, glowing, state);
+                renderModel(poseStack, submitNodeCollector, lightCoords, this.model, getEyeColor(visuals, tickDelta, false), getOrGenerateEyeLayer(skin, EyeTextureLayers.Layer.IRIS, EyeTextureLayers.Side.FULL, expression), tint, visible, glowing, state);
             }
         }
 
@@ -80,6 +93,9 @@ public class FaceLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
     @Override
     public Identifier getSkin(S state) {
         var visuals = VillagerVisuals.require(state);
+        var selected=com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(visuals.eyeTexture());
+        if(selected.isPresent() && com.ancientkira.mca.client.gui.immersive_library.SkinCache.getImage(selected.getAsInt()).isPresent())
+            return com.ancientkira.mca.client.gui.immersive_library.SkinCache.getTextureIdentifier(selected.getAsInt());
         FaceList list = FaceList.getInstance();
         return list == null ? getBlinkSkin() : list.pick(variant, visuals.faceGene());
     }
@@ -91,6 +107,7 @@ public class FaceLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
     private static final Map<EyeLayerKey, Identifier> EYE_TEXTURE_CACHE = new ConcurrentHashMap<>();
 
     public static void clearGeneratedEyeTextureCache() {
+        com.ancientkira.mca.client.render.CorpseEyeTextures.clear();
         var textureManager = net.minecraft.client.Minecraft.getInstance().getTextureManager();
         EYE_TEXTURE_CACHE.values().forEach(id -> {
             if (id.getNamespace().equals(MCA.MOD_ID) && id.getPath().startsWith("dynamic/eye/")) {
@@ -100,23 +117,50 @@ public class FaceLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
         EYE_TEXTURE_CACHE.clear();
     }
 
-    private record EyeLayerKey(Identifier texture, EyeTextureLayers.Layer layer, EyeTextureLayers.Side side) {
+    private record EyeLayerKey(Identifier texture, EyeTextureLayers.Layer layer, EyeTextureLayers.Side side, String expression) {
     }
 
     private static int getEyeColor(VillagerVisuals visuals, float tickDelta, boolean left) {
         return visuals.eyeColor(tickDelta, left);
     }
 
-    private Identifier getOrGenerateEyeLayer(Identifier original, EyeTextureLayers.Layer layer, EyeTextureLayers.Side side) {
-        return EYE_TEXTURE_CACHE.computeIfAbsent(new EyeLayerKey(original, layer, side), key -> {
+    private static NativeImage readEyeImage(Identifier id) throws java.io.IOException {
+        var content=com.ancientkira.mca.util.ImmersiveLibraryIds.contentId(id.toString());
+        if(content.isPresent()) {
+            NativeImage source=com.ancientkira.mca.client.gui.immersive_library.SkinCache.getImage(content.getAsInt()).orElseThrow(()->new java.io.IOException("Eye texture is loading"));
+            NativeImage copy=new NativeImage(source.getWidth(),source.getHeight(),true);copy.copyFrom(source);return copy;
+        }
+        var resource=Minecraft.getInstance().getResourceManager().getResource(id).orElseThrow(()->new java.io.IOException("Missing eye texture"));
+        try(InputStream stream=resource.open()){return NativeImage.read(stream);}
+    }
+
+    private Identifier getOrGenerateEyeLayer(Identifier original, EyeTextureLayers.Layer layer, EyeTextureLayers.Side side, String expression) {
+        return EYE_TEXTURE_CACHE.computeIfAbsent(new EyeLayerKey(original, layer, side, expression), key -> {
             try {
                 Identifier id = key.texture();
-                var resource = Minecraft.getInstance().getResourceManager().getResource(id);
-                if (resource.isEmpty()) return id;
-
-                try (InputStream stream = resource.get().open(); NativeImage originalImage = NativeImage.read(stream)) {
+                try (NativeImage originalImage = readEyeImage(id)) {
                     int w = originalImage.getWidth();
                     int h = originalImage.getHeight();
+                    if(key.expression().equals("scared")) {
+                        EyeTextureLayers.Bounds originalBounds=EyeTextureLayers.findBounds(originalImage);
+                        int middle=originalBounds.minX()+originalBounds.width()/2;
+                        int[][] eyes={{w,h,-1,-1},{w,h,-1,-1}};
+                        for(int x=0;x<w;x++)for(int y=0;y<h;y++) {
+                            if(ARGB.alpha(originalImage.getPixel(x,y))==0)continue;
+                            int[] eye=eyes[x<middle?0:1];
+                            eye[0]=Math.min(eye[0],x);eye[1]=Math.min(eye[1],y);
+                            eye[2]=Math.max(eye[2],x);eye[3]=Math.max(eye[3],y);
+                        }
+                        for(int x=0;x<w;x++)for(int y=0;y<h;y++) {
+                            int eyeSide=x<middle?0:1;int[] eye=eyes[eyeSide];
+                            originalImage.setPixel(x,y,eye[2]<eye[0]?0:
+                                    com.ancientkira.mca.client.resources.EyeExpressionPixels.scaredPixel(w,x,y,
+                                            eye[0],eye[1],eye[2],eye[3],eyeSide==0));
+                        }
+                    } else if(!key.expression().equals("normal")) {
+                        for(int x=0;x<w;x++)for(int y=0;y<h;y++) originalImage.setPixel(x,y,
+                                com.ancientkira.mca.client.resources.EyeExpressionPixels.pixel(key.expression(),w,x,y));
+                    }
                     EyeTextureLayers.Bounds bounds = EyeTextureLayers.findBounds(originalImage);
                     if (key.side() != EyeTextureLayers.Side.FULL && bounds.width() % 2 != 0) {
                         throw new IllegalStateException("Face eye texture width must be divisible by 2 for heterochromia: " + id + " bounds=" + bounds);
@@ -138,7 +182,7 @@ public class FaceLayer<S extends HumanoidRenderState, M extends HumanoidModel<S>
                             }
                         }
 
-                        Identifier newId = Identifier.fromNamespaceAndPath("mca", "dynamic/eye/" + key.side().name().toLowerCase(Locale.ROOT) + "/" + key.layer().name().toLowerCase(Locale.ROOT) + "/" + id.getNamespace() + "_" + id.getPath().replace("/", "_"));
+                        Identifier newId = Identifier.fromNamespaceAndPath("mca", "dynamic/eye/" + key.expression() + "/" + key.side().name().toLowerCase(Locale.ROOT) + "/" + key.layer().name().toLowerCase(Locale.ROOT) + "/" + id.getNamespace() + "_" + id.getPath().replace("/", "_"));
                         Minecraft.getInstance().getTextureManager().register(newId, new DynamicTexture(newId::toString, newImage));
                         return newId;
                     } catch (Exception exception) {

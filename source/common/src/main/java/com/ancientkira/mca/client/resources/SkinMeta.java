@@ -7,6 +7,7 @@ public class SkinMeta {
     private final int temperature;
     private final int gender;
     private final float chance;
+    private boolean untinted;
 
     public SkinMeta(String profession, int temperature, int gender, float chance) {
         this.profession = profession;
@@ -14,6 +15,11 @@ public class SkinMeta {
         this.gender = gender;
         this.chance = chance;
     }
+
+    public SkinMeta(String profession,int temperature,int gender,float chance,boolean untinted) {
+        this(profession,temperature,gender,chance);this.untinted=untinted;
+    }
+    public boolean isUntinted(){return untinted;}
 
     public String getProfession() {
         return profession;

@@ -47,6 +47,9 @@ public class ServerInteractionManager {
     }
 
     public void tick() {
+        com.ancientkira.mca.MCA.getServer().ifPresent(server -> {
+            if (server.overworld().getGameTime() % 20 == 0) Corpses.tick(server.overworld());
+        });
         List<UUID> removals = new ArrayList<>();
         procreateMap.keySet().stream()
                 .filter((k) -> procreateMap.getLong(k) < System.currentTimeMillis())
@@ -55,16 +58,16 @@ public class ServerInteractionManager {
     }
 
     public void onPlayerJoin(ServerPlayer player) {
+        FirstJoinSetup.finish(player);
+        com.ancientkira.mca.server.world.data.Nationality.get(player.level()).rememberNameLanguage(player.clientInformation().language());
         PlayerSaveData playerData = PlayerSaveData.get(player);
         if (playerData.markWelcome820Shown()) {
             Network.sendToPlayer(new ShowToastRequest("gui.destiny.welcome", "gui.destiny.version"), player);
         }
         if (!playerData.isEntityDataSet()) {
             if (Config.getInstance().launchIntoDestiny) {
+                FirstJoinSetup.begin(player);
                 launchDestiny(player);
-
-                player.addEffect(new MobEffectInstance(MobEffects.INVISIBILITY, 3600));
-                player.addEffect(new MobEffectInstance(MobEffects.HEALTH_BOOST, 3600));
             } else if (Config.getInstance().allowDestinyCommandOnce) {
                 Network.sendToPlayer(new ShowToastRequest(
                         "server.destinyNotSet.title",

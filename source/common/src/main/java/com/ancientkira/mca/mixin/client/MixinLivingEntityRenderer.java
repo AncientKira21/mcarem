@@ -15,6 +15,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(LivingEntityRenderer.class)
 public class MixinLivingEntityRenderer {
+    @ModifyReturnValue(method = "getModelTint", at = @At("RETURN"))
+    private int mca$greyRaiderGolem(int tint, LivingEntityRenderState state) {
+        if (state instanceof com.ancientkira.mca.entity.RaiderGolemAppearance raider && raider.mca$isGreyRaider()) {
+            int red = ((tint >>> 16) & 255) * 153 / 255;
+            int green = ((tint >>> 8) & 255) * 153 / 255;
+            int blue = (tint & 255) * 153 / 255;
+            return (tint & 0xFF000000) | red << 16 | green << 8 | blue;
+        }
+        return tint;
+    }
+
     @Inject(method = "extractRenderState", at = @At("TAIL"))
     private void mca$capturePreviewAnimationState(
             LivingEntity entity,

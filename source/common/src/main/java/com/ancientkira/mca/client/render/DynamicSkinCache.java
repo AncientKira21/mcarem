@@ -46,7 +46,7 @@ public final class DynamicSkinCache {
         int infectionProgressKey
     ) {
         public static SkinKey from(VillagerVisuals visuals) {
-            int infProgress = Math.round(visuals.infectionProgress() * 100.0f);
+            int infProgress = Math.round(visuals.skinInfectionProgress() * 100.0f);
             return new SkinKey(
                 visuals.genderDataName(),
                 visuals.female(),
@@ -111,6 +111,7 @@ public final class DynamicSkinCache {
             if (remove) {
                 Identifier id = eldest.getValue();
                 Minecraft.getInstance().getTextureManager().release(id);
+                Minecraft.getInstance().getTextureManager().release(id.withPath(p -> "textures/" + p + ".png"));
                 INCOMPLETE_CACHE.remove(eldest.getKey());
             }
             return remove;
@@ -124,6 +125,7 @@ public final class DynamicSkinCache {
             if (remove) {
                 Identifier id = eldest.getValue();
                 Minecraft.getInstance().getTextureManager().release(id);
+                Minecraft.getInstance().getTextureManager().release(id.withPath(p -> "textures/" + p + ".png"));
                 INCOMPLETE_FACE_CACHE.remove(eldest.getKey());
             }
             return remove;
@@ -157,6 +159,7 @@ public final class DynamicSkinCache {
         if (cachedId != null) {
             if (!missingAssets && INCOMPLETE_CACHE.remove(key)) {
                 Minecraft.getInstance().getTextureManager().release(cachedId);
+                Minecraft.getInstance().getTextureManager().release(cachedId.withPath(p -> "textures/" + p + ".png"));
                 CACHE.remove(key);
             } else {
                 return cachedId;
@@ -180,6 +183,7 @@ public final class DynamicSkinCache {
         if (cachedId != null) {
             if (!missingAssets && INCOMPLETE_FACE_CACHE.remove(key)) {
                 Minecraft.getInstance().getTextureManager().release(cachedId);
+                Minecraft.getInstance().getTextureManager().release(cachedId.withPath(p -> "textures/" + p + ".png"));
                 FACE_CACHE.remove(key);
             } else {
                 return cachedId;
@@ -244,7 +248,9 @@ public final class DynamicSkinCache {
                 }
 
                 Identifier newId = Identifier.fromNamespaceAndPath("mca", "dynamic/icon/" + keyId(key.getUniqueId()));
-                Minecraft.getInstance().getTextureManager().register(newId, new DynamicTexture(newId::toString, scaled));
+                DynamicTexture iconTexture = new DynamicTexture(newId::toString, scaled);
+                Minecraft.getInstance().getTextureManager().register(newId, iconTexture);
+                Minecraft.getInstance().getTextureManager().register(newId.withPath(p -> "textures/" + p + ".png"), new DynamicTextureAlias(iconTexture));
                 return newId;
             } finally {
                 face.close();
@@ -292,11 +298,27 @@ public final class DynamicSkinCache {
             }
 
             Identifier newId = Identifier.fromNamespaceAndPath("mca", "dynamic/stitched/" + keyId(key.getUniqueId()));
-            Minecraft.getInstance().getTextureManager().register(newId, new DynamicTexture(newId::toString, base));
+            DynamicTexture dynamicTexture = new DynamicTexture(newId::toString, base);
+            Minecraft.getInstance().getTextureManager().register(newId, dynamicTexture);
+            Minecraft.getInstance().getTextureManager().register(newId.withPath(p -> "textures/" + p + ".png"), new DynamicTextureAlias(dynamicTexture));
             return newId;
         } catch (Exception e) {
             MCA.LOGGER.error("Failed to generate dynamic stitched skin", e);
             return Identifier.parse("textures/entity/steve.png");
+        }
+    }
+
+    public static class DynamicTextureAlias extends net.minecraft.client.renderer.texture.AbstractTexture {
+        public DynamicTextureAlias(DynamicTexture parent) {
+            this.texture = parent.getTexture();
+            this.textureView = parent.getTextureView();
+            this.sampler = parent.getSampler();
+        }
+
+        @Override
+        public void close() {
+            this.texture = null;
+            this.textureView = null;
         }
     }
 

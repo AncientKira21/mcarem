@@ -26,11 +26,12 @@ public class SayTask extends Behavior<VillagerEntityMCA> {
     }
 
     protected boolean checkExtraStartConditions(ServerLevel world, VillagerEntityMCA entity) {
-        return entity.level().getGameTime() - lastShout > interval && condition.test(entity);
+        return !com.ancientkira.mca.server.VillageMusic.attending(entity) && entity.level().getGameTime() - lastShout > interval && condition.test(entity);
     }
 
     protected void start(ServerLevel world, VillagerEntityMCA entity, long time) {
-        entity.sendChatToAllAround(phrase);
+        if(phrase.equals("villager.attack"))com.ancientkira.mca.server.TacticalCommands.shout(entity);
+        else entity.sendChatToAllAround(phrase);
         lastShout = entity.level().getGameTime();
     }
 }

@@ -1,1 +1,7 @@
-{"replace":false,"values":["mca:miner"]}
+{
+  "replace": false,
+  "values": [
+    "mca:miner",
+    "mca:baker"
+  ]
+}

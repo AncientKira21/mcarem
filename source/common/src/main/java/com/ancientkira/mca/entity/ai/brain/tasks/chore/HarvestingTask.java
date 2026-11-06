@@ -167,7 +167,6 @@ public class HarvestingTask extends AbstractChoreTask {
 
     @Override
     protected void tick(ServerLevel world, VillagerEntityMCA villager, long time) {
-        if (!world.getGameRules().get(net.minecraft.world.level.gamerules.GameRules.MOB_GRIEFING)) return;
         if (currentPos == null) return;
         villager.moveTowards(isValidFarmland(currentPos) ? currentPos.above() : currentPos);
         if (++walkingTicks > 200) {

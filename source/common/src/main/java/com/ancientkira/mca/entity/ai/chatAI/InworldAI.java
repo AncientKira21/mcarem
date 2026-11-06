@@ -1,5 +1,6 @@
 package com.ancientkira.mca.entity.ai.chatAI;
 
+import com.ancientkira.mca.Config;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.ai.chatAI.inworldAIModules.EmotionModule;
 import com.ancientkira.mca.entity.ai.chatAI.inworldAIModules.RelationshipModule;
@@ -12,6 +13,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Optional;
+import java.util.UUID;
+import com.ancientkira.mca.server.world.data.PlayerSaveData;
 
 public class InworldAI implements ChatAIStrategy {
     private final SessionModule sessionModule;
@@ -34,35 +37,37 @@ public class InworldAI implements ChatAIStrategy {
      * @param msg      The message
      * @return {@code Optional.EMPTY} on error, Optional containing the answer to a message on success
      */
-    public Optional<String> answer(ServerPlayer player, VillagerEntityMCA villager, String msg) {
+    public synchronized Optional<String> answer(ServerPlayer player, VillagerEntityMCA villager, String msg) {
 
-        // Create status update event for Character (Includes relationship and current emotional state)
-        TriggerEvent.Parameter relationshipTrigger = relationshipModule.getRelationshipTriggerParameter(player, villager);
-        TriggerEvent.Parameter emotionTrigger = emotionModule.getEmotionTriggerParameter(villager);
-        TriggerEvent event = new TriggerEvent("status-update", new TriggerEvent.Parameter[]{relationshipTrigger, emotionTrigger});
+        var server = player.level().getServer();
+        Request request = server.submit(() -> {
+            if (!ChatAI.canReply(player, villager)) return null;
+            TriggerEvent event = new TriggerEvent("status-update", new TriggerEvent.Parameter[]{
+                    relationshipModule.getRelationshipTriggerParameter(player, villager),
+                    emotionModule.getEmotionTriggerParameter(villager),
+                    new TriggerEvent.Parameter("current-context", ChatAIContext.currentFacts(player, villager))
+            });
+            return new Request(player.getUUID(), player.getName().getString(),
+                    PlayerSaveData.get(player).getGender().getDataName(), event);
+        }).join();
+        if (request == null) return Optional.empty();
 
-        // Get response
-        Optional<Interaction> optionalResponse = sessionModule.getResponse(player, msg, event);
-        if (optionalResponse.isPresent()) {
-            Interaction response = optionalResponse.get();
-
-            // Use response data to update heart level
-            relationshipModule.updateRelationship(response, player, villager);
-
-            // Use response data to update move state
-            triggerModule.processTriggers(response, player, villager);
-
-            // Answer, or be silent if there is no answer (e.g., on triggers)
-            String answer = String.join("", response.textList());
-            if (answer.isEmpty()) {
-                return Optional.empty();
-            } else {
-                return Optional.of(answer);
+        Optional<Interaction> response = sessionModule.getResponse(
+                request.playerId(), request.playerName(), request.gender(), msg, request.status());
+        return server.submit(() -> {
+            if (!ChatAI.canReply(player, villager)) return Optional.<String>empty();
+            if (response.isEmpty()) {
+                player.sendSystemMessage(Component.translatable("mca.ai_broken").withStyle(ChatFormatting.RED));
+                return Optional.<String>empty();
             }
-        } else {
-            player.sendSystemMessage(Component.translatable("mca.ai_broken").withStyle(ChatFormatting.RED));
-            return Optional.empty();
-        }
+            Interaction interaction = response.get();
+            relationshipModule.updateRelationship(interaction, player, villager);
+            if (Config.getInstance().villagerChatAIUseTools) {
+                triggerModule.processTriggers(interaction, player, villager);
+            }
+            String answer = String.join("", interaction.textList());
+            return answer.isEmpty() ? Optional.<String>empty() : Optional.of(answer);
+        }).join();
     }
+    private record Request(UUID playerId, String playerName, String gender, TriggerEvent status) {}
 }
-

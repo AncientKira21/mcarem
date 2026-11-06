@@ -29,6 +29,7 @@ public final class VillagerProposals {
                 && player.isAlive() && !player.isSpectator()
                 && !Relationship.IS_RELATIVE.test(villager, player)
                 && !relationship.isMarried() && !data.isMarried()
+                && !relationship.getFamilyEntry().mourningSpouse()
                 && relationship.getPartnerUUID().filter(id -> !id.equals(player.getUUID())).isEmpty()
                 && data.getPartnerUUID().filter(id -> !id.equals(villager.getUUID())).isEmpty()
                 && villager.getVillagerBrain().getMemoriesForPlayer(player).getHearts() >= Config.getInstance().marriageHeartsRequirement

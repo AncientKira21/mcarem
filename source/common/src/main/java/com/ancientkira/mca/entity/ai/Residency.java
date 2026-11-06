@@ -51,6 +51,9 @@ public class Residency {
     }
 
     public void setWorkplace(ServerPlayer player) {
+        if(entity.getVillagerData().profession().is(VillagerProfession.NITWIT)) {
+            entity.sendChatMessage(net.minecraft.network.chat.Component.translatable("mca.nitwit.refuse_work"),player);return;
+        }
         PoiManager pointOfInterestStorage = ((ServerLevel) player.level()).getPoiManager();
         VillagerProfession noneProfession = BuiltInRegistries.VILLAGER_PROFESSION.getValueOrThrow(VillagerProfession.NONE);
         pointOfInterestStorage.findClosest(noneProfession.acquirableJobSite(), a -> true, entity.blockPosition(), 8, PoiManager.Occupancy.HAS_SPACE).ifPresentOrElse(blockPos -> {
@@ -159,6 +162,7 @@ public class Residency {
         }
     }
     public void tickReturn(){
+        if (com.ancientkira.mca.server.PortalPursuit.active(entity)) return;
         int id=entity.getTrackedValue(RETURN_VILLAGE);
         if(id<0||entity.tickCount%20!=0||entity.getVillagerBrain().getMoveState()!=MoveState.MOVE
                 ||entity.getVillagerBrain().isPanicking()||entity.getBrain().hasMemoryValue(MemoryModuleType.ATTACK_TARGET))return;
@@ -229,6 +233,11 @@ public class Residency {
         //check if it is a building
         stream.forEach(manager::reportBuilding);
 
+        // Generated outposts have no beds or workstations, so their marker seeds the room scan.
+        entity.level().getEntitiesOfClass(net.minecraft.world.entity.Marker.class,
+                entity.getBoundingBox().inflate(48), marker -> marker.entityTags().contains("mca_village_outpost"))
+                .forEach(marker -> { if (!manager.cache.contains(marker.blockPosition())) manager.reportBuilding(marker.blockPosition()); });
+
         // also add tombstones
         GraveyardManager.get((ServerLevel) entity.level()).reportToVillageManager(entity);
     }
@@ -239,13 +248,15 @@ public class Residency {
 
     private static boolean validateBedPoi(ServerLevel level, BlockPos blockPos) {
         BlockState blockState = level.getBlockState(blockPos);
-        return blockState.is(BlockTags.BEDS)
+        return !com.ancientkira.mca.server.world.data.PlayerBedClaims.reserved(level, blockPos)
+                && blockState.is(BlockTags.BEDS)
                 && blockState.hasProperty(BedBlock.OCCUPIED)
                 && !blockState.getValue(BedBlock.OCCUPIED);
     }
 
     public void setHome(ServerPlayer player) {
-        if (!entity.requiresHome()) {
+        if (!entity.requiresHome() && !Relationship.IS_FAMILY.test(entity, player)
+                && !Relationship.IS_ROMANTIC_PARTNER.test(entity, player)) {
             entity.sendChatMessage(player, "interaction.sethome.temporary");
             return;
         }
@@ -266,6 +277,7 @@ public class Residency {
                 8
         ).ifPresentOrElse(claimedHome -> {
             entity.sendChatMessage(player, "interaction.sethome.success");
+            if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) person.setDespawnDelay(0);
 
             boolean reclaimedSameHome = previousHome
                     .map(home -> home.dimension().equals(level.dimension()) && home.pos().equals(claimedHome))
@@ -278,6 +290,50 @@ public class Residency {
             entity.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(level.dimension(), claimedHome));
             if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) com.ancientkira.mca.server.PortalHomecoming.rememberHome(person);
             entity.getBrain().setMemory(MemoryModuleTypeMCA.FORCED_HOME, true);
+
+            // If the villager is married, also relocate spouse and minor children to nearby beds in the same home!
+            if (entity instanceof com.ancientkira.mca.entity.VillagerEntityMCA person) {
+                person.getRelationships().getPartner()
+                        .filter(p -> p instanceof com.ancientkira.mca.entity.VillagerEntityMCA)
+                        .map(p -> (com.ancientkira.mca.entity.VillagerEntityMCA) p)
+                        .ifPresent(spouseVillager -> {
+                            if (spouseVillager.level() == level) {
+                                poiManager.take(
+                                        registryEntry -> registryEntry.is(PoiTypes.HOME),
+                                        (registryEntry, blockPos) -> validateBedPoi(level, blockPos),
+                                        claimedHome,
+                                        12
+                                ).ifPresent(spouseBed -> {
+                                    spouseVillager.releasePoi(MemoryModuleType.HOME);
+                                    spouseVillager.getBrain().eraseMemory(MemoryModuleType.HOME);
+                                    spouseVillager.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(level.dimension(), spouseBed));
+                                    spouseVillager.getBrain().setMemory(MemoryModuleTypeMCA.FORCED_HOME, true);
+                                    spouseVillager.setDespawnDelay(0);
+                                    getHomeVillage().ifPresent(spouseVillager.getResidency()::joinVillage);
+                                });
+                            }
+                        });
+
+                person.getRelationships().getFamilyEntry().children().stream()
+                        .map(level::getEntity)
+                        .filter(c -> c instanceof com.ancientkira.mca.entity.VillagerEntityMCA childVillager && childVillager.getAgeState() != com.ancientkira.mca.entity.ai.relationship.AgeState.ADULT)
+                        .map(com.ancientkira.mca.entity.VillagerEntityMCA.class::cast)
+                        .forEach(childVillager -> {
+                            poiManager.take(
+                                    registryEntry -> registryEntry.is(PoiTypes.HOME),
+                                    (registryEntry, blockPos) -> validateBedPoi(level, blockPos),
+                                    claimedHome,
+                                    12
+                            ).ifPresent(childBed -> {
+                                childVillager.releasePoi(MemoryModuleType.HOME);
+                                childVillager.getBrain().eraseMemory(MemoryModuleType.HOME);
+                                childVillager.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(level.dimension(), childBed));
+                                childVillager.getBrain().setMemory(MemoryModuleTypeMCA.FORCED_HOME, true);
+                                childVillager.setDespawnDelay(0);
+                                getHomeVillage().ifPresent(childVillager.getResidency()::joinVillage);
+                            });
+                        });
+            }
 
             seekHome();
         }, () -> {
@@ -298,5 +354,47 @@ public class Residency {
             entity.moveTowards(home.pos());
             entity.sendChatMessage(player, "interaction.gohome.success");
         }, () -> entity.sendChatMessage(player, "interaction.gohome.fail.nohome"));
+    }
+
+    public static void syncSpouseResidences(VillagerEntityMCA a, VillagerEntityMCA b) {
+        if (a == null || b == null || !(a.level() instanceof ServerLevel level) || level != b.level()) {
+            return;
+        }
+        Optional<Village> villageA = a.getResidency().getHomeVillage();
+        Optional<Village> villageB = b.getResidency().getHomeVillage();
+        Village targetVillage = villageA.or(() -> villageB).orElse(null);
+        if (targetVillage != null) {
+            if (villageA.isEmpty()) a.getResidency().joinVillage(targetVillage);
+            if (villageB.isEmpty()) b.getResidency().joinVillage(targetVillage);
+        }
+
+        Optional<GlobalPos> homeA = a.getResidency().getHome();
+        Optional<GlobalPos> homeB = b.getResidency().getHome();
+
+        if (homeA.isPresent() && (homeB.isEmpty() || !homeB.get().dimension().equals(level.dimension()) || homeA.get().pos().distSqr(homeB.get().pos()) > 16 * 16)) {
+            level.getPoiManager().take(
+                    registryEntry -> registryEntry.is(PoiTypes.HOME),
+                    (registryEntry, blockPos) -> validateBedPoi(level, blockPos),
+                    homeA.get().pos(),
+                    16
+            ).ifPresent(claimedBed -> {
+                b.releasePoi(MemoryModuleType.HOME);
+                b.getBrain().eraseMemory(MemoryModuleType.HOME);
+                b.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(level.dimension(), claimedBed));
+                if (targetVillage != null) b.getResidency().joinVillage(targetVillage);
+            });
+        } else if (homeB.isPresent() && (homeA.isEmpty() || !homeA.get().dimension().equals(level.dimension()) || homeB.get().pos().distSqr(homeA.get().pos()) > 16 * 16)) {
+            level.getPoiManager().take(
+                    registryEntry -> registryEntry.is(PoiTypes.HOME),
+                    (registryEntry, blockPos) -> validateBedPoi(level, blockPos),
+                    homeB.get().pos(),
+                    16
+            ).ifPresent(claimedBed -> {
+                a.releasePoi(MemoryModuleType.HOME);
+                a.getBrain().eraseMemory(MemoryModuleType.HOME);
+                a.getBrain().setMemory(MemoryModuleType.HOME, GlobalPos.of(level.dimension(), claimedBed));
+                if (targetVillage != null) a.getResidency().joinVillage(targetVillage);
+            });
+        }
     }
 }

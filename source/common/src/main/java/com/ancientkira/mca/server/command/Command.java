@@ -7,6 +7,8 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.ancientkira.mca.Config;
 import com.ancientkira.mca.MCA;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityType;
 import com.ancientkira.mca.entity.VillagerEntityMCA;
 import com.ancientkira.mca.entity.ai.chatAI.ChatAI;
 import com.ancientkira.mca.entity.ai.chatAI.ChatAIContext;
@@ -49,11 +51,33 @@ public class Command {
                 .then(register("editor", Command::editor).requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)))
                 .then(register("destiny", Command::destiny))
                 .then(register("mail", Command::mail))
+                .then(register("clutch").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .then(Commands.literal("yes").then(Commands.argument("villager",net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c->com.ancientkira.mca.server.WaterBucketClutch.respond(c.getSource().getPlayerOrException(),net.minecraft.commands.arguments.UuidArgument.getUuid(c,"villager"),true))))
+                        .then(Commands.literal("no").then(Commands.argument("villager",net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c->com.ancientkira.mca.server.WaterBucketClutch.respond(c.getSource().getPlayerOrException(),net.minecraft.commands.arguments.UuidArgument.getUuid(c,"villager"),false)))))
+                .then(register("horseLoan")
+                        .then(Commands.literal("yes").then(Commands.argument("villager", net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c -> com.ancientkira.mca.server.HorseHelp.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "villager"), true))))
+                        .then(Commands.literal("no").then(Commands.argument("villager", net.minecraft.commands.arguments.UuidArgument.uuid())
+                                .executes(c -> com.ancientkira.mca.server.HorseHelp.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "villager"), false)))))
                 .then(register("hangout")
                         .then(Commands.literal("yes").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
                                 .executes(c -> com.ancientkira.mca.server.VillagerHangouts.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "sender"), true))))
                         .then(Commands.literal("no").then(Commands.argument("sender", net.minecraft.commands.arguments.UuidArgument.uuid())
                                 .executes(c -> com.ancientkira.mca.server.VillagerHangouts.respond(c.getSource().getPlayerOrException(), net.minecraft.commands.arguments.UuidArgument.getUuid(c, "sender"), false)))))
+                .then(register("raidergolem").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                        .then(Commands.literal("summon").executes(ctx -> {
+                            var world = ctx.getSource().getLevel();
+                            var golem = EntityType.IRON_GOLEM.create(world, EntitySpawnReason.COMMAND);
+                            if (golem == null) return 0;
+                            var pos = ctx.getSource().getPosition();
+                            golem.snapTo(pos.x, pos.y, pos.z);
+                            golem.addTag(com.ancientkira.mca.server.GolemAllies.RAIDER);
+                            golem.setCustomName(Component.translatable("entity.mca.raider_golem").withStyle(net.minecraft.ChatFormatting.RED));
+                            world.addFreshEntity(golem);
+                            return 1;
+                        })))
                 .then(register("raid").requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                         .then(Commands.literal("start").executes(Command::startRaid))
                         .then(Commands.literal("end").executes(Command::endRaid)))

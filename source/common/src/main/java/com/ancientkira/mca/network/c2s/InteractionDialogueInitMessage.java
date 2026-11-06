@@ -25,7 +25,7 @@ public record InteractionDialogueInitMessage(UUID villagerUUID) implements Handl
 
     @Override
     public void handleServer(ServerPlayer player) {
-        Entity v = player.level().getEntity(villagerUUID);
+        Entity v = com.ancientkira.mca.server.NativeSocial.resolve(player,villagerUUID);
         if (v instanceof VillagerEntityMCA villager) {
             if (villager.isTooBusyToTalk()) {
                 villager.getInteractions().stopInteracting();
@@ -44,6 +44,7 @@ public record InteractionDialogueInitMessage(UUID villagerUUID) implements Handl
                 InteractionDialogueResponse response = new InteractionDialogueResponse(question, player, villager);
                 Network.sendToPlayer(response, player);
             }
+            com.ancientkira.mca.server.NativeSocial.persist(player,villager);
         }
     }
 

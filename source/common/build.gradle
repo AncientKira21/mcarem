@@ -13,6 +13,26 @@ if (minecraft_version in ['26.2', '26.3']) {
         from('src/main/java') {
             include '**/*.java'
             if (compatibilityMinecraftVersion == '26.3') {
+                // In 26.3 Gui renders screens too; only Hud may be hidden during setup.
+                filesMatching('**/MixinSetupGui.java') {
+                    filter { String line -> line
+                            .replace('import net.minecraft.client.gui.Gui;', 'import net.minecraft.client.gui.Hud;')
+                            .replace('@Mixin({Gui.class,', '@Mixin({Hud.class,') }
+                }
+                filesMatching('**/VillagerFishingHookRenderer.java') {
+                    filter { String line -> line
+                            .replace('double camZ) {', 'double camZ, float partialTicks) {')
+                            .replace('culler, camX, camY, camZ)', 'culler, camX, camY, camZ, partialTicks)')
+                            .replace('poseStack.mulPose(camera.orientation)', 'poseStack.rotate(camera.orientation)') }
+                }
+                filesMatching('**/CorpseBlock.java') {
+                    filter { String line ->
+                        line.contains(' CODEC = simpleCodec(') || line.contains('MapCodec<? extends BaseEntityBlock> codec()') ? '' : line
+                    }
+                }
+                filesMatching('**/FarmerWorkTask.java') {
+                    filter { String line -> line.replace('SoundEvents.HOE_TILL,', 'SoundEvents.HOE_TILL.value(),') }
+                }
                 filesMatching('**/MixinGameRenderer.java') {
                     int shadowIndex = 0
                     filter { String line ->
@@ -23,11 +43,11 @@ if (minecraft_version in ['26.2', '26.3']) {
                                 .replace('currentPostEffect', 'spectatedEntityPostEffect')
                     }
                 }
-                filesMatching(['**/TombstoneBlock.java', '**/InfernalFlameBlock.java']) {
+                filesMatching(['**/TombstoneBlock.java', '**/InfernalFlameBlock.java', '**/UnderwaterTorchBlock.java', '**/UnderwaterWallTorchBlock.java', '**/UnderwaterDoorBlock.java']) {
                     boolean skippingCodec = false
                     filter { String line ->
                         if (line.contains(' CODEC = simpleCodec(') || line.trim() == '@Override') return ''
-                        if (line.contains('protected MapCodec<? extends')) {
+                        if (line.contains('MapCodec<? extends') || line.contains('MapCodec<WallTorchBlock>')) {
                             skippingCodec = true
                             return ''
                         }
@@ -62,6 +82,24 @@ if (minecraft_version in ['26.2', '26.3']) {
                                 .replace('.toList();', '.toList());')
                     }
                 }
+            }
+            filesMatching('**/VillagerFishingHookRenderer.java') {
+                filter { String line -> line.replace('gameRenderer.getGameRenderState()', 'gameRenderer.gameRenderState()') }
+            }
+            filesMatching('**/CivilianThreats.java') {
+                filter { String line -> line
+                        .replace('net.minecraft.world.entity.monster.Slime', 'net.minecraft.world.entity.monster.cubemob.AbstractCubeMob')
+                        .replace('instanceof Slime slime', 'instanceof AbstractCubeMob slime') }
+            }
+            filesMatching('**/SickenedCompat.java') {
+                filter { String line -> line.replace('net.minecraft.world.entity.monster.Slime',
+                        'net.minecraft.world.entity.monster.cubemob.AbstractCubeMob') }
+            }
+            filesMatching('**/MixinSlime.java') {
+                filter { String line -> line
+                        .replace('net.minecraft.world.entity.monster.Slime', 'net.minecraft.world.entity.monster.cubemob.AbstractCubeMob')
+                        .replace('@Mixin(Slime.class)', '@Mixin(AbstractCubeMob.class)')
+                        .replace('isDealsDamage', compatibilityMinecraftVersion == '26.3' ? 'canDealDamage' : 'isDealsDamage') }
             }
             filesMatching('**/WhistleScreen.java') {
                 filter { String line ->
@@ -123,6 +161,7 @@ if (minecraft_version in ['26.2', '26.3']) {
             filesMatching([
                     '**/VillagerReviverActionMessage.java',
                     '**/TombstoneBlock.java',
+                    '**/CorpseBlockEntityRenderer.java',
                     '**/AdminCommand.java'
             ]) {
                 filter { String line ->
@@ -168,6 +207,8 @@ if (minecraft_version in ['26.2', '26.3']) {
                         .replace('.getChatListener()', '.gui.chatListener()')
                         .replace('.gui.getChat()', '.gui.hud.getChat()')
                         .replace('.gui.setOverlayMessage(', '.gui.hud.setOverlayMessage(')
+                        .replace('Minecraft.getInstance().options.hideGui',
+                                'com.ancientkira.mca.util.McaHudVisibility.isHidden(Minecraft.getInstance().gui.hud)')
                         .replace('this.minecraft.options.hideGui = restoreHideGui;',
                                 'com.ancientkira.mca.util.McaHudVisibility.setHidden(this.minecraft.gui.hud, restoreHideGui);')
                         .replace('this.minecraft.options.hideGui = true;',
@@ -192,6 +233,7 @@ if (minecraft_version in ['26.2', '26.3']) {
                             .replace('EntityPredicate.ADVANCEMENT_CODEC', 'net.minecraft.world.level.storage.loot.predicates.LootItemCondition.CODEC')
                             .replace('import org.lwjgl.glfw.GLFW;', 'import com.mojang.blaze3d.platform.InputConstants;')
                             .replace('GLFW.GLFW_KEY_', 'InputConstants.KEY_')
+                            .replace('event.scancode()', 'event.keycode()')
                             .replace('import net.minecraft.world.item.AxeItem;', '')
                             .replace('import net.minecraft.world.item.HoeItem;', '')
                             .replace('stack.getItem() instanceof AxeItem', 'stack.is(net.minecraft.tags.ItemTags.AXES)')
@@ -337,13 +379,29 @@ if (compatibilityMinecraftVersion == '26.3') {
     compatibilityAdvancements = tasks.register('prepareMinecraft263Advancements', Sync) {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         inputs.file('build.gradle')
-        from('src/main/resources') { include 'data/**/advancement/**/*.json' }
-        from('src/generated/resources') { include 'data/**/advancement/**/*.json' }
+        from('src/main/resources') { include 'data/**/advancement/**/*.json', 'data/**/worldgen/processor_list/**/*.json', 'data/**/worldgen/structure/*.json' }
+        from('src/generated/resources') { include 'data/**/advancement/**/*.json', 'data/**/worldgen/processor_list/**/*.json', 'data/**/worldgen/structure/*.json' }
         into advancementOutput
         doLast {
             advancementOutput.get().asFile.eachFileRecurse { file ->
                 if (file.isFile() && file.name.endsWith('.json')) {
                     def advancement = new groovy.json.JsonSlurper().parse(file)
+                    def convertWorldgen
+                    convertWorldgen = { value ->
+                        if (value instanceof Map) {
+                            if (value.containsKey('Name')) {
+                                value.id = value.remove('Name')
+                                if (value.containsKey('Properties')) value.properties = value.remove('Properties')
+                            }
+                            if (value.containsKey('minCount') && value.containsKey('maxCount')) {
+                                def min = value.remove('minCount')
+                                def max = value.remove('maxCount')
+                                value.count = min == max ? min : [type: 'minecraft:uniform', min_inclusive: min, max_inclusive: max]
+                            }
+                            value.values().each { convertWorldgen(it) }
+                        } else if (value instanceof List) value.each { convertWorldgen(it) }
+                    }
+                    if (file.path.contains('/worldgen/')) convertWorldgen(advancement)
                     advancement.criteria?.values()?.each { criterion ->
                         def conditions = criterion.conditions
                         if (conditions != null) {
@@ -375,7 +433,7 @@ if (compatibilityMinecraftVersion == '26.3') {
             }
         }
     }
-    sourceSets.main.resources.exclude('data/**/advancement/**')
+    sourceSets.main.resources.exclude('data/**/advancement/**', 'data/**/worldgen/processor_list/**', 'data/**/worldgen/structure/*.json')
 }
 
 tasks.register('prepareCommonResources', Sync) {

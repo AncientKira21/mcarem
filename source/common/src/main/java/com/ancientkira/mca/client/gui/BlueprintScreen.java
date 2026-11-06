@@ -53,6 +53,8 @@ public class BlueprintScreen extends ExtendedScreen {
     private Village village;
     private int reputation;
     private String medicalInsurance = "none";
+    private net.minecraft.nbt.ListTag insuranceDetails = new net.minecraft.nbt.ListTag();
+    public void setMedicalInsuranceDetails(net.minecraft.nbt.ListTag details) { insuranceDetails = details.copy(); }
     public void setMedicalInsurance(String status) { medicalInsurance = status; }
     private boolean isVillage;
     private Rank rank;
@@ -70,6 +72,9 @@ public class BlueprintScreen extends ExtendedScreen {
     private ButtonWidget buttonPage;
     private int pageNumber = 0;
     private int warDelayMinutes;
+    private int prisonPage;
+    private boolean funWar;
+    private int warRefreshTicks;
     private int warPage;
     private BuildingType selectedBuilding;
     private UUID selectedVillager;
@@ -478,10 +483,10 @@ public class BlueprintScreen extends ExtendedScreen {
         int bx = width / 2 - 180;
         int by = height / 2 - 78;
         if (!page.equals("rename") && (!page.equals("empty") && !page.equals("waiting"))) {
-            for (String p : new String[]{"map", "rank", "catalog", "villagers", "rules", "refresh", "war"}) {
+            for (String p : new String[]{"map", "rank", "catalog", "villagers", "rules", "refresh", "war", "prison"}) {
                 ButtonWidget widget = new ButtonWidget(bx, by, 80, 20, Component.translatable("gui.blueprint." + p), b -> setPage(p));
                 addRenderableWidget(widget);
-                if (page.equals(p) || page.equals("advanced") && p.equals("map")) {
+                if (page.equals(p) || page.equals("advanced") && p.equals("map") || p.equals("war") && !canUseRank(Rank.MAYOR)) {
                     widget.active = false;
                 }
                 by += 22;
@@ -541,6 +546,8 @@ public class BlueprintScreen extends ExtendedScreen {
                     floorOptionButtons.add(addRenderableWidget(option));
                 }
 
+                addRenderableWidget(new ButtonWidget(width/2+89, height/2-85, 132, 20,
+                        Component.translatable("mca.insurance.details"), button -> minecraft.setScreen(new MedicalInsuranceScreen(this, insuranceDetails))));
                 int mapFiltersX = width / 2 - 190;
                 int mapFiltersY = height / 2 + 76;
                 iconsButton = addRenderableWidget(new ButtonWidget(mapFiltersX, mapFiltersY, 47, 20,
@@ -646,10 +653,36 @@ public class BlueprintScreen extends ExtendedScreen {
                 break;
             case "rank":
                 break;
+            case "prison": {
+                var inmates = village.getPrisonInmates();
+                int pages = Math.max(1, (inmates.size() + 4) / 5);
+                prisonPage = Math.clamp(prisonPage, 0, pages - 1);
+                for (int row = 0; row < 5 && prisonPage * 5 + row < inmates.size(); row++) {
+                    var entry = inmates.getCompoundOrEmpty(prisonPage * 5 + row);
+                    UUID id = UUID.fromString(entry.getStringOr("UUID", ""));
+                    ButtonWidget free = new ButtonWidget(width/2-80, height/2-55+row*22, 220, 20,
+                            Component.translatable("gui.blueprint.prison.free", entry.getStringOr("Name", "")), b -> {
+                        Network.sendToServer(new com.ancientkira.mca.network.c2s.FreePrisonerMessage(village.getId(), id));
+                        b.active = false;
+                    });
+                    free.active = canUseRank(Rank.MAYOR); addRenderableWidget(free);
+                }
+                if (inmates.isEmpty()) addRenderableWidget(new ButtonWidget(width/2-80,height/2-55,220,20,
+                        Component.translatable("gui.blueprint.prison.empty"), b -> {})).active = false;
+                if (pages > 1) {
+                    addRenderableWidget(new ButtonWidget(width/2-80,height/2+65,40,20,Component.literal("<<"),b->{prisonPage=Math.floorMod(prisonPage-1,pages);setPage("prison");}));
+                    addRenderableWidget(new ButtonWidget(width/2+100,height/2+65,40,20,Component.literal(">>"),b->{prisonPage=(prisonPage+1)%pages;setPage("prison");}));
+                }
+                break;
+            }
             case "war": {
                 var opponents = village.getWarCandidates();
                 int center = width / 2 + 20;
                 int top = height / 2 - 78;
+                addRenderableWidget(new ButtonWidget(center + 114, top, 95, 20,
+                        Component.translatable(funWar ? "gui.blueprint.funWarOn" : "gui.blueprint.funWarOff"), b -> {
+                    funWar = !funWar; setPage("war");
+                }));
                 addRenderableWidget(new ButtonWidget(center - 110, top, 25, 20, Component.literal("−"), b -> {
                     warDelayMinutes = Math.max(0, warDelayMinutes - 1); setPage("war");
                 }));
@@ -674,28 +707,32 @@ public class BlueprintScreen extends ExtendedScreen {
                             : Component.translatable("gui.blueprint.warDeclare", name);
                     ButtonWidget warOption = addRenderableWidget(new ButtonWidget(center - 110, top + 28 + row * 24, 140, 20, label, b -> {
                         Network.sendToServer(new ReportBuildingMessage(release ? ReportBuildingMessage.Action.RELEASE_VILLAGE : atWar ? ReportBuildingMessage.Action.CANCEL_WAR
-                                : ReportBuildingMessage.Action.DECLARE_WAR, village.getId() + ":" + target + ":" + warDelayMinutes));
+                                : funWar ? ReportBuildingMessage.Action.DECLARE_FUN_WAR : ReportBuildingMessage.Action.DECLARE_WAR, village.getId() + ":" + target + ":" + warDelayMinutes));
+                        // Fun mode applies to this declaration, never to the next war.
+                        if (!release) {
+                            funWar = false;
+                            setPage("war");
+                        }
                     }));
-                    warOption.active = release || !friendly;
+                    warOption.active = release || atWar || funWar || !friendly;
                     if(!release&&!atWar){
                         ButtonWidget merge=addRenderableWidget(new ButtonWidget(center+114,top+28+row*24,48,20,
                                 Component.translatable("gui.blueprint.merge"),b->Network.sendToServer(new ReportBuildingMessage(
                                     ReportBuildingMessage.Action.MERGE_VILLAGE,village.getId()+":"+target+":0"))));
-                        merge.active=rank.isAtLeast(Rank.MAYOR) || minecraft.player.isCreative()
-                                && minecraft.player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
+                        merge.active=canUseRank(Rank.MAYOR) || cheatsEnabled();
                     }
                     if(release){
                         ButtonWidget independence=addRenderableWidget(new ButtonWidget(center+34,top+28+row*24,76,20,
                                 Component.translatable("gui.blueprint.independence"),b->Network.sendToServer(new ReportBuildingMessage(
                                     ReportBuildingMessage.Action.START_INDEPENDENCE,village.getId()+":"+target+":"+warDelayMinutes))));
-                        independence.active=target>=0&&rank.isAtLeast(Rank.MAYOR);
+                        independence.active=target>=0&&canUseRank(Rank.MAYOR);
                     }
                     if (!release) {
                         ButtonWidget friendship = addRenderableWidget(new ButtonWidget(center + 34, top + 28 + row * 24, 76, 20,
                                 Component.translatable(friendly ? "gui.blueprint.friendly" : "gui.blueprint.befriend"), b ->
                                 Network.sendToServer(new ReportBuildingMessage(ReportBuildingMessage.Action.TOGGLE_FRIENDLY,
                                         village.getId() + ":" + target + ":0"))));
-                        friendship.active = rank != null && rank.isAtLeast(Rank.MAYOR);
+                        friendship.active = rank != null && canUseRank(Rank.MAYOR);
                     }
                 }
                 if (pages > 1) {
@@ -758,24 +795,26 @@ public class BlueprintScreen extends ExtendedScreen {
                 }));
                 break;
             case "policies": {
-                boolean privileged=minecraft.player.isCreative() && minecraft.player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER);
-                String[] keys={"beds","graves","taxes"};
-                boolean[] values={village.isIgnoreBedCapacity(),village.isGraveMourningDisabled(),village.isTaxMourningDisabled()};
+                boolean privileged=cheatsEnabled();
+                boolean creativeCheats=privileged && minecraft.player.isCreative();
+                String[] keys={"beds","graves","taxes","guards","clutches"};
+                boolean[] values={village.isIgnoreBedCapacity(),village.isGraveMourningDisabled(),village.isTaxMourningDisabled(),village.isAutomaticGuards(),village.isClutchOverride()};
                 for(int policyRow=0;policyRow<keys.length;policyRow++){
                     String key=keys[policyRow];boolean next=!values[policyRow];
-                    ButtonWidget toggle=addRenderableWidget(new ButtonWidget(width/2-115,height/2-55+policyRow*26,230,20,
+                    if ((key.equals("graves") || key.equals("taxes")) && !creativeCheats) continue;
+                    ButtonWidget toggle=addRenderableWidget(new ButtonWidget(width/2-115,height/2-70+policyRow*25,230,20,
                             Component.translatable("gui.blueprint.policy."+key).append(": ").append(values[policyRow]?"ON":"OFF"),b->{
                         village.setPolicy(key,next);
                         Network.sendToServer(new ReportBuildingMessage(ReportBuildingMessage.Action.SET_POLICY,village.getId()+":"+key+":"+next));
                         setPage("policies");
                     }));
-                    toggle.active=key.equals("beds")?privileged||rank.isAtLeast(Rank.MAYOR):privileged;
+                    toggle.active=(key.equals("beds")||key.equals("guards")||key.equals("clutches"))?privileged||canUseRank(Rank.MAYOR):creativeCheats;
                 }
-                addRenderableWidget(new ButtonWidget(width/2-60,height/2+45,120,20,Component.literal("Back"),b->setPage("rules")));
+                addRenderableWidget(new ButtonWidget(width/2-60,height/2+65,120,20,Component.literal("Back"),b->setPage("rules")));
                 break;
             }
             case "rules":
-                addRenderableWidget(new ButtonWidget(width/2-100,height/2+55,200,20,Component.translatable("gui.blueprint.policies"),b->setPage("policies")));
+                addRenderableWidget(new ButtonWidget(width/2-100,height/2-102,200,20,Component.translatable("gui.blueprint.policies"),b->setPage("policies")));
                 //taxes
                 buttonTaxes = createValueChanger(width / 2, height / 2 + POSITION_TAXES + 10, 80, 20, b -> changeTaxes(b ? 0.125f : -0.125f), Component.translatable("gui.blueprint.tooltip.taxes"));
                 toggleButtons(buttonTaxes, false);
@@ -925,7 +964,8 @@ public class BlueprintScreen extends ExtendedScreen {
         context.text(font, Component.translatable("gui.blueprint.reputation", String.valueOf(reputation)), x, y + 11, rank.ordinal() == 0 ? 0xffff0000 : 0xffffffff);
         context.text(font, Component.translatable("gui.blueprint.buildings", village.getBuildings().values().stream().map(Building::getStructureId).distinct().count()), x, y + 22, 0xffffffff);
         context.text(font, Component.translatable("gui.blueprint.population", village.getPopulation(), village.getMaxPopulation()), x, y + 33, 0xffffffff);
-        context.text(font, Component.translatable("gui.blueprint.insurance", Component.translatable("mca.insurance." + medicalInsurance)), x, y + 44, 0xffffffff);
+        context.text(font, Component.translatable("gui.blueprint.village_type", Component.translatable("mca.village_type." + village.getVillageType())), x, y + 44, 0xffffffff);
+        context.text(font, Component.translatable("mca.insurance." + medicalInsurance), x, y + 55, 0xffffffff);
     }
 
     private void renderMap(GuiGraphicsExtractor context) {
@@ -942,7 +982,7 @@ public class BlueprintScreen extends ExtendedScreen {
         BlueprintMapViewport viewport = BlueprintMapViewport.create(centerX, centerY, 75, mapCenterX, mapCenterZ, getMapScale());
         BlueprintMapRenderer.RenderResult result = mapRenderer.render(
                 context, viewport, mapGeometry, selectedFloorOrdinal, showTerrain, showIcons, showPlayerHead,
-                player, playerX, playerZ, mouseX, mouseY);
+                village.isUnderwater(), village.getBox().maxY() + 4, player, playerX, playerZ, mouseX, mouseY);
 
         LinkedHashMap<Integer, BlueprintMapRenderer.HoverTarget> uniqueTargets = new LinkedHashMap<>();
         for (BlueprintMapRenderer.HoverTarget target : result.hoverTargets()) {
@@ -1058,7 +1098,7 @@ public class BlueprintScreen extends ExtendedScreen {
 
         //taxes
         context.centeredText(font, Component.translatable("gui.blueprint.taxes"), width / 2, height / 2 + POSITION_TAXES, 0xffffffff);
-        if (!rank.isAtLeast(Rank.MERCHANT)) {
+        if (!canUseRank(Rank.MERCHANT)) {
             context.centeredText(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_TAXES + 15, 0xffffffff);
             toggleButtons(buttonTaxes, false);
         } else {
@@ -1067,7 +1107,7 @@ public class BlueprintScreen extends ExtendedScreen {
 
         //births
         context.centeredText(font, Component.translatable("gui.blueprint.birth"), width / 2, height / 2 + POSITION_BIRTH, 0xffffffff);
-        if (!rank.isAtLeast(Rank.NOBLE)) {
+        if (!canUseRank(Rank.NOBLE)) {
             context.centeredText(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_BIRTH + 15, 0xffffffff);
             toggleButtons(buttonBirths, false);
         } else {
@@ -1076,7 +1116,7 @@ public class BlueprintScreen extends ExtendedScreen {
 
         //marriages
         context.centeredText(font, Component.translatable("gui.blueprint.marriage"), width / 2, height / 2 + POSITION_MARRIAGE, 0xffffffff);
-        if (!rank.isAtLeast(Rank.MAYOR)) {
+        if (!canUseRank(Rank.MAYOR)) {
             context.centeredText(font, Component.translatable("gui.blueprint.rankTooLow"), width / 2, height / 2 + POSITION_MARRIAGE + 15, 0xffffffff);
             toggleButtons(buttonMarriage, false);
         } else {
@@ -1090,6 +1130,17 @@ public class BlueprintScreen extends ExtendedScreen {
         } else {
             return Component.translatable("tag.block." + id.getNamespace() + "." + id.getPath());
         }
+    }
+
+    private boolean cheatsEnabled() {
+        var server = minecraft.getSingleplayerServer();
+        return minecraft.player != null && minecraft.player.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)
+                && (server == null || server.getWorldData().isAllowCommands() || com.ancientkira.mca.util.McaPermissions.lanCheats(server));
+    }
+
+    private boolean canUseRank(Rank required) {
+        return cheatsEnabled()
+                || rank!=null && rank.isAtLeast(required);
     }
 
     private void toggleButtons(ButtonWidget[] buttons, boolean active) {
@@ -1170,7 +1221,31 @@ public class BlueprintScreen extends ExtendedScreen {
         return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
     }
 
+    @Override
+    public void tick() {
+        super.tick();
+        if (page.equals("prison") && village != null) {
+            if (++warRefreshTicks >= 40) { warRefreshTicks = 0; Network.sendToServer(new GetVillageRequest()); }
+            return;
+        }
+        if (!page.equals("war") || village == null) { warRefreshTicks = 0; return; }
+        boolean active = village.getWarCandidates().stream().anyMatch(tag -> tag instanceof net.minecraft.nbt.CompoundTag entry
+                && entry.getBooleanOr("AtWar", false));
+        // Refresh only the open war page while a declaration is pending or active.
+        if (active && ++warRefreshTicks >= 40) {
+            warRefreshTicks = 0;
+            Network.sendToServer(new GetVillageRequest());
+        }
+    }
+
     public void setVillage(Village village) {
+        if (this.village != null && village != null) {
+            boolean wasAtWar = this.village.getWarCandidates().stream().anyMatch(tag -> tag instanceof net.minecraft.nbt.CompoundTag entry
+                    && entry.getBooleanOr("AtWar", false));
+            boolean atWar = village.getWarCandidates().stream().anyMatch(tag -> tag instanceof net.minecraft.nbt.CompoundTag entry
+                    && entry.getBooleanOr("AtWar", false));
+            if (wasAtWar && !atWar) funWar = false;
+        }
         if (village != null) {
             village.normalizeFloorNumbers();
         }
@@ -1192,7 +1267,7 @@ public class BlueprintScreen extends ExtendedScreen {
             setPage("empty");
         } else if (page.equals("waiting")) {
             setPage("map");
-        } else if (page.equals("map") || page.equals("advanced") || page.equals("war")) {
+        } else if (page.equals("map") || page.equals("advanced") || page.equals("war") || page.equals("prison")) {
             setPage(page);
         }
     }

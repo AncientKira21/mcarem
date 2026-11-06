@@ -15,7 +15,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 @Mixin(ServerGamePacketListenerImpl.class)
@@ -23,15 +22,20 @@ public class MixinServerGamePacketListenerImpl {
     @Shadow
     public ServerPlayer player;
 
+    @Inject(method = "onDisconnect", at = @At("HEAD"))
+    private void mca$endInitialSetupOnDisconnect(CallbackInfo callback) {
+        com.ancientkira.mca.server.FirstJoinSetup.finish(player);
+    }
+
     @Inject(method = "handleChat", at = @At("HEAD"))
     public void mca$injectHandleChat(ServerboundChatPacket message, CallbackInfo ci) {
         if (Config.getInstance().enableVillagerChatAI) {
             String msg = StringUtils.normalizeSpace(message.message());
             if (!msg.startsWith("/")) {
-                // Check if there's an eligible villager for the conversation
-                Optional<VillagerEntityMCA> villager = ChatAI.getVillagerForConversation(player, msg);
-                // Yes? => Talk to it
-                villager.ifPresent(villagerEntityMCA -> mca$runAsyncAnswerRequest(player, villagerEntityMCA, msg));
+                ServerPlayer sender = player;
+                sender.level().getServer().execute(() -> ChatAI.getVillagerForConversation(sender, msg)
+                        .filter(villager -> ChatAI.canReply(sender, villager))
+                        .ifPresent(villager -> mca$runAsyncAnswerRequest(sender, villager, msg)));
             }
         }
     }
@@ -39,8 +43,12 @@ public class MixinServerGamePacketListenerImpl {
     @Unique
     private void mca$runAsyncAnswerRequest(ServerPlayer player, VillagerEntityMCA villager, String msg) {
         CompletableFuture.runAsync(() -> {
-            Optional<String> answer = ChatAI.answer(player, villager, msg);
-            answer.ifPresent(a -> villager.conversationManager.addMessage(player, Component.literal(a)));
+            var answer = ChatAI.answer(player, villager, msg);
+            player.level().getServer().execute(() -> {
+                if (ChatAI.canReply(player, villager)) {
+                    answer.ifPresent(a -> villager.conversationManager.addMessage(player, Component.literal(a)));
+                }
+            });
         });
     }
 }

@@ -42,8 +42,43 @@ public class FamilyTree extends SavedData {
                 tag.read("uuid", net.minecraft.core.UUIDUtil.CODEC).ifPresent(permanentlyDeleted::add);
             }
         }));
+        purgeUnnamedAdventurers();
         rebuildChildLinks();
         com.ancientkira.mca.entity.FamilyNames.fillMissingSurnames(this);
+    }
+
+    public static boolean isUnnamedAdventurer(@Nullable FamilyTreeNode node) {
+        if (node == null) return false;
+        String name = node.getName().trim();
+        if (name.equalsIgnoreCase("Unnamed Adventurer") || name.equalsIgnoreCase("Unknown relative")) {
+            return true;
+        }
+        boolean isAdventurerProfession = "adventurer".equalsIgnoreCase(node.getProfessionId().getPath());
+        if (isAdventurerProfession && (name.isEmpty() || name.startsWith("Unknown player ") || name.equalsIgnoreCase("Villager"))) {
+            return true;
+        }
+        return false;
+    }
+
+    public void purgeUnnamedAdventurers() {
+        List<UUID> toRemove = entries.values().stream()
+                .filter(FamilyTree::isUnnamedAdventurer)
+                .map(FamilyTreeNode::id)
+                .toList();
+        if (toRemove.isEmpty()) return;
+        for (UUID id : toRemove) {
+            FamilyTreeNode node = entries.remove(id);
+            if (node != null) {
+                for (FamilyTreeNode other : entries.values()) {
+                    if (id.equals(other.father())) other.removeFather();
+                    if (id.equals(other.mother())) other.removeMother();
+                    if (id.equals(other.partner())) other.updatePartner((Entity) null, null);
+                    if (id.equals(other.getWidowedPartner())) other.setWidowedPartner(Util.NIL_UUID);
+                    other.children().remove(id);
+                }
+            }
+        }
+        setDirty();
     }
 
     /** Parent fields are authoritative; old editor versions left stale reverse links behind. */
@@ -117,11 +152,15 @@ public class FamilyTree extends SavedData {
 
     @NotNull
     public FamilyTreeNode getOrCreate(Entity entity) {
-        return entries.computeIfAbsent(entity.getUUID(), uuid -> createEntry(
+        FamilyTreeNode node = entries.computeIfAbsent(entity.getUUID(), uuid -> createEntry(
                 entity.getUUID(),
                 entity.getName().getString(),
                 EntityRelationship.of(entity).map(EntityRelationship::getGender).orElse(Gender.MALE),
                 entity instanceof Player));
+        if (isUnnamedAdventurer(node) || node.getName().startsWith("Unknown player ")) {
+            node.setName(entity.getName().getString());
+        }
+        return node;
     }
 
     public void remove(UUID id) {

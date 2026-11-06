@@ -67,6 +67,7 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
         setDirty();
     }
     private final Set<UUID> medicalPolicies = new HashSet<>();
+    public Set<UUID> medicalPolicies() { return Set.copyOf(medicalPolicies); }
     public boolean hasMedicalPolicy(UUID cleric) { return medicalPolicies.contains(cleric); }
     public void insureWith(UUID cleric) { medicalPolicies.add(cleric); setDirty(); }
     private boolean welcome820Shown;
@@ -162,7 +163,55 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
     public static PlayerSaveData get(ServerPlayer player) {
         PlayerSaveData data = get(player.level(), player.getUUID());
         data.world = player.level();
+        data.ensurePlayerName(player);
         return data;
+    }
+
+    /** The saved MCA full name is authoritative, including generated and inherited surnames. */
+    public void ensurePlayerName(ServerPlayer player) {
+        var node = getFamilyTree().getOrEmpty(player.getUUID());
+        String saved = com.ancientkira.mca.entity.VillagerLike.parseCustomName(player.registryAccess(), entityData)
+                .map(Component::getString).filter(name -> !name.isBlank()).orElse("");
+        String full = saved;
+        if (full.isBlank()) {
+            full = node.filter(entry -> !FamilyTree.isUnnamedAdventurer(entry)
+                            && !entry.getName().startsWith("Unknown player "))
+                    .map(FamilyTreeNode::getName)
+                    .orElseGet(() -> player.getCustomName() == null ? player.getName().getString() : player.getCustomName().getString());
+        }
+        if (full.isBlank()) full = player.getGameProfile().name();
+        var nameData = com.ancientkira.mca.util.NbtHelper.getOrCreateCompound(entityData, VillagerEntityMCA.MCA_DATA_KEY);
+        var parts = com.ancientkira.mca.entity.NameParts.resolve(full, nameData.getStringOr("FirstName", ""), nameData.getStringOr("LastName", ""));
+        boolean surnameDisabled = nameData.getBooleanOr("SurnameDisabled", false);
+        String pending = node.map(FamilyTreeNode::takePendingSurname).orElse(null);
+        if (pending != null) {
+            full = com.ancientkira.mca.entity.FamilyNames.fullName(
+                    parts.first(), pending);
+            surnameDisabled = com.ancientkira.mca.entity.NameParts.disablesSurname(pending);
+            parts = new com.ancientkira.mca.entity.NameParts(parts.first(), pending);
+        } else if (!surnameDisabled && parts.last().isBlank()) {
+            String inherited = node.map(FamilyTreeNode::getSurname)
+                    .filter(name -> !name.isBlank()).orElse("");
+            full = inherited.isBlank() ? com.ancientkira.mca.entity.FamilyNames.generated(full, UUID.randomUUID())
+                    : com.ancientkira.mca.entity.FamilyNames.fullName(full, inherited);
+        }
+        String resolvedLast = surnameDisabled ? "" : full.equals(parts.full()) ? parts.last()
+                : full.substring(Math.min(full.length(), parts.first().length())).strip();
+        if (!nameData.getStringOr("FirstName", "").equals(parts.first())
+                || !nameData.getStringOr("LastName", "").equals(resolvedLast)
+                || nameData.getBooleanOr("SurnameDisabled", false) != surnameDisabled) {
+            nameData.putString("FirstName", parts.first()); nameData.putString("LastName", resolvedLast);
+            nameData.putBoolean("SurnameDisabled", surnameDisabled); setDirty();
+        }
+        Component name = Component.literal(full);
+        if (!full.equals(saved)) {
+            entityData.store("CustomName", ComponentSerialization.CODEC,
+                    player.registryAccess().createSerializationContext(NbtOps.INSTANCE), name);
+            setDirty();
+        }
+        if (!name.equals(player.getCustomName())) player.setCustomName(name);
+        String first = parts.first(), last = surnameDisabled ? " " : resolvedLast;
+        node.ifPresent(entry -> entry.setNameParts(first, last));
     }
 
     public static PlayerSaveData get(ServerLevel world, UUID uuid) {
@@ -365,7 +414,12 @@ public class PlayerSaveData extends SavedData implements EntityRelationship {
     @Override
     public @NotNull FamilyTreeNode getFamilyEntry() {
         return getFamilyTree().getOrEmpty(uuid).orElseGet(() -> {
-            String name = Optional.ofNullable(world.getPlayerByUUID(uuid)).map(p -> p.getName().getString()).orElse("Unnamed Adventurer");
+            var online = world.getServer().getPlayerList().getPlayer(uuid);
+            var loaded = world.getEntity(uuid);
+            if (online == null && loaded != null) return getFamilyTree().getOrCreate(loaded);
+            String name = com.ancientkira.mca.entity.VillagerLike.parseCustomName(world.registryAccess(), entityData)
+                    .map(Component::getString).filter(value -> !value.isBlank())
+                    .orElseGet(() -> online != null ? online.getName().getString() : "Unknown player " + uuid.toString().substring(0,8));
             return getFamilyTree().getOrCreate(uuid, name, getGender(), true);
         });
     }

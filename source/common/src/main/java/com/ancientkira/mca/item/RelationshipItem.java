@@ -19,7 +19,9 @@ public abstract class RelationshipItem extends TooltippedItem implements Special
         Memories memory = villager.getVillagerBrain().getMemoriesForPlayer(player);
         String response;
 
-        if (villager.isBaby()) {
+        if (villager.getRelationships().getFamilyEntry().mourningSpouse()) {
+            response = "interaction.relationship.fail.mourning";
+        } else if (villager.isBaby()) {
             response = "interaction.relationship.fail.isbaby";
         } else if (Relationship.IS_RELATIVE.test(villager, player)) {
             response = "interaction.relationship.fail.isparent";

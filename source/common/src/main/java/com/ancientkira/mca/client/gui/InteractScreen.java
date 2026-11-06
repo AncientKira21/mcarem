@@ -150,7 +150,7 @@ public class InteractScreen extends AbstractDynamicScreen {
             }
             return true;
         }
-        return false;
+        return super.keyPressed(event);
     }
 
     private void drawIcons(GuiGraphicsExtractor context) {
@@ -233,6 +233,11 @@ public class InteractScreen extends AbstractDynamicScreen {
                 drawTooltip(context, traitText, 10, 30 + h * (4 + extraRow));
             }
         }
+
+        drawTooltip(context, Component.translatable("gui.interact.label.favorite_food",
+                Component.translatable("item.minecraft." + villager.getFavoriteFood())), 10, 30 + h * (5 + extraRow));
+        drawTooltip(context, Component.translatable("gui.interact.label.favorite_color",
+                Component.translatable("mca.color." + villager.getFavoriteColor())), 10, 30 + h * (6 + extraRow));
 
         //hearts
         if (hoveringOverIcon("redHeart")) {
